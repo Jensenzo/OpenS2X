@@ -1,0 +1,51 @@
+# cargo-deny (CI job `deny`, docs/dependencies.md): licences, advisories,
+# sources. Checked for the platforms we ship: Linux and Windows.
+
+[graph]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-gnu"]
+
+[licenses]
+# Permissive licences, and MPL-2.0 (file-level copyleft: symphonia, the MP3
+# decoder of Bevy's audio, used for the music; linking is allowed and we do
+# not change its files). No GPL, LGPL or AGPL is linked into a binary: those
+# are not listed, so a crate that offers only them fails the check (a crate
+# that offers one alongside MIT, like r-efi, is taken under MIT). FFmpeg is
+# an external tool run at install (docs/video.md), never linked.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[advisories]
+# Every RustSec advisory fails the check unless listed here with a reason.
+ignore = [
+    # ruzstd 0.8 (decompression bomb, fixed in 0.9.1): Bevy 0.20's image
+    # crate requires 0.8 and uses it only to decode the tonemapping tables
+    # built into Bevy's own binary (KTX2). We load no KTX2 or zstd data:
+    # textures are DDS, decoded by s2-assets. Drop this with the next Bevy.
+    { id = "RUSTSEC-2026-0344", reason = "only Bevy's built-in tonemapping tables are decoded; fixed by the next Bevy upgrade" },
+]
+
+[bans]
+# Bevy brings several versions of some crates; not an error.
+multiple-versions = "allow"
+wildcards = "deny"
+# Our crates depend on each other by path; they are not published
+# (publish = false), a project built on them takes them by git tag (docs/releasing.md).
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

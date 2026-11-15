@@ -1,0 +1,19 @@
+[package]
+name = "s2-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+s2-sim = { path = "../sim" }
+s2-assets = { path = "../assets" }
+s2-rules = { path = "../rules" }
+s2-ai = { path = "../ai" }
+# `image-diff` (the golden images, docs/test-coverage.md) reads PNG. The same
+# version Bevy brings into the workspace. Pure Rust, MIT OR Apache-2.0.
+png = "=0.18.1"
+# Traces in gzip (`specs/traces/`, ours in `target/traces/`). The version
+# already in the workspace through Bevy; its pure Rust back end. MIT OR
+# Apache-2.0.
+flate2 = "=1.1.10"

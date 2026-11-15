@@ -1,0 +1,83 @@
+# The golden image scenes (scripts/golden-images.sh, docs/test-coverage.md).
+# name | s2-viewer arguments; the script adds --game-dir, --size 1024x768
+# and --shot. --compare and --still start paused with the real-time clock
+# standing still, so every run draws the same picture.
+#
+# The start camera (GFX-VIEW-3.6) on three maps at every zoom step.
+start-storm-z0 | --compare MP_2P_Storm_Coast --zoom 0
+start-storm-z1 | --compare MP_2P_Storm_Coast --zoom 1
+start-storm-z2 | --compare MP_2P_Storm_Coast --zoom 2
+start-storm-z3 | --compare MP_2P_Storm_Coast --zoom 3
+start-storm-z4 | --compare MP_2P_Storm_Coast --zoom 4
+start-crossroads-z0 | --compare MP_4P_crossroads --zoom 0
+start-crossroads-z1 | --compare MP_4P_crossroads --zoom 1
+start-crossroads-z2 | --compare MP_4P_crossroads --zoom 2
+start-crossroads-z3 | --compare MP_4P_crossroads --zoom 3
+start-crossroads-z4 | --compare MP_4P_crossroads --zoom 4
+start-paradise-z0 | --compare MP_6P_Paradise_Island --zoom 0
+start-paradise-z1 | --compare MP_6P_Paradise_Island --zoom 1
+start-paradise-z2 | --compare MP_6P_Paradise_Island --zoom 2
+start-paradise-z3 | --compare MP_6P_Paradise_Island --zoom 3
+start-paradise-z4 | --compare MP_6P_Paradise_Island --zoom 4
+# A woodcutter's hut site by the headquarters at four steps of its work
+# (GFX-OBJ-2.6, ECO-HQ-4.7).
+woodcutter-site-25 | --compare MP_2P_Storm_Coast --scene woodcutter-site --until-built 25 --zoom 2
+woodcutter-site-50 | --compare MP_2P_Storm_Coast --scene woodcutter-site --until-built 50 --zoom 2
+woodcutter-site-75 | --compare MP_2P_Storm_Coast --scene woodcutter-site --until-built 75 --zoom 2
+woodcutter-site-100 | --compare MP_2P_Storm_Coast --scene woodcutter-site --until-built 100 --zoom 2
+# The menus (UI-MENU): the title, the main menu, the free play page and the
+# other pages. Their save folder is tests/golden/images/saves (one stand-in
+# autosave), not the player's: CONTINUE and the save list stay the same.
+menu-title | --menu-screen start --still --save-dir tests/golden/images/saves
+menu-main | --menu --still --save-dir tests/golden/images/saves
+menu-freeplay | --menu-screen single --still --save-dir tests/golden/images/saves
+menu-select | --menu-screen select --still --save-dir tests/golden/images/saves
+menu-setup | --menu-screen setup --still --save-dir tests/golden/images/saves
+menu-settings | --menu-screen settings --still --save-dir tests/golden/images/saves
+menu-sound | --menu-screen sound --still --save-dir tests/golden/images/saves
+menu-save | --menu-screen save --still --save-dir tests/golden/images/saves
+menu-credits | --menu-screen credits --still --save-dir tests/golden/images/saves
+menu-campaign | --menu-screen campaign --still --save-dir tests/golden/images/saves
+menu-tutorial | --menu-screen tutorial --still --save-dir tests/golden/images/saves
+# The other settings pages (SET-5.2, 5.3, 5.5, 5.7).
+menu-engine | --menu-screen engine --still --save-dir tests/golden/images/saves
+menu-graphics | --menu-screen graphics --still --save-dir tests/golden/images/saves
+menu-input | --menu-screen input --still --save-dir tests/golden/images/saves
+menu-network | --menu-screen network --still --save-dir tests/golden/images/saves
+# Each in-game dialog (UI-GAME) on Storm Coast at the start, the interface
+# shown.
+dialog-tools | --map-name MP_2P_Storm_Coast --3d --still --open-global tools
+dialog-military | --map-name MP_2P_Storm_Coast --3d --still --open-global military
+dialog-distribution | --map-name MP_2P_Storm_Coast --3d --still --open-global distribution
+dialog-transport | --map-name MP_2P_Storm_Coast --3d --still --open-global transport
+dialog-minimap | --map-name MP_2P_Storm_Coast --3d --still --open-global minimap
+dialog-messages | --map-name MP_2P_Storm_Coast --3d --still --open-global messages
+dialog-game-menu | --map-name MP_2P_Storm_Coast --3d --still --open-global game-menu
+dialog-headquarters | --map-name MP_2P_Storm_Coast --3d --still --open 29,51
+# The headquarters' military page (UI-GAME-4.4, Q-1053).
+dialog-hq-military | --map-name MP_2P_Storm_Coast --3d --still --open 29,51 --open-tab 11
+dialog-flag | --map-name MP_2P_Storm_Coast --3d --still --open 30,50
+dialog-barracks | --map-name MP_2P_Storm_Coast --3d --still --scene barracks
+dialog-ship | --map-name MP_2P_Storm_Coast --3d --still --scene ship
+# The statistics family's six pages (UI-GAME-8.5) at the start.
+dialog-statistics | --map-name MP_2P_Storm_Coast --3d --still --open-global statistics
+dialog-production | --map-name MP_2P_Storm_Coast --3d --still --open-global production
+dialog-inventory | --map-name MP_2P_Storm_Coast --3d --still --open-global inventory
+dialog-buildings | --map-name MP_2P_Storm_Coast --3d --still --open-global buildings
+dialog-settlers | --map-name MP_2P_Storm_Coast --3d --still --open-global settlers
+dialog-fleet | --map-name MP_2P_Storm_Coast --3d --still --open-global fleet
+# The mission interface: mission 1's briefing book (CAM-1.3c, opened by its
+# script after 25 s of play) and the tutorial window's two forms (CAM-5.2a).
+mission-book | --mission campaign01 --3d --still --run 300
+tutorial-explain | --mission tutorial01 --3d --still
+tutorial-action | --mission tutorial01 --tutorial-step 30 --3d --still
+# Building windows (UI-GAME-4.1): a workshop, an outdoor worker's hut and a
+# farm built by the headquarters, their windows open.
+dialog-sawmill | --map-name MP_2P_Storm_Coast --3d --still --scene building:Sawmill --until-built 100 --open-building --building-type Sawmill
+dialog-woodcutter | --map-name MP_2P_Storm_Coast --3d --still --scene building:WoodcutterHut --until-built 100 --open-building --building-type WoodcutterHut
+dialog-farm | --map-name MP_2P_Storm_Coast --3d --still --scene building:Farm --until-built 100 --open-building --building-type Farm
+# A farm by the headquarters just finished, and when its farmer has come
+# (the building keeps its look and light once its door or worker
+# animates it; GFX-OBJ-2.1).
+farm-before | --compare MP_2P_Storm_Coast --scene building:Farm --until-built 100 --zoom 2
+farm-after | --compare MP_2P_Storm_Coast --scene building:Farm --until-built 100 --run 1 --until-door Farm --zoom 2

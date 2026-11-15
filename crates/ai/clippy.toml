@@ -1,0 +1,11 @@
+# Determinism (docs/architecture.md): no hash-ordered collections, no clocks
+# and no threads in the game rules or the computer players.
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "iteration order is random per run: use BTreeMap" },
+    { path = "std::collections::HashSet", reason = "iteration order is random per run: use BTreeSet" },
+    { path = "std::time::Instant", reason = "wall-clock time must not reach game state" },
+    { path = "std::time::SystemTime", reason = "wall-clock time must not reach game state" },
+]
+disallowed-methods = [
+    { path = "std::thread::spawn", reason = "thread scheduling must not reach game state" },
+]

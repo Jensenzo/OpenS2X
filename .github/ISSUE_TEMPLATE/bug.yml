@@ -1,0 +1,49 @@
+name: Bug
+description: The program crashes, hangs or does something wrong.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. Please attach no game files and no decompiled code (CONTRIBUTING.md, "The clean-room rule"). If what you see is a difference from the original game rather than a fault, use "Differs from the original" instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The version in the download's name (OpenS2X-<version>-windows-x64.zip) or the commit you built.
+      placeholder: "0.10.1"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what happened, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: How to make it happen again, step by step, starting from the main menu or a save.
+      placeholder: |
+        1. Freeplay game on MP_2P_Storm_Coast, default settings
+        2. Build a woodcutter's hut next to the headquarters
+        3. ...
+  - type: textarea
+    id: save
+    attributes:
+      label: Save and screenshots
+      description: A save from just before the problem helps most (Documents\S2\saves, `.s2save`; zip it and drag it here). Screenshots too (F12 saves one).
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Windows version and graphics card.
+      placeholder: "Windows 11, GeForce RTX 3060"
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: If the program printed errors (start it from a command prompt to see them), paste them here.
+      render: text

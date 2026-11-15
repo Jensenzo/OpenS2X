@@ -1,0 +1,127 @@
+name: CI
+
+# The public copy's CI (scripts/public-export.sh writes it as
+# .github/workflows/ci.yml; docs/releasing.md, "The public copy"). GitHub's
+# hosted runners only, no secrets and no repository variables, a read-only
+# token: safe for pull requests from forks. No game data: every test that
+# needs the game, its saves or the recordings of the original skips with a
+# line saying so.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 16 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Debug info for Bevy's test binaries fills the disk.
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      # The hosted image ships toolchains we never use; the build needs the
+      # space.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      # The toolchain of rust-toolchain.toml (the golden hashes need one).
+      - run: rustup toolchain install && rustc --version
+      # Bevy (the viewer crate) needs these to build on Linux.
+      - name: System libraries for Bevy
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      # No game data: tests that need it skip.
+      - run: cargo test --workspace
+      # Every test names the spec rules it checks (docs/test-coverage.md).
+      - run: python3 scripts/spec-coverage.py --check
+      # The progress numbers' parsers (docs/releasing.md).
+      - run: python3 scripts/metrics.py --test
+      # The viewer uses the simulation's public API only (docs/api.md).
+      - run: python3 scripts/api-boundary.py
+      # Nothing that must stay private (docs/releasing.md, "The public copy").
+      - run: python3 scripts/public-check.py .
+      # Determinism across platforms: the fixture games' hash lines here and
+      # on Windows, compared by job `same-hashes`.
+      - name: Hash the fixture games
+        run: |
+          mkdir -p hashes
+          for f in flat2 flat4 town2 town4; do
+            cargo run -q -p s2-app -- hash fixture:$f 5000 --every 500 > hashes/$f.txt
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hashes-linux
+          path: hashes
+      # Soak: computer players against each other with every invariant
+      # checked after every tick (docs/test-coverage.md).
+      - name: Soak the town fixtures, 20000 ticks each
+        run: |
+          for f in town2 town4; do
+            cargo run -q -p s2-app -- soak fixture:$f 20000 --out soak
+          done
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: soak-replays
+          path: soak
+
+  # Licences (no GPL linked into a binary), RustSec advisories and sources of
+  # every dependency, by deny.toml (docs/dependencies.md).
+  deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny --version && cargo deny check
+
+  # The Windows build: the game's executable, the headless crates' tests and
+  # the fixture games' hashes.
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install; rustc --version
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p s2-viewer --bin OpenS2X
+      - run: cargo test -p s2-sim -p s2-ai -p s2-app
+      - name: Hash the fixture games
+        shell: bash
+        run: |
+          mkdir -p hashes
+          for f in flat2 flat4 town2 town4; do
+            cargo run -q --release -p s2-app -- hash fixture:$f 5000 --every 500 > hashes/$f.txt
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hashes-windows
+          path: hashes
+
+  same-hashes:
+    needs: [check, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+      - run: diff -r hashes-linux hashes-windows && echo "Linux and Windows give the same state hashes"

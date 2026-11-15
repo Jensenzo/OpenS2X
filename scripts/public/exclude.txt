@@ -1,0 +1,17 @@
+# What the public copy leaves out or swaps (scripts/public-export.sh,
+# docs/releasing.md "The public copy"). scripts/public-check.py reads this
+# file too: on this tree it skips what the export leaves out, and checks a
+# swapped-in file in place of the one it replaces.
+#
+#   PATH | reason                 PATH is left out (a folder ends in /)
+#   TARGET <- SOURCE | reason     the export writes SOURCE to TARGET and
+#                                 leaves SOURCE out
+#
+# Left out
+specs/traces/ | recordings of the original program running (its runtime state read from its memory, 71 MB); the fidelity measure on the PC compares against them, the public copy's tests skip without them
+CLAUDE.md | the maintainer's working notes for this PC and its tools; a contributor reads README.md, CONTRIBUTING.md and docs/
+PROGRESS-LOG.md | the maintainer's log of every finished task, generated from the maintainer's notes (scripts/progress-log.py); the public changelog is the hand-written CHANGELOG.md
+docs/maintaining.md | the maintainer's own procedure (making a release on the maintainer's PC, its guards, the self-hosted CI); what a user of the crates needs is docs/releasing.md
+#
+# Swapped
+.github/workflows/ci.yml <- scripts/public/ci.yml | the working repository's CI can run on the self-hosted runner on the PC and reads the game data there (CI_RUNNER, S2_FIDELITY_GAME_DIR); the public copy runs on GitHub's hosted runners only, safe for pull requests from forks

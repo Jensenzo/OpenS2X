@@ -1,0 +1,14 @@
+name: Question
+description: A question about playing, building or the code.
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The README's "Questions" section and PLAYING.md may already answer it.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true

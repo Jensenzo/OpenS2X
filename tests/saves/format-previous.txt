@@ -1,0 +1,1068 @@
+save format 2, world format 74
+s2_ai::AiSystem
+    counter: u64
+    players: seq<Option<s2_ai::player::AiPlayer>>
+    military: seq<s2_ai::maps::MilitaryMap>
+s2_ai::cells::Cell
+    pos: (u32, u32)
+    buildings: seq<(u32, u32)>
+    forester: Option<(u32, u32)>
+    hunter: Option<(u32, u32)>
+    full: map<u32, s2_ai::cells::FullMark>
+    depot_wanted: Option<u64>
+    crowded: Option<(u64, u32)>
+    clearing: Option<(u64, s2_sim::placement::BuildingSize)>
+    harbour_wanted: Option<u64>
+    position: Option<(u32, u32)>
+    landmass: i32
+s2_ai::cells::Cells
+    cols: u32
+    rows: u32
+    cells: map<(u32, u32), s2_ai::cells::Cell>
+    order: seq<(u32, u32)>
+    cursor: u32
+    made: u32
+s2_ai::cells::FullMark
+    time: f32
+    count: u32
+    active: bool
+s2_ai::config::Mode
+    0 Safe
+    1 Normal
+    2 Aggressive
+s2_ai::config::Profile
+    mode: s2_ai::config::Mode
+    start_sawmills: u32
+    max_smithies: u32
+    max_mints: u32
+    attack_strength: f32
+    intercepting: f32
+    street_optimizing: bool
+    route_optimizing: bool
+    catapults: bool
+    coin_arrangement: bool
+s2_ai::construction::Construction
+    slots: [Option<s2_ai::construction::Order>; 9]
+    limit: u32
+    count: u32
+    exec: Option<s2_ai::construction::Exec>
+s2_ai::construction::Exec
+    order: s2_ai::construction::Order
+    phase: s2_ai::construction::Phase
+    restarts: u32
+s2_ai::construction::Order
+    slot: s2_ai::construction::Slot
+    area: s2_ai::sites::Area
+    building: u32
+    weight: u32
+    time: f32
+    tag: s2_ai::construction::Tag
+s2_ai::construction::Phase
+    0 Taken
+    1 Scanning { f0: s2_ai::sites::Scan }
+    2 Found { f0: (u32, u32) }
+    3 Ended
+s2_ai::construction::Slot
+    0 Cell
+    1 Needs
+    2 Military
+    3 Forester
+    4 Catapult
+    5 Depot
+    6 Harbour
+    7 Ship
+    8 Hunter
+s2_ai::construction::Tag
+    0 None
+    1 Need { need: u32 }
+    2 Military { attempts: u32, level: i32, cell: (u32, u32), source: s2_ai::expansion::Source }
+s2_ai::expansion::Expansion
+    pending: [Option<s2_ai::expansion::Target>; 4]
+    current: Option<(s2_ai::expansion::Source, s2_ai::expansion::Target)>
+    taken: Option<(s2_ai::expansion::Source, s2_ai::expansion::Target)>
+    remembered: bool
+s2_ai::expansion::Kind
+    0 Position
+    1 Crowded
+    2 Anywhere
+s2_ai::expansion::Source
+    0 WaitingNeed
+    1 Attack
+    2 Crowded
+    3 Anywhere
+s2_ai::expansion::Target
+    kind: s2_ai::expansion::Kind
+    at: (u32, u32)
+    since: u64
+s2_ai::maps::MilCell
+    threat: i64
+    threat_building: i64
+    score: i64
+s2_ai::maps::MilitaryMap
+    cols: u32
+    rows: u32
+    cells: seq<s2_ai::maps::MilCell>
+    cursor: u32
+s2_ai::maps::TerritoryCell
+    penalty: f32
+    result: f32
+    catapults: u32
+    attempts: f32
+s2_ai::maps::TerritoryMap
+    cols: u32
+    rows: u32
+    cells: seq<s2_ai::maps::TerritoryCell>
+s2_ai::military::Attack
+    target: Option<((u32, u32), (u32, u32))>
+s2_ai::military::CatapultScan
+    cursor: u32
+    best: Option<(f32, (u32, u32))>
+s2_ai::military::Gate
+    t0: f32
+    k: u32
+s2_ai::plan::Need
+    id: u32
+    good: u32
+    consumer: Option<(u32, u32)>
+    cell: Option<(u32, u32)>
+    square: Option<((u32, u32), u8)>
+    production: Option<u32>
+    waiting: bool
+    food: Option<u32>
+    created: f32
+    tied: u32
+    again: bool
+s2_ai::plan::Plan
+    needs: seq<s2_ai::plan::Need>
+    prods: seq<s2_ai::plan::Production>
+    next_id: u32
+    made: u32
+    waiting: seq<u32>
+    ties: u32
+s2_ai::plan::Production
+    id: u32
+    good: u32
+    cell: (u32, u32)
+    building: Option<(u32, u32)>
+    need: Option<u32>
+s2_ai::player::AiPlayer
+    id: s2_sim::PlayerId
+    profile_number: u8
+    profile: s2_ai::config::Profile
+    home: (u32, u32)
+    home_landmass: i32
+    conquered: seq<i32>
+    attempts: map<(u32, u32), u32>
+    active: bool
+    cells: s2_ai::cells::Cells
+    records: map<(u32, u32), s2_ai::player::BuildingRec>
+    territory: s2_ai::maps::TerritoryMap
+    resources: s2_ai::resources::ResourceMap
+    plan: s2_ai::plan::Plan
+    build: s2_ai::construction::Construction
+    expansion: s2_ai::expansion::Expansion
+    street: s2_ai::roads::Street
+    econ: s2_ai::view::Economy
+    stock_updates: u64
+    next_stock: Option<map<u32, u32>>
+    next_moving: Option<map<u32, u32>>
+    need_stage: u8
+    stock_check: u32
+    statistic: (u64, u32)
+    forester_index: usize
+    hunter_index: usize
+    pit_cursor: u32
+    destruction_cursor: u32
+    flag_cursor: u32
+    control_cursor: usize
+    locksmith_last: usize
+    military_cooldown: u32
+    settings_countdown: u32
+    attack: s2_ai::military::Attack
+    catapult_scan: s2_ai::military::CatapultScan
+    goods_step: u32
+    weapon_gate: s2_ai::military::Gate
+    coin_gate: s2_ai::military::Gate
+    upgrade_cursor: u32
+    prenumbered: map<(u32, u32), u32>
+s2_ai::player::BuildingRec
+    at: (u32, u32)
+    building_type: u32
+    serial: u32
+    cell: (u32, u32)
+    protect: s2_ai::player::Protect
+    category: s2_ai::player::Category
+    catapult: bool
+s2_ai::player::Category
+    0 Depot
+    1 Ordinary
+    2 Planter
+    3 Military
+    4 Harbour
+s2_ai::player::Protect
+    military: bool
+    depot: bool
+    planting: bool
+    harbour: bool
+s2_ai::resources::Entry
+    good: u32
+    kind: u8
+    landmass: i32
+    amount: u32
+s2_ai::resources::ResourceMap
+    cols: u32
+    rows: u32
+    squares: seq<seq<s2_ai::resources::Entry>>
+    cursor: u32
+    coordinates: seq<seq<s2_ai::resources::Entry>>
+    coordinate_cursor: u32
+s2_ai::roads::FlagWork
+    flag: (u32, u32)
+    excluded: seq<(u32, u32)>
+    give_ups: u32
+    target: Option<(u32, u32)>
+    attempts: u32
+    best: u8
+    length: u32
+    length2: u32
+    waypoint: Option<(u32, u32)>
+    cut: Option<((u32, u32), (u32, u32))>
+s2_ai::roads::RouteWork
+    cursor: u32
+    current: Option<(u32, u32)>
+    k: u32
+    i: usize
+    t: u32
+    w: usize
+    x: seq<(u32, u32)>
+s2_ai::roads::Street
+    cursor: usize
+    work: Option<s2_ai::roads::FlagWork>
+    optimizer_cursor: usize
+    route: s2_ai::roads::RouteWork
+s2_ai::sites::Area
+    0 Cell { f0: (u32, u32) }
+    1 Point { at: (u32, u32), radius: u32 }
+s2_ai::sites::Scan
+    area: s2_ai::sites::Area
+    building: u32
+    fields: seq<(u32, u32)>
+    next: usize
+    start: (u32, u32)
+    best: Option<(f32, (u32, u32))>
+s2_ai::view::Economy
+    stock: map<u32, u32>
+    moving: map<u32, u32>
+s2_sim::Building
+    owner: s2_sim::PlayerId
+    building_type: u32
+    size: s2_sim::placement::BuildingSize
+    at: (u32, u32)
+    under_construction: bool
+    serial: u32
+    workers: u32
+    timer: u32
+    active: bool
+    productivity: i32
+    productivity_bits: u32
+    production: s2_sim::workshop::Production
+s2_sim::PlayerId
+    0: u8
+s2_sim::Road
+    owner: s2_sim::PlayerId
+    number: u32
+    path: seq<(u32, u32)>
+    carrier: Option<usize>
+    donkey: Option<usize>
+    length: u32
+    traffic: s2_sim::transport::Traffic
+    water: bool
+s2_sim::World
+    tick: u64
+    rng: s2_sim::rng::Rng
+    pending: seq<s2_sim::command::Command>
+    terrain: s2_sim::map::Terrain
+    local_player: s2_sim::PlayerId
+    owners: seq<Option<s2_sim::PlayerId>>
+    explored: seq<u8>
+    building_types: map<u32, s2_sim::placement::BuildingType>
+    flags: seq<Option<s2_sim::PlayerId>>
+    buildings: seq<Option<s2_sim::Building>>
+    building_index: seq<u32>
+    streets: seq<Option<usize>>
+    roads: seq<Option<s2_sim::Road>>
+    placement: seq<s2_sim::placement::Placement>
+    results: seq<s2_sim::command::CommandResult>
+    late: seq<s2_sim::command::CommandResult>
+    settings: s2_sim::rules::Settings
+    priorities: map<u32, i64>
+    ranks: map<s2_sim::PlayerId, map<u32, i64>>
+    distribution: seq<s2_sim::distribution::DistributionRules>
+    tables: map<s2_sim::PlayerId, seq<seq<s2_sim::distribution::DistEntry>>>
+    construction: Option<u32>
+    wares: seq<Option<s2_sim::transport::Ware>>
+    flag_wares: map<(u32, u32), seq<usize>>
+    next_join: u64
+    next_free: u64
+    route_store: s2_sim::transport::RouteStore
+    held_joins: map<u32, u64>
+    orders_due: seq<s2_sim::requests::Target>
+    flag_reserved: map<(u32, u32), u32>
+    flag_bar: map<(u32, u32), i64>
+    players: seq<s2_sim::PlayerId>
+    carriers: seq<s2_sim::transport::Carrier>
+    warehouses: map<(u32, u32), s2_sim::requests::Warehouse>
+    sites: map<(u32, u32), s2_sim::construction::ConstructionSite>
+    upgrades: map<(u32, u32), u32>
+    builder_links: map<(u32, u32), u64>
+    headquarters: Option<u32>
+    start_stock: seq<(u32, u32)>
+    plank: Option<u32>
+    stone: Option<u32>
+    goods: map<u32, s2_sim::rules::GoodRules>
+    recipes @67: map<u32, seq<(u32, u32)>>
+    roles: s2_sim::rules::Roles
+    tribes: map<s2_sim::PlayerId, u8>
+    next_object: u32
+    settlers: seq<Option<s2_sim::settlers::Settler>>
+    queue: seq<s2_sim::requests::Request>
+    queue_cursor: usize
+    orders: seq<s2_sim::requests::Order>
+    orders_made: u64
+    order_groups: map<s2_sim::PlayerId, seq<u32>>
+    messages: seq<s2_sim::requests::Message>
+    deposits: map<(u32, u32), s2_sim::production::Deposit>
+    deposit_kinds: map<u32, s2_sim::production::DepositKind>
+    tree_families: seq<seq<u32>>
+    default_tree: Option<u32>
+    mine_food: seq<u32>
+    tool_slots: seq<u32>
+    tools_group: Option<u32>
+    tool_priorities: map<s2_sim::PlayerId, s2_sim::workshop::ToolPriorities>
+    resources: seq<Option<s2_sim::workshop::FieldResource>>
+    ore_fields: map<(u32, u32), (u32, u32)>
+    ground: seq<s2_sim::production::Ground>
+    targets: map<(u32, u32), (u32, u32)>
+    removal_timers: map<(u32, u32), u64>
+    decorations_cleared: seq<(u32, u32)>
+    doodads_removed @71: map<(u32, u32), u8>
+    linked_home @73: map<u32, s2_sim::requests::Target>
+    field_marks: map<(u32, u32), u32>
+    mark_movers: map<u32, ((u32, u32), bool)>
+    inputs: map<(u32, u32), seq<(u32, u32)>>
+    deposit_version: u64
+    military: map<(u32, u32), s2_sim::military::MilitaryBuilding>
+    military_rules: s2_sim::military::MilitaryRules
+    military_timers: s2_sim::military::Timers
+    military_settings: map<s2_sim::PlayerId, s2_sim::military::MilitarySettings>
+    ruins: seq<s2_sim::conquest::Ruin>
+    catapults: map<(u32, u32), s2_sim::conquest::Catapult>
+    kills: map<s2_sim::PlayerId, u32>
+    attackers: seq<s2_sim::combat::AttackRecord>
+    teams: map<s2_sim::PlayerId, i8>
+    contacts: seq<(u8, u8)>
+    flag_order: seq<(u32, u32)>
+    routes: map<s2_sim::PlayerId, s2_sim::route::Route>
+    animals: seq<Option<s2_sim::hunting::Animal>>
+    animal_kinds: map<u32, s2_sim::hunting::AnimalKind>
+    animal_top: i32
+    respawn: s2_sim::hunting::Respawn
+    game_time: u32
+    hunted: map<(u32, u32), usize>
+    search_timers: map<(u32, u32), u32>
+    fish_fields: map<(u32, u32), (u32, u32)>
+    ships: seq<s2_sim::hunting::Ship>
+    harbours: seq<s2_sim::navy::Harbour>
+    harbour_spots: seq<(u32, u32)>
+    regions: seq<u32>
+    continents: seq<i32>
+    land_spots: map<i32, seq<(u32, u32)>>
+    ship_rules: s2_sim::rules::ShipRules
+    fishing_distance: u32
+    specialist_rules: s2_sim::specialists::SpecialistRules
+    next_order: u32
+    signs: map<(u32, u32), s2_sim::specialists::Sign>
+    statistics: map<s2_sim::PlayerId, s2_sim::statistics::PlayerStatistics>
+    mission: Option<s2_sim::mission::Mission>
+    mission_events: seq<s2_sim::mission::MissionEvent>
+    sample_phase @68: u64
+    productivity_phase @68: u64
+    explorations @68: u64
+    ledger: s2_sim::ledger::Ledger
+    route_topology: ()
+s2_sim::combat::AttackRecord
+    soldier: usize
+    target: s2_sim::requests::Target
+    counter: u32
+    field: Option<(u32, u32)>
+    opponent: Option<usize>
+    hit: bool
+    offset @74: Option<s2_sim::combat::OffsetStep>
+s2_sim::combat::AttackStep
+    0 Leaving
+    1 Walking
+    2 Waiting
+    3 Home
+s2_sim::combat::DefendStep
+    0 Leaving
+    1 Out
+    2 Waiting
+    3 Back
+s2_sim::combat::OffsetStep
+    walk: s2_sim::movement::LatticeWalk
+    back: bool
+s2_sim::command::Command
+    0 Noop { player: s2_sim::PlayerId }
+    1 PlaceFlag { player: s2_sim::PlayerId, at: (u32, u32) }
+    2 BuildRoad { player: s2_sim::PlayerId, from: (u32, u32), to: (u32, u32) }
+    3 PlaceBuilding { player: s2_sim::PlayerId, building: u32, at: (u32, u32) }
+    4 BuildWaterway { player: s2_sim::PlayerId, from: (u32, u32), to: (u32, u32) }
+    5 StartRoute { player: s2_sim::PlayerId, at: (u32, u32), waterway: bool }
+    6 ExtendRoute { player: s2_sim::PlayerId, to: (u32, u32) }
+    7 CancelRoute { player: s2_sim::PlayerId }
+    8 RemoveBuilding { player: s2_sim::PlayerId, at: (u32, u32) }
+    9 UpgradeBuilding { player: s2_sim::PlayerId, at: (u32, u32) }
+    10 RemoveRoad { player: s2_sim::PlayerId, at: (u32, u32) }
+    11 RemoveFlag { player: s2_sim::PlayerId, at: (u32, u32) }
+    12 ExpeditionStart { player: s2_sim::PlayerId, at: (u32, u32) }
+    13 ExpeditionStop { player: s2_sim::PlayerId, ship: u32 }
+    14 ExpeditionBuildHarbor { player: s2_sim::PlayerId, ship: u32 }
+    15 ExpeditionGo { player: s2_sim::PlayerId, ship: u32, direction: u8 }
+    16 DropWare { player: s2_sim::PlayerId, good: u32, at: (u32, u32), destination: (u32, u32) }
+    17 ProductionToggle { player: s2_sim::PlayerId, at: (u32, u32) }
+    18 ProductionSwitch { player: s2_sim::PlayerId, at: (u32, u32) }
+    19 ToolWeight { player: s2_sim::PlayerId, slot: u8, per_mille: u32 }
+    20 ToolExclusive { player: s2_sim::PlayerId, slot: u8 }
+    21 ToolClearExclusive { player: s2_sim::PlayerId }
+    22 ToolReset { player: s2_sim::PlayerId }
+    23 WarehouseCycle { player: s2_sim::PlayerId, at: (u32, u32), good: u32 }
+    24 WarehouseToggle { player: s2_sim::PlayerId, at: (u32, u32), good: u32, stop: bool }
+    25 WarehouseSet { player: s2_sim::PlayerId, at: (u32, u32), good: u32, stop: bool, on: bool }
+    26 WarehouseAll { player: s2_sim::PlayerId, at: (u32, u32), mode: u8, settlers: bool }
+    27 DistributionWeight { player: s2_sim::PlayerId, table: u8, entry: u8, thousandths: u32 }
+    28 DistributionReset { player: s2_sim::PlayerId, table: u8 }
+    29 PriorityMove { player: s2_sim::PlayerId, from: i64, to: i64 }
+    30 PriorityReset { player: s2_sim::PlayerId }
+    31 MilitaryAllocation { player: s2_sim::PlayerId, class: u8, thousandths: u32 }
+    32 MilitaryAttackStrength { player: s2_sim::PlayerId, thousandths: u32 }
+    33 MilitaryDefenders { player: s2_sim::PlayerId, thousandths: u32 }
+    34 MilitaryDefenseType { player: s2_sim::PlayerId, strong: bool }
+    35 MilitaryReset { player: s2_sim::PlayerId }
+    36 ToggleCoinSupply { player: s2_sim::PlayerId, at: (u32, u32) }
+    37 ToggleMoveOut { player: s2_sim::PlayerId, at: (u32, u32) }
+    38 SetCastleSoldiers { player: s2_sim::PlayerId, at: (u32, u32), rank: u8, amount: u32 }
+    39 Attack { player: s2_sim::PlayerId, target: (u32, u32), count: u32, strong_first: bool }
+    40 AddGoods { player: s2_sim::PlayerId, good: u32, amount: u32 }
+    41 ClearGoods { player: s2_sim::PlayerId }
+    42 LockBuilding { player: s2_sim::PlayerId, building: u32 }
+    43 CreateBuilding { player: s2_sim::PlayerId, building: u32, at: (u32, u32), settler: Option<u32> }
+    44 CreateStreet { player: s2_sim::PlayerId, from: (u32, u32), to: (u32, u32) }
+    45 CreateShip { player: s2_sim::PlayerId, at: (u32, u32) }
+    46 NameShip { player: s2_sim::PlayerId, ship: u32, name: string }
+    47 RemoveTrigger { name: string }
+    48 Cheat { player: s2_sim::PlayerId, cheat: s2_sim::mission::Cheat }
+    49 OrderGeologist { player: s2_sim::PlayerId, at: (u32, u32) }
+    50 OrderScout { player: s2_sim::PlayerId, at: (u32, u32) }
+    51 DebugSupplySite { player: s2_sim::PlayerId, at: (u32, u32), wares: seq<(u32, u32)>, workers: bool }
+    52 PlanRoad { player: s2_sim::PlayerId, from: (u32, u32), to: (u32, u32) }
+    53 PlanBuilding { player: s2_sim::PlayerId, building: u32, at: (u32, u32), records: u32 }
+    54 TearDown { player: s2_sim::PlayerId, at: (u32, u32) }
+s2_sim::command::CommandResult
+    command: s2_sim::command::Command
+    outcome: Result<(), s2_sim::command::Rejection>
+s2_sim::command::Rejection
+    0 OutsideMap
+    1 NotOwned
+    2 NotGeneralSite
+    3 FlagTooClose
+    4 FlagFieldUnusable
+    5 TooCloseToBuilding
+    6 TooSteep
+    7 NotMiningGround
+    8 FootprintUnusable
+    9 NoWaterForHarbor
+    10 NoRoomForLargeBuilding
+    11 TooCloseToEdge
+    12 UnknownBuildingType
+    13 NoFlagAtStart
+    14 NoFlagAtTarget
+    15 SameFlag
+    16 TargetNotGeneralSite
+    17 NoRoute
+    18 NoBuilding
+    19 NotAFlag
+    20 NoRoad
+    21 NotCoast
+    22 WaterwayTooLong
+    23 RouteExists
+    24 NotAHarbour
+    25 NoSuchShip
+    26 NotOnExpedition
+    27 NoSuchDirection
+    28 NoHarbourSpot
+    29 UnknownGood
+    30 FlagFull
+    31 NotAConstructionSite
+    32 WareNotNeeded
+    33 NoSuchToolSlot
+    34 NoSuchSetting
+    35 NotMilitary
+    36 NotAnEnemy
+    37 NotUpgradable
+    38 NoSpaceToUpgrade
+    39 BuildingLocked
+    40 NoSuchTrigger
+    41 PlannedRoadTooLong
+s2_sim::conquest::Catapult
+    serial: u32
+    facing: u8
+    phase: s2_sim::conquest::CatapultPhase
+s2_sim::conquest::CatapultPhase
+    0 Idle
+    1 Searching { counter: u32 }
+    2 Turning { aim: (u32, u32), landing: (u32, u32), left: u32 }
+    3 Flying { aim: (u32, u32), landing: (u32, u32), left: u32 }
+    4 TurningBack { left: u32 }
+s2_sim::conquest::Ruin
+    at: (u32, u32)
+    owner: s2_sim::PlayerId
+    burns_until: u64
+    size: s2_sim::placement::BuildingSize
+    building_type @72: Option<u32>
+s2_sim::construction::Approach
+    0 Pending
+    1 Walking { clock: u32, back: bool, out_ticks: u32 }
+    2 Choose
+s2_sim::construction::Builder
+    number: u32
+    unit_ticks: u32
+    in_unit: bool
+    clock: u32
+    starts: [u32; 4]
+    walk: s2_sim::movement::LatticeWalk
+    at: Option<(u32, u32)>
+    approach: s2_sim::construction::Approach
+s2_sim::construction::ConstructionSite
+    size: s2_sim::placement::BuildingSize
+    levelling_needed: bool
+    levelling_bits: u32
+    level_direction: u8
+    leveller: Option<s2_sim::construction::Leveller>
+    builder: Option<s2_sim::construction::Builder>
+    frame_costs: seq<(u32, u32)>
+    costs: seq<(u32, u32)>
+    delivered: seq<(u32, u32)>
+    on_site: seq<(u32, u32)>
+    work_done: u32
+    frame_end: u32
+    work_total: u32
+    unit_ticks: u32
+    leveller_on_way: bool
+    builder_on_way: bool
+    orders_filed: bool
+s2_sim::construction::Leveller
+    number: u32
+    timer: u32
+    walker: s2_sim::movement::Walker
+s2_sim::distribution::DistEntry
+    key: u32
+    weight: u32
+    accumulator: u32
+s2_sim::distribution::DistributionRules
+    goods: seq<u32>
+    entries: seq<(u32, u32)>
+s2_sim::distribution::GoodFlags
+    stop: bool
+    out: bool
+s2_sim::hunting::Animal
+    kind: u32
+    at: (u32, u32)
+    home: (u32, u32)
+    state: s2_sim::hunting::AnimalState
+    walker: s2_sim::movement::Walker
+    hunted_by: Option<s2_sim::requests::Target>
+    registered: u64
+s2_sim::hunting::AnimalKind
+    id: u32
+    range: i32
+    move_distance: u32
+    speed: u32
+    avoid_buildings: bool
+    idle_thousandths: u32
+s2_sim::hunting::AnimalState
+    0 Waiting { left: i32 }
+    1 Choosing { ticket: i32 }
+    2 Walking { since: u32, speed: u32, idle_thousandths: u32 }
+    3 Hunted
+s2_sim::hunting::Respawn
+    accumulator: u32
+    rate: u32
+    cursor: (u32, u32)
+s2_sim::hunting::Ship
+    owner: s2_sim::PlayerId
+    at: (u32, u32)
+    water: Option<(u32, u32)>
+    frame_work: u32
+    main_work: u32
+    step_amount: Option<u32>
+    vessel: s2_sim::navy::Vessel
+    name: Option<string>
+s2_sim::ledger::Ledger
+    made: map<u32, u64>
+    used: map<u32, u64>
+s2_sim::map::Terrain
+    width: u32
+    height: u32
+    heights: seq<i32>
+    height_floor: i32
+    states: seq<u32>
+    samples: seq<i32>
+s2_sim::military::MilitaryBuilding
+    applied: bool
+    soldiers: seq<usize>
+    cooldown: u32
+    enemy_distance: i32
+    accumulator: u32
+    coin_switch: bool
+    move_out: bool
+    castle: [u32; 5]
+s2_sim::military::MilitaryRules
+    soldiers: [Option<u32>; 5]
+    max_health: [u32; 5]
+    fighting_ticks: u32
+s2_sim::military::MilitarySettings
+    allocation: [u32; 3]
+    attack: u32
+    defenders: u32
+    prefer_strong: bool
+    recruit_count: u32
+s2_sim::military::Timers
+    distance: u32
+    allocation: u32
+    recruit: u32
+    promotion: u32
+s2_sim::mission::Cheat
+    0 INeedSomeHelp
+    1 ShowMeTheWorld
+    2 GiveMeSomeMore
+s2_sim::mission::LossReason
+    0 CastleDestroyed
+    1 MissionNotCompleted
+s2_sim::mission::Mission
+    target: u8
+    triggers: seq<s2_sim::mission::Trigger>
+    outcomes: map<s2_sim::PlayerId, s2_sim::mission::Outcome>
+    locks: seq<(s2_sim::PlayerId, u32)>
+    completed: Option<u8>
+s2_sim::mission::MissionEvent
+    0 Lost { player: s2_sim::PlayerId, reason: s2_sim::mission::LossReason }
+    1 Won { player: s2_sim::PlayerId }
+    2 Completed { value: u8 }
+s2_sim::mission::Outcome
+    0 Won { tick: u64 }
+    1 Lost { tick: u64, reason: s2_sim::mission::LossReason }
+s2_sim::mission::Trigger
+    kind: s2_sim::mission::TriggerKind
+    field: (u32, u32)
+    player: s2_sim::PlayerId
+    name: string
+    active: bool
+    timer: u32
+s2_sim::mission::TriggerKind
+    0 Explored
+    1 Territory
+    2 Victory
+s2_sim::movement::LatticeWalk
+    from: (u32, u32)
+    to: (u32, u32)
+    done: u32
+    progress_bits: u32
+    rate_bits: u32
+s2_sim::movement::Walker
+    at: (u32, u32)
+    next: Option<(u32, u32)>
+    progress_bits: u32
+    rate_bits: u32
+    path: seq<(u32, u32)>
+    held: bool
+    pauses: seq<(u32, u32)>
+    road_to: Option<(u32, u32)>
+s2_sim::navy::Cargo
+    destination: (u32, u32)
+    goods: seq<(u32, u32)>
+s2_sim::navy::Dock
+    field: (u32, u32)
+    reserved: Option<usize>
+    docked: Option<usize>
+s2_sim::navy::ExpeditionState
+    0 Inactive
+    1 Gathering
+    2 GettingShip
+    3 WaitingForShip { f0: usize }
+s2_sim::navy::Harbour
+    at: (u32, u32)
+    docks: seq<s2_sim::navy::Dock>
+    counter: u32
+    needs: seq<s2_sim::navy::Need>
+    transfers: seq<s2_sim::navy::Transfer>
+    called: Option<usize>
+    expedition: s2_sim::navy::ExpeditionState
+    expedition_counter: u32
+    aside: seq<(u32, u32)>
+    builder_aside: bool
+s2_sim::navy::Landing
+    spot: (u32, u32)
+    field: (u32, u32)
+s2_sim::navy::Need
+    good: u32
+    count: u32
+    supplier: Option<(u32, u32)>
+    asked: seq<(u32, u32)>
+s2_sim::navy::ShipState
+    0 Idle
+    1 Search
+    2 ToHarbour
+    3 Docked
+    4 Waiting
+    5 Sailing
+    6 Unloading
+    7 MakingRoom
+    8 Returning
+s2_sim::navy::Transfer
+    good: u32
+    count: u32
+    destination: (u32, u32)
+s2_sim::navy::Vessel
+    launched: bool
+    state: s2_sim::navy::ShipState
+    counter: u32
+    walker: s2_sim::movement::Walker
+    harbour: Option<(u32, u32)>
+    called: Option<(u32, u32)>
+    port: Option<(u32, u32)>
+    cargo: seq<s2_sim::navy::Cargo>
+    expedition: bool
+    aboard: seq<(u32, u32)>
+    target: Option<s2_sim::navy::Landing>
+    options: [Option<s2_sim::navy::Landing>; 6]
+s2_sim::placement::BuildingSize
+    0 Small
+    1 Medium
+    2 Large
+    3 Mine
+    4 Harbor
+s2_sim::placement::BuildingType
+    id: u32
+    size: s2_sim::placement::BuildingSize
+    frame_costs: seq<(u32, u32)>
+    costs: seq<(u32, u32)>
+    territory_range: u32
+    explore_radius: u32
+    soldier_limit: u32
+    worker: Option<u32>
+    worker_limit: u32
+    warehouse: bool
+    instant: bool
+    product: Option<u32>
+    production_ticks: u32
+    stock_limit: Option<u32>
+    working_radius: u32
+    cycle: s2_sim::production::WorkCycle
+    second_product: Option<u32>
+    switchable: bool
+    catapult: bool
+    planting_good: Option<u32>
+    spawn: bool
+    construction_positions: [[(i32, i32); 4]; 3]
+    upgrade_to: Option<u32>
+    doors: [Option<u8>; 3]
+s2_sim::placement::Placement
+    0 Nothing
+    1 Flag
+    2 Small
+    3 Medium
+    4 Large
+    5 Mine
+    6 Harbor
+s2_sim::production::Deposit
+    kind: u32
+    position: (u32, u32)
+    state: s2_sim::production::DepositState
+    reserved_by: Option<s2_sim::requests::Target>
+    life_left: Option<u32>
+s2_sim::production::DepositKind
+    id: u32
+    good: Option<u32>
+    next: Option<u32>
+    elevation: u32
+    grow_ticks: u32
+    blocking: bool
+    life_time: Option<u32>
+    needs_plantable: bool
+    random_offset: bool
+s2_sim::production::DepositState
+    0 Sapling
+    1 Growing { ripe_at: u64 }
+    2 Removing { since: u64, gone_at: u64 }
+s2_sim::production::Ground
+    plantable: bool
+    for_planting: bool
+    tree_type: Option<u8>
+s2_sim::production::Work
+    0 Begin
+    1 WaitInputs
+    2 Off
+    3 Working
+    4 Take { second: bool }
+    5 WaitRoom { score: i64 }
+    6 WaitTarget { countdown: u32 }
+    7 WaitSpot { countdown: u32 }
+    8 FishRetry
+    9 WaitShip { countdown: u32 }
+    10 Donkey
+    11 OutNext { spot: (u32, u32) }
+    12 Out { spot: Option<(u32, u32)> }
+    13 ToSpot { spot: (u32, u32) }
+    14 Approach { spot: (u32, u32) }
+    15 AtSpot { spot: (u32, u32) }
+    16 TakeWare { second: bool, stand: Option<(u32, u32)> }
+    17 StandBack { stand: Option<(u32, u32)>, score: i64 }
+    18 Return { stand: (u32, u32), score: i64 }
+    19 WaitBack { score: i64 }
+    20 Back { score: i64 }
+    21 AtFlag
+    22 WaitFlag
+    23 PutDown { second: bool }
+    24 In
+    25 StepIn
+    26 Rest
+    27 AtShip { spot: (u32, u32), phase: u8 }
+s2_sim::production::WorkCycle
+    0 None
+    1 Workshop
+    2 Mine
+    3 Gatherer
+    4 Forester
+    5 Farm
+    6 Fisher
+    7 Hunter
+    8 DonkeyFarm
+    9 Shipyard
+s2_sim::requests::Message
+    tick: u64
+    player: s2_sim::PlayerId
+    at: (u32, u32)
+    text: string
+    until: u64
+    building: Option<u32>
+s2_sim::requests::Order
+    player: s2_sim::PlayerId
+    good: u32
+    target: s2_sim::requests::Target
+    stamp: u64
+    made: u64
+s2_sim::requests::Request
+    player: s2_sim::PlayerId
+    requester: s2_sim::requests::Requester
+    profession: u32
+s2_sim::requests::Requester
+    0 Road { f0: usize }
+    1 Site { f0: s2_sim::requests::Target }
+    2 Building { f0: s2_sim::requests::Target }
+    3 Military { f0: s2_sim::requests::Target }
+    4 Harbour { f0: s2_sim::requests::Target }
+    5 Specialist { flag: (u32, u32), order: u32 }
+    6 Unlinked
+s2_sim::requests::Target
+    at: (u32, u32)
+    serial: u32
+    storage: bool
+s2_sim::requests::Warehouse
+    stock: seq<(u32, u32)>
+    cooldown: u32
+    flags: map<i32, s2_sim::distribution::GoodFlags>
+s2_sim::rng::Rng
+    state: u32
+    seed: u32
+    draws: u64
+s2_sim::route::Route
+    fields: seq<(u32, u32)>
+    water: bool
+    marked: seq<bool>
+s2_sim::rules::GoodKind
+    0 Other
+    1 Ware
+    2 Settler
+    3 Group
+s2_sim::rules::GoodRules
+    costs: seq<(u32, u32)>
+    rest_ticks: u32
+    gathered: bool
+    resource: bool
+    kind: s2_sim::rules::GoodKind
+    production_counter @66: Option<u8>
+s2_sim::rules::Roles
+    helper: Option<u32>
+    builder: Option<u32>
+    leveller: Option<u32>
+    donkey: Option<u32>
+    coin: Option<u32>
+    boat_carrier: Option<u32>
+s2_sim::rules::Settings
+    settler_speed: u32
+    pickup_ticks: u32
+    drop_ticks: u32
+    flag_package_limit: u32
+    bulldoze_ticks: u32
+    construct_ticks: u32
+    fishing_distance: u32
+    catapult_turn_ticks: u32
+    catapult_flight_ticks: u32
+s2_sim::rules::ShipRules
+    speed: u32
+    stock_limit: u32
+    frame_planks: u32
+    main_planks: u32
+    construct_ticks: u32
+s2_sim::settlers::CarryOutStep
+    0 Door { score: i64 }
+    1 Admitted
+    2 Out
+    3 PutDown
+    4 Pickup
+    5 Stand
+    6 Back
+    7 In
+s2_sim::settlers::LeavingStep
+    0 Wait
+    1 Finish
+    2 Search
+    3 ToFlag
+    4 Out { from: (u32, u32) }
+    5 StepOut
+    6 Through { walk: s2_sim::movement::LatticeWalk, home: bool }
+    7 Wander { tries: u8 }
+    8 Retry { tries: u8 }
+s2_sim::settlers::ReleasedStep
+    0 Unnoticed { walking: bool, to_road: bool }
+    1 Finishing
+    2 Standing
+    3 ToFlag
+s2_sim::settlers::Settler
+    number: u32
+    player: s2_sim::PlayerId
+    profession: u32
+    list: s2_sim::settlers::SettlerList
+    walker: s2_sim::movement::Walker
+    job: s2_sim::settlers::SettlerJob
+    timer: u32
+    carrying: Option<u32>
+s2_sim::settlers::SettlerJob
+    0 ToSite { target: s2_sim::requests::Target, builder: bool }
+    1 ToBuilding { target: s2_sim::requests::Target }
+    2 Worker { target: s2_sim::requests::Target, work: s2_sim::production::Work }
+    3 Home { target: s2_sim::requests::Target }
+    4 ToMilitary { target: s2_sim::requests::Target, health: u32 }
+    5 Garrison { target: s2_sim::requests::Target, health: u32, heal: u32 }
+    6 Attack { home: s2_sim::requests::Target, health: u32, step: s2_sim::combat::AttackStep }
+    7 Defend { home: s2_sim::requests::Target, health: u32, step: s2_sim::combat::DefendStep, opponent: Option<usize>, intercept: bool }
+    8 Specialist { flag: (u32, u32), spots_left: u8, step: s2_sim::specialists::SpecialistStep }
+    9 CarryOut { warehouse: s2_sim::requests::Target, destination: Option<(u32, u32)>, target: Option<s2_sim::requests::Target>, order: Option<s2_sim::requests::Order>, step: s2_sim::settlers::CarryOutStep }
+    10 Dying
+    11 Released { carrier: usize, step: s2_sim::settlers::ReleasedStep }
+    12 Leaving { step: s2_sim::settlers::LeavingStep, at: u64, stand: Option<(u32, u32)>, health @70: Option<u32> }
+s2_sim::settlers::SettlerList
+    0 Workers
+    1 Constructors
+    2 Carriers
+    3 Levellers
+    4 Soldiers
+    5 Specialists
+s2_sim::specialists::Sign
+    doodad: u32
+    good: Option<u32>
+    amount: u32
+    gone_at: Option<u64>
+s2_sim::specialists::SignRule
+    good: Option<u32>
+    threshold: u32
+    doodad: u32
+    life_time: Option<u32>
+s2_sim::specialists::SpecialistRules
+    geologist: Option<u32>
+    scout: Option<u32>
+    water: Option<u32>
+    signs: seq<s2_sim::specialists::SignRule>
+    found: seq<(u32, string)>
+s2_sim::specialists::SpecialistStep
+    0 ToFlag
+    1 ToSpot { spot: (u32, u32) }
+    2 Work { spot: (u32, u32) }
+    3 Return { flag: (u32, u32) }
+s2_sim::statistics::PlayerStatistics
+    series: [seq<u32>; 8]
+    production @66: [seq<u32>; 14]
+    coins @66: u32
+    frags @66: u32
+s2_sim::transport::Carrier
+    number: u32
+    road: usize
+    donkey: bool
+    walker: s2_sim::movement::Walker
+    ware: Option<usize>
+    task: s2_sim::transport::CarrierTask
+    fresh: bool
+    bound: Option<usize>
+s2_sim::transport::CarrierTask
+    0 Idle
+    1 Fetch { ware: usize, flag: (u32, u32) }
+    2 PickUp { ware: usize, ends: u64, second: bool }
+    3 Carry { to: (u32, u32), entry: s2_sim::transport::Entry }
+    4 PutDown { at: (u32, u32), ends: u64, second: bool, exchange: Option<usize>, bid: bool }
+    5 Arrive { flag: (u32, u32), stand: bool }
+    6 Deliver { flag: (u32, u32), back: bool }
+    7 Inside { flag: (u32, u32), waits: bool }
+    8 Retired
+    9 Out { flag: (u32, u32) }
+    10 Stop { at: (u32, u32), exchange: Option<usize> }
+s2_sim::transport::Entry
+    0 Open { stop: bool }
+    1 Building
+    2 Exchange { f0: usize }
+    3 Reserved
+s2_sim::transport::RouteStore
+    ware: map<s2_sim::PlayerId, map<((u32, u32), (u32, u32)), Option<u32>>>
+    renumberings: map<s2_sim::PlayerId, u32>
+s2_sim::transport::Traffic
+    ticks: u32
+    transport_count: u32
+    average_bits: u32
+    donkey_requested: bool
+s2_sim::transport::Ware
+    good: u32
+    destination: Option<(u32, u32)>
+    target: Option<s2_sim::requests::Target>
+    location: s2_sim::transport::WareLocation
+    claimed_by: Option<usize>
+    recheck: u32
+    wait_score: i64
+    stranded: bool
+    next: Option<(u32, u32)>
+    joined: u64
+    order: Option<s2_sim::requests::Order>
+    next_after: Option<((u32, u32), u32, Option<(u32, u32)>)>
+    free_place: Option<u64>
+s2_sim::transport::WareLocation
+    0 Flag { f0: (u32, u32) }
+    1 Carried { f0: usize }
+s2_sim::workshop::FieldResource
+    good: u32
+    amount: u8
+s2_sim::workshop::Production
+    enabled: bool
+    switched: bool
+    count: u32
+s2_sim::workshop::ToolPriorities
+    weights: [u32; 12]
+    accumulators: [u32; 12]
+    exclusive: Option<u8>

@@ -1,0 +1,29 @@
+/target
+/screens/
+**/*.rs.bk
+
+# Never commit original game data or analysis output
+/game/
+*.exe
+*.dll
+*.bin
+*.hop
+*.gpr
+*.rep/
+evidence/
+snapshots/
+
+.env
+.DS_Store
+Thumbs.db
+
+# Screenshot dumps (the viewer writes to screens/ by default) and any stray game assets
+/screens*/
+screens/
+*.s2m
+*.gr2
+*.dds
+*.rc00
+# Golden images show the original game's art: kept on the PC, not in git;
+# their SHA-256 are in tests/golden/images/MANIFEST.
+tests/golden/images/*.png

@@ -1,0 +1,9 @@
+[package]
+name = "s2-assets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+s2-sim = { path = "../sim" }

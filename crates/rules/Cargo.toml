@@ -1,0 +1,13 @@
+[package]
+name = "s2-rules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+s2-assets = { path = "../assets" }
+s2-sim = { path = "../sim" }
+# The property scripts were written for Lua 5.0; 5.1 is the closest version
+# mlua supports. Vendored so the Windows cross-build needs no system Lua.
+mlua = { version = "=0.12.2", features = ["lua51", "vendored"] }

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Playing the game
+    url: https://github.com/Jensenzo/OpenS2X/blob/main/PLAYING.md
+    about: Menus, keys, saving and loading, the campaign, and what is not there yet.
+  - name: A security problem
+    url: https://github.com/Jensenzo/OpenS2X/security/advisories/new
+    about: Report it privately, not as an issue (SECURITY.md).

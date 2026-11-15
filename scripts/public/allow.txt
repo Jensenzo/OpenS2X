@@ -1,0 +1,48 @@
+# Allowed exceptions of scripts/public-check.py: what matches a pattern but
+# is ours and may be public. One per line:
+#
+#   kind | path | pattern | reason
+#
+# kind and path are globs (fnmatch); pattern is a regular expression searched
+# in the matched text (for a whole-file kind such as picture: in the path).
+# Keep each as narrow as it can be; say why it is not what the kind is about.
+#
+# The check's own description of what it looks for
+* | scripts/public-check.py | . | the check names the patterns it looks for
+* | scripts/public/allow.txt | . | this list
+#
+# Our constants that look like addresses or offsets
+address | crates/assets/tests/savegames.rs | ^0x6b6180$ | the decoded length of a save in bytes (FMT-SAV T5), not an address
+address | crates/viewer/src/world/scene3d/tests.rs | ^0x4B746F$ | a mask of the road flag hash (GFX-OBJ-1.4), not an address
+offset | crates/assets/src/cfg.rs | ^\+0x3c$ | the place of a field in the player's settings file (SET-4), a file format, not memory
+address | specs/GFX-objects.md | ^0x4B746F$ | a mask of the road flag hash (GFX-OBJ-1.4), not an address
+address | specs/FMT-savegame.md | ^0x(6b6180|4eb680|4ccb5a|4f4e5b|51084b)$ | the decoded length of a save (FMT-SAV T1, T5) and places in a decoded save (T2, T9), in bytes, not addresses
+#
+# Names of the maintainer's folders as overridable defaults, without a user
+private | scripts/*.sh | ^(s2-tracker|s2trace/)$ | the default progress log, metrics and recording flag of the maintainer's PC; S2_PROGRESS_LOG, an argument and S2_RECORDING_FLAG override them
+private | scripts/progress-log.py | ^s2-tracker$ | the default progress log; S2_PROGRESS_LOG overrides it
+private | docs/*.md | ^(s2-tracker|s2trace\\)$ | the docs say where the maintainer's tools keep the progress log and the recording flag
+#
+# E-mail addresses that are no one's
+local | * | ^noreply@ | GitHub's and the tools' no-reply addresses
+local | * | @example\.(com|org)$ | documentation's example domains
+#
+# The maintainer's private repositories, named to be refused
+repository | crates/app/tests/public_check.rs | . | the check's own tests name the private repositories to see them refused, and to see the changelog drop their owner
+#
+# The README's pictures, drawn by our own tools from a game the program played
+# (the screenshots show the original's art from the maintainer's own copy;
+# publishing them is the maintainer's decision, said in the README's notice); each named
+# alone, so a picture anywhere else is still refused
+picture | docs/images/town.jpg | . | the README's hero picture: a town in OpenS2X
+picture | docs/images/coast.jpg | . | the README's picture of a coast by a town
+picture | docs/images/windows.jpg | . | the README's picture of a building window and the statistics
+picture | docs/images/side-by-side.jpg | . | the README's look comparison pair: the investigation's picture of the original beside ours, same camera and tick
+picture | docs/images/fidelity.svg | . | the README's fidelity chart, drawn by scripts/fidelity-chart.py from docs/fidelity.md (no game art)
+#
+# The working process (kind process) where it is a record, not a page to read
+process | specs/* | . | the specifications are the investigation's record: each rule cites the run, finding or observation behind it (specs/OBSERVED.md names who observed the original), so a reader can weigh its evidence
+process | crates/app/tests/public_check.rs | . | the check's own tests name the process words to see them refused
+process | crates/* | ^F\d+$ | code comments cite the play-test finding a change answered, as a rule cites its evidence; the pages a stranger reads (README, docs, the changelog) carry none
+process | LICENSE | ^Jens$ | the copyright holder's name in the licence's notice
+process | scripts/metrics.py | ^Jens$ | the specs' evidence level "observed by Jens" (specs/INVENTORY.md), which the metrics count by that name

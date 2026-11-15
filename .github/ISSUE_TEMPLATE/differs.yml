@@ -1,0 +1,35 @@
+name: Differs from the original
+description: Something looks, sounds or behaves differently from The Settlers II 10th Anniversary.
+labels: [differs]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The aim is the original exactly, so small differences count too: timing, colour, a window's layout, a computer player's choice. Screenshots of both programs at the same place help most. Please attach no game files and no decompiled code (CONTRIBUTING.md, "The clean-room rule").
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The download's name or the commit you built.
+      placeholder: "0.10.1"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What differs
+      description: What the original does, and what OpenS2X does instead.
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where
+      description: The map, mission or tutorial lesson, and where on it; or a save of either program (zip it and drag it here).
+  - type: textarea
+    id: pictures
+    attributes:
+      label: Screenshots
+      description: One of OpenS2X (F12 saves one) and one of the original, at the same place and zoom if you can.
+    validations:
+      required: true

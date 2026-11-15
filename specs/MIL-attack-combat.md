@@ -1,0 +1,384 @@
+# MIL-ATK: Attacks and combat
+
+Status: draft (read from the binary; no in-game measurement)
+Owner question(s): plan step 4.5 (chunk 1); Q-060; Q-061; Q-141; Q-1044; follows `MIL-soldiers.md` (MIL-SOL) and `MIL-coins-promotion.md` (MIL-PROM); conquest is `MIL-conquest.md` (MIL-CON)
+Game build: 11757
+
+## Summary
+
+A player attacks an enemy military building by sending soldiers from his own
+military buildings near it. Every sending building keeps at least one soldier
+at home; the attack strength setting scales how many it may send. When the
+order is given, enemy buildings near the target send interceptors that walk out
+to meet attackers, scaled by the defender's "intercepting defenders" setting.
+Attackers walk to the target and wait on a free field next to it; the target
+sends its own soldiers out one at a time to fight them. Two soldiers fight a
+duel in rounds of 17 ticks; each round one of them strikes and may take one
+health point off the other.
+
+## Rules
+
+### MIL-ATK-1 Who can attack what
+
+- **MIL-ATK-1.1 Sending buildings.** A building B of the attacking player can
+  send attackers when all hold:
+  1. B is a military building (territory range > 0) and **not** a warehouse-type
+     building (so never the headquarters, MIL-SOL-6.4);
+  2. B is finished;
+  3. no interceptors are currently out on B's behalf (MIL-ATK-3);
+  4. B and the target stand on the same land region (the region number used by
+     path finding, so not across water);
+  5. `d = dist(B, target) < 24` (MAP-GRID-2.1);
+  6. a free walking path from the target to B exists and is **shorter than
+     2 x d** steps (the free path search of `TRN-free-walk.md`);
+  7. `k = trunc((n - 1) x attackStrength) > 0`, with `n` the number of B's
+     soldiers that are present (MIL-SOL-2.4) and idle (not on an errand), and
+     `attackStrength` the player's "Attack Strength" setting (MIL-SOL-7.1).
+  B can then send `k` soldiers. So one soldier always stays home (at strength
+  1.0, `n - 1` go). Confidence: high for the conditions; medium for "region"
+  being the water-separated land area.
+- **MIL-ATK-1.2 Available attackers.** `A(target, P)` = 0 unless at least one
+  field of the ring at distance exactly `range(target) + 1` around the target
+  (the six-sided ring, MAP-GRID-2.1; fields off the map are skipped) is owned
+  by P. Otherwise `A` is the sum of `k` over all of P's buildings (MIL-ATK-1.1),
+  in any order. Confidence: high.
+- **MIL-ATK-1.3 Targets.** The attack dialog is opened on an enemy building;
+  when `A = 0` it shows "Can not attack this building!" and sends no order.
+  The order itself checks only that the target building exists. Confidence:
+  high for the `A = 0` message; medium for which building kinds open the dialog
+  (enemy military buildings, the headquarters included).
+- **MIL-ATK-1.4 Dialog count.** The dialog has four count buttons ("Low",
+  "Medium", "High", "Highest number of soldiers") setting a fraction `s` of
+  0.25, 0.5, 0.75, 1.0, and a choice "Use weak units first" / "Use strong units
+  first". The number put into the order is
+  `count = trunc(s x (A - 1) + 1.5)`, i.e. `1 + round(s x (A - 1))` with halves
+  rounded up. Button to fraction (Q-061): "Low number of soldiers" 0.25,
+  "Medium" 0.5, "High" 0.75, "Highest number of soldiers" 1.0 (each button's
+  tooltip is set right after the button in the dialog's setup). Confidence:
+  high.
+- **MIL-ATK-1.5 The order** "attack" (`attack-building`) carries the target building, `count` and
+  the strong-first flag. When executed (in the command phase of the tick,
+  ECO-REQ-0.2) `A` is computed again; if `A = 0` nothing happens, otherwise
+  `count' = min(count, A)` attackers are launched (MIL-ATK-2) and then the
+  interceptors (MIL-ATK-3). Confidence: high.
+
+### MIL-ATK-2 Choosing the attackers
+
+- **MIL-ATK-2.1 Buildings by distance.** Only P's finished non-warehouse
+  military buildings with `d < 24` take part. Distance levels are visited in
+  increasing order of `d`; at each level the buildings with that `d` are
+  visited in the world's military building list order. Each sends
+  `min(k, count' - sent so far)` soldiers (`k` of MIL-ATK-1.1; a building that
+  fails a condition of 1.1 sends 0). This stops when `count'` are sent.
+  Confidence: high.
+- **MIL-ATK-2.2 Soldiers of one building.** With "weak first" the ranks are
+  taken 0, 1, 2, 3, 4; with "strong first" 4, 3, 2, 1, 0. Within a rank, the
+  idle present soldier with the **highest health** goes first (first in the
+  building's soldier list on equal health), then the next, until the building's
+  share is sent or the rank is exhausted. Confidence: high.
+- **MIL-ATK-2.3 What sending does.** The soldier is linked to the target as
+  attacker and unlinked from its home building's soldier list (so the home
+  building counts it no longer, MIL-SOL-4.2, and may request a replacement).
+  One attacker record is made per soldier, in sending order; making it draws
+  **one random number** from the shared generator and sets the record's round
+  counter to `draw mod 2` (0 or 1, MIL-ATK-6.2). Confidence: high for the draw
+  and the link; medium for the home building counting it out at once.
+
+### MIL-ATK-3 Interceptors ("Intercepting Defenders")
+
+- **MIL-ATK-3.1 Who intercepts.** Right after the attackers are chosen, every
+  military building D of the **target's owner** (world list order) that is
+  finished, not warehouse-type, on the same land region as the target, with
+  `e = dist(D, target) < 24`, and (unless D is the target itself, `e = 0`) a
+  free path from the target to D shorter than `2 x e`, provides
+  `j = trunc((m - 1) x defendOutside)` interceptors, `m` = D's present soldiers,
+  `defendOutside` = the owner's "Intercepting Defenders" setting. D sends
+  `j - (its interceptors already out)` new ones. The target itself takes part.
+  Confidence: high.
+- **MIL-ATK-3.2 Pairing.** Each new interceptor is paired with the first
+  attacker record (record order) for this target whose soldier still stands on
+  its home building's door field and has no meeting field yet. If there is
+  none, all interception for this order stops. The interceptor is the soldier
+  of D chosen as in MIL-ATK-5.2 among soldiers that are idle (in the building
+  or waiting outside as defender) and not already intercepting. Confidence:
+  high.
+- **MIL-ATK-3.3 Meeting field.** From D's field, a breadth-first search over
+  walkable fields, limited to fields closer than 20 to D, finds the field
+  with the smallest nonzero distance to the target (first found on ties).
+  From that field a second breadth-first search finds the first **free**
+  field (MIL-ATK-4.3). Both the attacker and the interceptor get this field as
+  their meeting field. Confidence: medium (search order details in the notes).
+- **MIL-ATK-3.4** An interceptor that reaches its meeting field, or whose
+  duel has ended, waits there ("defense wait"). In each of its updates: if it
+  is paired with an attacker (again), it walks to that attacker's waiting
+  field and fights (MIL-ATK-5.3); otherwise, while the building it defends
+  still has attackers (any soldier with that building as attack target), it
+  keeps standing; when it has none, the interceptor drops its errand and
+  walks home to D. Confidence: medium-high (Q-061).
+
+### MIL-ATK-4 Walking out and lining up
+
+- **MIL-ATK-4.1 Leaving.** A soldier with an attack or interception errand
+  leaves its building only when the building's release cooldown is 0 and then
+  sets it to 40 (MIL-SOL-8.1). So one building lets out one soldier per 40
+  ticks: if the order is executed in tick c and the cooldown is 0, the
+  soldiers leave in ticks c + 1, c + 41, c + 81, ... Confidence: medium for
+  the exact ticks (a soldier switches to waiting in tick c and walks out on its
+  next update).
+- **MIL-ATK-4.2 Walk.** An attacker with a meeting field walks there (free
+  walk, `TRN-free-walk.md`); otherwise it walks to the target building's door.
+  On arriving at the door, if the target can be taken (MIL-CON-1.1) it goes
+  in (MIL-CON); otherwise it picks a waiting field (MIL-ATK-4.3), and if an
+  opponent is available (MIL-ATK-5.1) it is paired at once; it walks to the
+  waiting field and waits. Confidence: medium. **The door (2026-11-15, Q-1051; E-mil-012, code
+  reading):** the walk "to the door" ends on the field of the **target's flag** (the flag the
+  building is linked to), not on the building's field; the arrival test and the waiting-field
+  search of 4.3 run with the attacker standing there. An attacker whose record already holds a
+  field when he has walked out of his own building (a meeting field set by an interception,
+  MIL-ATK-3.3) walks straight to that field instead. Confidence: high.
+- **MIL-ATK-4.3 Free field.** A waiting field is found by breadth-first search
+  from the attacker's own field over walkable fields (the start field is
+  tested first; neighbours are taken in a fixed ring order). A field is free
+  when no other attacker's waiting field and no interceptor's meeting field is
+  that field, it is not a road field (field state bit Street, FMT-S2M-4.4) and
+  no flag stands on it. The first free field wins. Confidence: medium.
+  **In detail (2026-11-15, Q-1051; E-mil-012, code reading):** the search starts on the
+  attacker's own field, at the door that is the target's flag field (4.2); the start field is
+  tested as it is, a neighbour is **entered only when walkable**: none of the field state bits
+  Blocked, Water, ElevationBlocked, MovementBlocked, DoodadBlocked (`FMT-s2m-map.md` FMT-S2M-4.4).
+  Every field of a building's footprint carries MovementBlocked (`ECO-building-placement.md`
+  ECO-PLACE-1.5), so **no building's field, the target's or any other, is ever reached or chosen**;
+  road fields are walked through (they are walkable) but are not free. The free test itself looks
+  at: the other records' waiting and meeting fields (its own record left out), the Street bit, and
+  the flag layer only (not the buildings layer). With no free field found the attacker gets none
+  (the field stays unset). Confidence: high for the walk test, the start and what the free test
+  reads; medium for the ring order of the neighbours (the lattice walk of the map's search).
+- **MIL-ATK-4.4 Waiting.** A waiting attacker checks each tick, in this order:
+  its target is gone or no longer an attack target: it walks home; the target
+  can be taken (MIL-CON-1.1): it walks to the door; an opponent is available
+  (MIL-ATK-5.1): it is paired with it and walks to its waiting field (it may
+  already stand there). Confidence: medium.
+
+### MIL-ATK-5 Defenders coming out of the target
+
+- **MIL-ATK-5.1 Opponent.** For a waiting attacker the opponent is: first an
+  unpaired interceptor that belongs to the target itself; otherwise, if the
+  target's owner is still an enemy, a soldier of the target chosen by
+  MIL-ATK-5.2 among those that are idle and not on an errand. None: no
+  opponent. Confidence: high. **Idle means home with the walk there ended** (2026-11-14, Q-1044 c;
+  E-mil-010): a soldier still walking to the target from a warehouse (a reinforcement) is not idle
+  and is never chosen; he becomes a candidate in the update in which his walk ends at the building.
+  Nothing else about being inside is tested (the choice has no presence test of its own), and
+  nothing lets a soldier be sent out before his walk in has ended. Confidence: high (code).
+- **MIL-ATK-5.2 Which defender.** With defense type 1 ("prefer strong") the
+  candidate with the **highest rank**, on equal rank the higher health, on
+  equal both the first in the soldier list; with the other setting the
+  **lowest rank**, then the higher health. Confidence: high.
+- **MIL-ATK-5.3** The paired defender leaves the building under the cooldown
+  rule (MIL-ATK-4.1) and walks (free walk) to the **waiting field of the
+  attacker it is paired with** (the field stored in that attacker's record,
+  MIL-ATK-4.3), then stands until its movement has stopped there. Its duel
+  starts when both stand (MIL-ATK-6.1). Confidence: high for the target
+  field (Q-061).
+- **MIL-ATK-5.4 Headquarters.** The headquarters' defenders are its soldiers
+  outside the stock (MIL-SOL-6.1); when it has attackers and no soldier is
+  present it brings out one per rank from the stock (MIL-SOL-6.3).
+  Confidence: high (rule from MIL-SOL).
+
+### MIL-ATK-6 The duel
+
+- **MIL-ATK-6.1 Start.** A duel starts when both soldiers of a pair have
+  arrived at the shared field. When either arrives, the target's owner gets
+  "You are under attack!" at the target's field, unless the newest message
+  with this text within one field still has at least 540 of its 600 timer
+  units (it is then refreshed to 600 instead). The timer is a message timer
+  (`UI-ingame.md` UI-GAME-11.1, 11.2), not a tick count: it loses the last
+  frame's duration in seconds each tick, so with the fixed 1/60 s per tick of
+  11.2 the refresh window is 3600 ticks and the message lasts 36 000 ticks
+  like every other message (corrected 2026-10-18, Q-222: the earlier "60
+  ticks" and "600 ticks" readings are withdrawn). Confidence: high (E-gfx-025, the constant 540.0 read in the code).
+- **MIL-ATK-6.1a Where the two stand (2026-11-14, Q-1044; E-mil-010, code reading and two saves
+  of the original).** The "shared field" of 6.1 is the attacker's **waiting field** (the field of
+  his attack record, MIL-ATK-4.3), and the two do not stand on the same point of it:
+  - the **defender** (the target's own soldier, MIL-ATK-5.3, or an interceptor, MIL-ATK-3.4) walks
+    to the waiting field and stands on its lattice point;
+  - the **attacker**, when he begins the step in which he waits for his opponent at his waiting
+    field (after reaching it, also when he is paired again after a duel), and only he, takes **one
+    draw** from the game's random number generator, `d = draw mod 6`, and walks **one lattice step
+    from his field's lattice point in lattice direction `d`** (a short walk on the lattice, as a
+    deposit's offset in `TRN-free-walk.md`; 12 ticks on level ground, TRN-FREE timing). He counts as
+    arrived (6.1) only when that step has ended, so his arrival comes after the step's duration.
+    When a duel ends without him being hit dead and he is paired again, he first goes back to the
+    field's lattice point and then makes a new step with a new draw.
+  - **Unpaired, and leaving the offset point (2026-11-15, Q-1050; E-mil-011, code reading).** (a)
+    The step and its draw belong to the attacker's **wait job, which starts only with an opponent**.
+    An attacker for whom no opponent can be paired when he arrives at the attack walks to his
+    waiting field by a plain walk, stands on its lattice point, takes no draw and makes no step,
+    and waits there, looking for an opponent in each of his updates. When he is paired there, his
+    wait job starts: a walk to his waiting field (he already stands on its point, so it is over at
+    once), and in the job's next update (the tick after the pairing, medium) the draw and the step.
+    An attacker paired before he reaches the field makes the step on arrival, as above. (b) He
+    stays on the offset point only while he has an opponent **and** is marked arrived. In his first
+    update without an opponent (the duel ended with the defender dead, or the pair was undone) both
+    arrived marks of his record are cleared and he **walks the one lattice step back to the field's
+    point** (12 ticks on level ground); only when that step has ended does he choose again: a new
+    opponent (a new wait job: walk, draw, step), the door of a target that can be taken, or home
+    when the target is gone. He never starts for the door or for home from the offset point.
+    Confidence: high (the wait job's start and update and the soldier's waiting state, code);
+    medium for the tick of the draw after a pairing while standing.
+
+  The defender makes no such step and takes no draw. A soldier's field as the save stores it
+  (`FMT-savegame.md` FMT-SAV-3.5h, the truncating field of his sample, MAP-GRID-4.2) can therefore
+  be the neighbour of the waiting field for the attacker: in the original's two fight saves the
+  three attackers stood one lattice step off their waiting fields' points (offsets (x, y) of
+  (-1, +1), (-1, +1) and (0, +1); the third attacker, re-paired, (+1, 0) in the later save), their
+  stored fields the waiting field or its west neighbour, and every defender on the point. **For an interceptor** the
+  duel too is fought on the attacker's waiting field: the interceptor's meeting field (MIL-ATK-3.3)
+  is only where he walks first and waits; it becomes his first attacker's waiting field when they
+  are paired, and once paired with any attacker he walks to that attacker's waiting field. When his
+  duel ends he waits where he stands (defense wait, 3.4), not back at the meeting field; the
+  meeting field stays in his record unchanged. Confidence: high for the step, the draw, who makes
+  it and the field (code; the three save pairs agree); medium for the moment of the draw within
+  the tick (the step's start was read, its caller's order among the tick's other draws was not).
+- **MIL-ATK-6.2 Who strikes.** Each pair has a round counter, set when the
+  attacker was sent (MIL-ATK-2.3) to 0 or 1 at random. In a round with an even
+  counter the **attacker** strikes, with an odd counter the **defender**; the
+  counter rises by 1 every round. So strikes alternate and the first striker
+  is a fair coin flip made at the attack order. Confidence: high.
+- **MIL-ATK-6.3 A round.** In the military update of every tick (after the
+  settlers' updates, ECO-REQ-0.2), for each fighting pair in list order: if
+  both soldiers have health > 0 and neither is still in a fight animation:
+  1. if the previous round scored a hit, the soldier who strikes now (the one
+     who was hit) loses 1 health; if that kills it (health <= 0), the round
+     ends here;
+  2. both soldiers start a fight animation of 16.7 ticks (`mi_setFightingTime`);
+  3. two numbers are drawn, `r1 = draw mod 7`, then `r2 = draw mod 7`;
+  4. hit test of MIL-SOL-1.3: `a = max(2, rankS + 1)`, `h = a div 2`,
+     `b = max(2, rankO + 1 - h)` (S striker, O other); hit when `r1 <= a` and
+     `r2 > b`. A hit is remembered and takes effect at the next round's start
+     (step 1);
+  5. the counter rises by 1.
+  Confidence: high.
+- **MIL-ATK-6.4 Round length.** A fight animation counts down by 1 per tick in
+  the soldier's own update and ends when it reaches 0 or below; 16.7 takes 17
+  updates. Since the settlers' updates run before the military update, a round
+  started in tick t is followed by the next in tick t + 17. Confidence: high.
+- **MIL-ATK-6.5 Hit chance.** `P(hit) = (a + 1) / 7 x (6 - b) / 7`:
+
+  | striker \ other | 0 | 1 | 2 | 3 | 4 |
+  |---|---|---|---|---|---|
+  | 0 (a 2, h 1) | 12/49 | 12/49 | 12/49 | 9/49 | 6/49 |
+  | 1 (a 2, h 1) | 12/49 | 12/49 | 12/49 | 9/49 | 6/49 |
+  | 2 (a 3, h 1) | 16/49 | 16/49 | 16/49 | 12/49 | 8/49 |
+  | 3 (a 4, h 2) | 20/49 | 20/49 | 20/49 | 20/49 | 15/49 |
+  | 4 (a 5, h 2) | 24/49 | 24/49 | 24/49 | 24/49 | 18/49 |
+
+  Confidence: high (follows from 6.3).
+- **MIL-ATK-6.6 Damage and death.** Every hit takes exactly 1 health
+  (MIL-SOL-1.1 maxima 3..7). A soldier at 0 dies in its next own update
+  (tick t + 18 for a hit applied in tick t + 17): its links are released, the
+  pair is dissolved. Survivors (Q-061):
+  - an **attacker** is back in its waiting state at its waiting field and
+    follows MIL-ATK-4.4 in its next update (home if the target is gone,
+    door if takeable, next opponent if one is available, else it waits);
+  - an **interceptor** goes to "defense wait" at its spot (MIL-ATK-3.4);
+  - a **defender of the target** (not an interceptor) walks back into its
+    building; when it arrives, if it has meanwhile been paired with another
+    attacker it walks straight out again to that attacker's waiting field
+    (MIL-ATK-5.3), else it is idle inside (present, heals).
+  Health is not restored after a duel; only present soldiers heal
+  (MIL-SOL-1.2). Confidence: high for the damage; medium-high for the
+  survivors' next steps.
+- **MIL-ATK-6.7** A duel never ends otherwise (no retreat, no time limit).
+  Confidence: medium.
+
+### MIL-ATK-7 Soldier leftovers (Q-060, Q-141)
+
+- **MIL-ATK-7.1 Health after a promotion.** Promotion only changes the rank;
+  health is kept. The higher maximum then applies to healing. Confidence: high.
+- **MIL-ATK-7.2 Health in the stock.** A warehouse keeps soldiers only as
+  counts per rank; a soldier that leaves the stock is made new with its rank's
+  maximum health, and a soldier that enters a warehouse loses its health
+  value. Confidence: medium-high (the health is set from the rank when the
+  soldier object is made; the stock holds no per-soldier data).
+- **MIL-ATK-7.3 Slider range.** Every settings slider value is held in 0..1
+  (lower values are set to 0, higher to 1) and, when the slider has a step
+  count N > 1, snapped to the nearest of N evenly spaced values. The sliders
+  of the military settings dialog (attack strength, intercepting defenders
+  and the others built by the same helper) have **no step count: they are
+  continuous** in 0..1 (Q-061). The graphics options use stepped sliders.
+  Confidence: high.
+- **MIL-ATK-7.4 Computer players** set attack strength and intercepting
+  defenders from their AI profile (`ai.lua`: weak 0.51 / 0.5, normal 0.75 /
+  1.0, strong 1.0 / 0.5), adjust near/medium allocation and the defense type
+  by military mode, and never change the recruit count (stays 10).
+  Confidence: high for the recruit count and the profile values; the AI's
+  allocation logic is out of scope.
+
+## Constants
+
+| Name | Value | Unit | Confidence | Evidence ref |
+|---|---|---|---|---|
+| attack / interception reach | d < 24 | fields | high | E-mil-003 |
+| path limit | < 2 x d | steps | high | E-mil-003 |
+| target ring | range + 1 | fields | high | E-mil-003 |
+| count fractions | 0.25, 0.5, 0.75, 1.0 | | high | E-mil-003 |
+| fighting time | 16.7 (17 ticks per round) | ticks | high | E-mil-003 |
+| hit draws | 2 x (draw mod 7) | | high | E-mil-003 |
+| first striker | draw mod 2 at order | | high | E-mil-003 |
+| meeting search limit | distance < 20 from the interceptor's building | fields | medium | E-mil-003 |
+| leave cooldown | 40 | ticks | high | E-mil-002 |
+| message refresh | 540 of 600 (60 ticks) | ticks | medium | E-mil-003 |
+
+## Test cases
+
+| ID | Setup | Action | Expected |
+|---|---|---|---|
+| T1 | P's guard house G with 3 present idle soldiers at d 10 from enemy barracks T; attack strength 1.0; P owns a field on T's ring | available | `A = 2` |
+| T2 | as T1, strength 0.3 | available | `trunc(2 x 0.3) = 0`: "Can not attack this building!" |
+| T3 | `A = 7` | dialog counts | Low `trunc(0.25 x 6 + 1.5) = 3`, Medium 4, High 6, Highest 7 |
+| T4 | buildings X (d 8, k 2), Y (d 5, k 1), Z (d 8, k 3), list order X, Y, Z; count 4 | launch | Y sends 1, X 2, Z 1 |
+| T5 | fortress with present idle soldiers ranks 0 (health 3), 2 (5), 2 (2), 4 (7), 0 (1); send 3, weak first | choice | rank 0 health 3, rank 0 health 1, rank 2 health 5 |
+| T6 | as T5, strong first | choice | rank 4, rank 2 health 5, rank 2 health 2 |
+| T7 | target T with 4 present, defend outside 1.0; P sends 2 | interceptors | T itself sends 3 but only 2 attackers can be paired: 2 interceptors |
+| T8 | duel private (attacker) vs private, record counter 0, rounds start t | rounds | t: attacker strikes; t + 17: defender; t + 34: attacker; each with P(hit) 12/49 |
+| T9 | general strikes private | hit chance | `a 5, b 2`: 6/7 x 4/7 = 24/49 |
+| T10 | private strikes general | hit chance | `a 2, h 1, b 4`: 3/7 x 2/7 = 6/49 |
+| T11 | round in tick t is a hit on a soldier with health 1 | next ticks | t + 17: health 0, no new round; t + 18: soldier dies |
+| T12 | soldier health 2 of max 3 promoted to rank 1 | promotion | health 2, max 4; heals to 4 in 2 x 602 ticks while present |
+| T13 | 3 soldiers of one building sent in tick c, cooldown 0 | leaving | out in ticks c + 1, c + 41, c + 81 |
+| T14 | dialog, A = 5 | press "Medium number of soldiers" | fraction 0.5, count `trunc(0.5 x 4 + 1.5) = 3` |
+| T15 | military settings, drag attack strength to 0.437 | value | 0.437 kept (no snapping); -0.2 -> 0, 1.3 -> 1 |
+| T16 | target's defender paired with attacker X whose waiting field is W | defender comes out | walks to W, not to X's current field |
+| T17 | interceptor wins its duel; its building still has 2 attackers walking towards it, none free to pair | after the duel | stands at its spot; paired again -> fights; once the building has no attackers left (all dead or gone home), walks home |
+| T18 | target's defender wins; another attacker gets paired with it while it walks home | arrival at home | walks out again to that attacker's waiting field |
+| T19 | 6.1a: attacker A reaches his waiting field W on level ground and is paired with a defender; the next draw is r | A's position, A's arrival, the defender's position | A walks one lattice step from W's lattice point in direction r mod 6 (12 ticks) and counts as arrived when it ends; the defender stands on W's lattice point and makes no draw; the duel's first round comes when both have arrived |
+| T20 | 6.1a, interceptor I with meeting field M, paired with a waiting attacker whose waiting field is W != M | where the duel is fought | on W (I walks to W's lattice point); after the duel I stands where he is; M unchanged in I's record |
+| T21 | 6.1a (Q-1050): attacker A arrives at his waiting field W when no defender can be paired; later defender D is paired with A at tick t; D dies in the duel and the target can be taken | A's position and draws | A walks to W's lattice point and draws nothing while unpaired; at t + 1 one draw and the one-step offset walk (12 ticks); after D's death A walks the step back to W's point (12 ticks) and only then starts for the door |
+| T22 | 4.2, 4.3 (Q-1051): attacker A sent against guard house G (field g, flag field f), no interception, no opponent when he arrives | where A walks and the waiting field | A's walk ends on f; the search starts on f (a flag: not free), never enters g or any other building's footprint (MovementBlocked) and passes over road fields without taking them; the waiting field is the first walkable field without a flag, road or other waiting / meeting field in the search's order |
+
+## Evidence
+
+Each evidence id with the kind of evidence it is. Where in the original program each was found is kept in the investigation's private records under the same id.
+
+| Ref | Kind | Where | Note |
+|---|---|---|---|
+| E-mil-003 | code reading | `S2DNG.exe` | attack order (`attack-building`), execution |
+| E-mil-003 | code reading | | dialog count, fractions, "Can not attack" |
+| E-mil-003 | code reading | | availability, per-building count, launch, rank order, link, record and first-striker draw |
+| E-mil-003 | code reading | | interceptors, pairing, meeting and waiting fields |
+| E-mil-003 | code reading | the debug state table | soldier states during an attack |
+| E-mil-003 | code reading | | opponent choice and pairing |
+| E-mil-003 | code reading | | rounds, hit test, animation countdown, fighting time |
+| E-mil-003 | code reading | | arrival, message, death cleanup |
+| E-mil-003 | code reading | | promotion, health init, slider clamp, AI settings |
+| E-mil-005 | code reading | | button-to-fraction mapping |
+| E-mil-005 | code reading | | sliders continuous |
+| E-mil-005 | code reading | | defender walk target, survivors' next steps |
+| E-mil-010 | code reading, saves of the original | (session 2026-11-14; the fight saves of E-sav-017) | 6.1a: the attacker's one-step offset with one draw, the defender on the point, the interceptor's duel field; the defender choice needs no presence (5.1) |
+| E-mil-011 | code reading | (session 2026-11-15 night) | 6.1a: the wait job starts only with an opponent; an unpaired attacker waits on the point without a draw; the step back to the point before any next choice (Q-1050) |
+| E-mil-012 | code reading | (session 2026-11-15 night) | 4.2, 4.3: the door is the target's flag; the waiting-field search's start, walk test and free test (Q-1051) |
+| data | script | `military.lua`, `ai.lua` | fighting time, AI profile values |
+
+## Open questions
+

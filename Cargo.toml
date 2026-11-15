@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["crates/sim", "crates/assets", "crates/app", "crates/rules", "crates/ai", "crates/viewer"]
+
+[workspace.package]
+version = "0.10.1"
+edition = "2021"
+license = "Apache-2.0"
+# Not on crates.io: a project built on these crates pins a git tag (docs/releasing.md).
+publish = false
+
+[profile.release]
+debug = 1
+
+# The shipped game: no debug info (the release profile keeps some for our
+# crates, which makes the executable several hundred megabytes).
+[profile.dist]
+inherits = "release"
+debug = false
+strip = true
+
+# Dependencies carry no debug info: with Bevy it makes the viewer's Windows
+# executable several hundred megabytes larger.
+[profile.release.package."*"]
+debug = false
