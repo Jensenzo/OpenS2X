@@ -624,8 +624,16 @@ lightColour`, pixel `D = ambient + L x shadow` (shadow = 4-tap shadow map,
   waterway's buoys (6.2b d). The **border** buoys on water are different
   objects and keep the player colour of 2.10 where their texture's alpha is 0.
   Confidence: high (code reading of the per-part draw and its weight; data
-  for the parts, materials, textures and alpha values). Not yet seen in a
-  picture of the original. Test T48.
+  for the parts, materials, textures and alpha values). Test T48. **Seen
+  (2026-11-15 day, E-trace-030, the Seafaring tutorial, the blue player's
+  Roman ships Aurora and Bellona close up by day, 2560 x 1440):** hull, deck,
+  rails, oars, rudder, mast and the cargo (crates, barrels, sacks) show their
+  own wood and cloth colours with no blue at all; the furled sail lying on
+  the deck and the cloth hung along both sides are pale blue to lavender,
+  never the flags' saturated blue; the crow's nest is plain wood. The border
+  buoys on the water next to them are saturated blue on their top with a blue
+  flag (2.10), and the land border stones are saturated blue too. That is
+  the rule above. Confidence: high (code, data and pictures).
 - **GFX-OBJ-2.9 Flags (flag_shader, house_flag).** Cloth wave in the vertex
   shader: `s = 0.33 x saturate(-0.02 + x^2 + z^2)` (model space, so the pole
   at the origin stays), `w = Tx + Tz + x + y + t`, `c = 0.5 + 0.5 cos(4 w)`,
@@ -1126,7 +1134,36 @@ lightColour`, pixel `D = ambient + L x shadow` (shadow = 4-tap shadow map,
   original shows **no dust over a construction site while its builder hammers** and **no
   chips where a woodcutter fells**. A site shows dust only while it is being levelled. The
   buildings' own clips (`buildings.xml` `Particle` children: smoke, saw dust, fire, sparks)
-  are the rest of the original's particles. Confidence: high (data). While a military building is
+  are the rest of the original's particles. Confidence: high (data).
+  **GFX-OBJ-8.3c A clip's particle effect, its place and its end (2026-11-16 night, Q-1062; E-gfx-071,
+  code reading, and E-trace-031, pictures).**
+  - **One effect per play of the clip.** When the settler's model starts the clip, each `Particle`
+    entry becomes one event. The event starts its effect once, when the clip's own time (wall-clock
+    seconds since the play began x the global animation speed, 1.8) reaches the entry's `start`.
+    A loop of the same play does not start it again; a new play (the next work step) starts a new one.
+  - **Place.** An entry without a bone (both shipped `StoneDust` entries) puts the effect at the
+    model's own origin: the settler's feet. Its place is computed again every frame from the model's
+    matrix, so it follows him while the event lives. An entry naming a bone uses that bone's pose.
+    Offsets from the entry's attributes are added (none are set).
+  - **End.** An entry with a duration stops emitting once start + duration has passed (the shipped
+    entries set none). Otherwise the effect emits until its event ends with the clip's play (the
+    model starts another clip). The particles already made then live out their own life
+    (`StoneDust.pfx`: 3 +- 1 s), so the cloud fades rather than vanishing.
+  - **Seen** (the forester, game speed 3, pictures about 35 ticks apart): no cloud while he walks to the
+    spot; a grey-white cloud about two fields across around his feet in two pictures 35 ticks apart
+    while he plants; no cloud 35 ticks later, the sapling planted and the forester walking off.
+  - So a planting (55 ticks, the 10 s clip at speed 1.8) gives one cloud that lasts the planting and
+    fades about 3 s after it. The leveller's clip starts its cloud 0.5 s into each of his shovel plays.
+  - **Seen, the leveller (2026-11-16 day, E-trace-032, game speed 1, zoom 1 and 2, a medium site on a
+    gentle slope):** while he shovels, a translucent grey-violet cloud stands at his feet, about one
+    to two fields across, darker at its centre and low over the ground (not above his knees); when he
+    walks on to the next point of the site, the cloud stays behind where it was and thins out within
+    about two seconds (pictures about 0.7 s apart); walking between points he raises no new cloud.
+    This agrees with the rules above (one cloud per shovel play, the made particles living out their
+    3 +- 1 s). Confidence: high for the look.
+  Confidence: high for the once-per-play start, the place and the end rule (code); medium for "ends with
+  the clip's play" (the event's owner, the pooled model entry, was not followed to its release); the
+  look agrees. While a military building is
   upgraded (`MIL-building-upgrade.md`) its visual keeps the old house and
   adds the new type's house and the new type's construction-site model, all
   with the building's matrix. With u = the upgrade progress (1 - remaining
@@ -1509,6 +1546,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-gfx-068 | data files, code reading | `data/gfx/fx_20/street_shader.fx` and `shared.inc` (the street pass's render states, the vertex shader); no depth-bias render state in the code (session 2026-11-14 b) | GFX-OBJ-6.3 depth (Q-1046) |
 | E-trace-026 | pictures of the running original | Jens's 2023 save of MP_2P_Storm_Coast loaded, 2560 x 1440, zoom 1 to 3, day / night cycle off (session 2026-11-14 b; pictures kept outside the repository) | GFX-OBJ-6.2d (F58, F60) |
 | E-trace-029 | pictures of the running original | the same save, roads built and one destroyed in the look, waterways at zoom 1 and 2 (session 2026-11-15 night, part 2) | GFX-OBJ-6.2a (d) seen, 6.2b seen |
+| E-trace-030 | pictures of the running original | the Seafaring tutorial's ships and border buoys close up by day, 2560 x 1440 (session 2026-11-15 day; pictures kept outside the repository) | GFX-OBJ-2.8a seen |
 | E-gfx-069 | code reading | (session 2026-11-14 b) | GFX-OBJ-6.2a d (Q-1048): the strip's count test at its build, the road visual's rebuild only at creation and at its own end attaches, the crossing's attach rebuilding only the crossing; the crossing builder makes seven vertices and drapes nothing |
 | E-gfx-058 | code reading, data, and the 2026-11-12 look of the original (pictures kept outside the repository) | (session 2026-11-12 night) `house_shader.fx` (the lookup with the half texel, the sampler states), `colors.tga`, every house mesh's third texture coordinate set; the town picture at tick 6000 compared with the program's at the same camera, each house's faces projected and grouped by direction | GFX-OBJ-2.2b, T38; `GFX-world-view.md` GFX-VIEW-2.5 (f), T43 |
 | E-gfx-055 | code reading | (session 2026-11-11 eve): the house view's creation (slot from the free stack or a new one), its removal (at once, or after the collapse for a finished building), the collapse clock, the type change and conquest paths, the post-load order of buildings, the upgrade site's own list; `house_shader.fx` (which passes read the colour map); `buildings.lua` / `remains.lua` (every type has a ruin) | GFX-OBJ-2.2a, T35 |
@@ -1538,6 +1576,8 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-pt5-001 | code reading | | decal from the GROUND mesh, site pieces, rising house, builder request; test values by the investigation's construction view script |
 | E-ui-011 | code reading | | GFX-OBJ-8.3 precise rule (play test 11) |
 | E-gfx-070 | code reading and data | (session 2026-11-15 day): the ship's per-part draw and its colour weight; the ship models' material groups, `PV_<t>_Ship01.dds` / `PV_<t>_Ship01PC.dds` and their alpha; `ships.fx`, `mesh_shader.fx` | GFX-OBJ-2.8a, T48 |
+| E-gfx-071 | code reading and pictures | (session 2026-11-16 night): a clip's Particle event (start once per play, place at the model or a bone every frame, end by duration or with the play); E-trace-031's forester pictures | GFX-OBJ-8.3c |
+| E-trace-032 | pictures of the original | (session 2026-11-16 day): the leveller's dust on a sloped medium site, speed 1, zoom 1 and 2 | GFX-OBJ-8.3c |
 | E-gfx-040 | code reading | (session 2026-11-07; also filed as E-sav-010, E-ui-020) | GFX-OBJ-1.4 (Q-1027) |
 | E-gfx-039 | code reading | (session 2026-11-06): `house_shader.fx` | GFX-OBJ-1.4, 2.1 |
 | data | tables | `settings/terrain_static_data.xml` (LandscapeElements), `buildings.xml`, `items.xml`, `animals.xml`, `ships.xml`, `character/settler_config.xml`, `character/color_slots.xml`, `scripts/menu.cfg` | |

@@ -139,6 +139,10 @@ refused; it changes nothing then.
 | `ships()` with `Vessel::step()`, `harbours()`, `expedition_goods(at)` | ships and harbours (SHIP) |
 | `garrison(f)`, `military_at(f)`, `duels()`, `catapult_at(f)` | the military (MIL) |
 | `statistics(p)`, `tribe(p)`, `soldier_rank(good)` | per player |
+| `players()`, `team_of(p)` | the players of the game in player order; a player's team (its index, none for a player without one) (CAM-3.6a, CAM-4.3a) |
+| `recipe(type)`, `recipe_set(type)`, `chosen_recipe(f)` | a project's recipe of a type (H6), its recipe set and the recipe a building works (W20); none in the original's game |
+| `deepening(type)`, `mine_deepening(f)`, `can_deepen(p, f)` | a project's mine deepening (W15) |
+| `paving_rule()`, `is_paved(n)`, `paving_work(n)`, `can_pave(p, f)` | a project's paving rule and paved roads, by the road's object number (W19) |
 
 The records these return (`Building`, `ConstructionSite`, `Road`, `Ware`,
 `Deposit`, `Animal`, `Ship`, `Vessel`, `Harbour`, ...) are spec objects; their

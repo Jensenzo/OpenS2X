@@ -6,6 +6,9 @@
 //! took with fog of war off (the viewer's `--no-fog`; the game is the same,
 //! Q-290). `--paused` draws the paused view's layer over it (UI-GAME-1.11,
 //! the viewer's `--pause-layer`), for a picture the original took paused.
+//! `--profile-dir DIR` hands the viewer a folder of its own for its settings
+//! and profile file, so the player's are never written
+//! (`scripts/look-compare.sh` gives each picture an empty one).
 //!
 //! The game is the headless one of `trace` and `hash` (same start, same
 //! state). The picture is drawn by the viewer: `--compare` (paused, the
@@ -39,6 +42,7 @@ fn shot(args: &[String]) -> Result<(), String> {
     let (mut tick, mut camera, mut size, mut out, mut viewer) = (None, None, None, None, None);
     let mut explored = false;
     let mut paused = false;
+    let mut profile_dir: Option<PathBuf> = None;
     let mut it = rest.iter();
     while let Some(arg) = it.next() {
         let mut value = || it.next().cloned().ok_or(format!("{arg} wants a value"));
@@ -54,6 +58,7 @@ fn shot(args: &[String]) -> Result<(), String> {
             "--viewer" => viewer = Some(PathBuf::from(value()?)),
             "--explored" => explored = true,
             "--paused" => paused = true,
+            "--profile-dir" => profile_dir = Some(PathBuf::from(value()?)),
             other => return Err(format!("unknown argument {other}")),
         }
     }
@@ -132,6 +137,10 @@ fn shot(args: &[String]) -> Result<(), String> {
     }
     if paused {
         command.arg("--pause-layer");
+    }
+    if let Some(dir) = &profile_dir {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        command.arg("--profile-dir").arg(path(dir)?);
     }
     let done = command
         .output()

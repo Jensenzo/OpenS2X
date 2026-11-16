@@ -147,13 +147,31 @@ pub fn setting_command(
 /// MIL-ATK-1.4: the names of the dialog's four count buttons.
 pub const COUNT_NAMES: [&str; 4] = ["Low", "Medium", "High", "Highest number of soldiers"];
 
-/// Whether the building on `at` is an enemy military building `player` could
-/// open the attack dialog on (MIL-ATK-1.3).
+/// Whether a click on the building on `at` opens the attack dialog for
+/// `player` (MIL-ATK-1.3, Q-144): a finished building of a hostile player
+/// that is its headquarters, or whose type has a soldier limit above 0 and
+/// that is occupied (has had its first soldier). Anything else opens
+/// nothing.
 pub fn attackable(world: &World, player: PlayerId, at: Point) -> bool {
-    world
-        .building_at(at)
-        .is_some_and(|b| !b.under_construction && world.are_enemies(player, b.owner))
-        && world.military_at(at).is_some()
+    let Some(b) = world.building_at(at) else {
+        return false;
+    };
+    if b.under_construction || !world.are_enemies(player, b.owner) {
+        return false;
+    }
+    opens_attack(
+        world.headquarters_type() == Some(b.building_type),
+        world
+            .building_type(b.building_type)
+            .map_or(0, |t| t.soldier_limit),
+        world.military_at(at).is_some_and(|m| m.applied),
+    )
+}
+
+/// MIL-ATK-1.3 (Q-144, T1b): the headquarters always; another building only
+/// with a soldier limit above 0 and occupied.
+fn opens_attack(headquarters: bool, soldier_limit: u32, occupied: bool) -> bool {
+    headquarters || (soldier_limit > 0 && occupied)
 }
 
 /// The attack dialog on `target` (MIL-ATK-1.3, 1.4).
@@ -288,6 +306,47 @@ mod tests {
                 assert_ne!(rank_color(a), rank_color(b));
             }
         }
+    }
+
+    // MIL-ATK T1b (Q-144): the enemy headquarters opens the attack dialog;
+    // a barracks, guard house, watchtower or fortress only once occupied; a
+    // lookout tower (no soldiers), a harbour, a storehouse or a workshop
+    // never. In a game: the enemy's headquarters yes, one's own no.
+    // spec: MIL-ATK-1.3 (T1b)
+    #[test]
+    fn which_buildings_open_the_attack_dialog() {
+        assert!(opens_attack(true, 0, false));
+        assert!(opens_attack(false, 2, true));
+        assert!(!opens_attack(false, 2, false));
+        assert!(!opens_attack(false, 0, true));
+        assert!(!opens_attack(false, 0, false));
+        let n = 60 * 60;
+        let terrain = s2_sim::map::Terrain {
+            width: 60,
+            height: 60,
+            heights: vec![0; n],
+            height_floor: -100,
+            states: vec![s2_sim::map::state::FOR_BUILDING; n],
+            samples: Vec::new(),
+        };
+        let mut castle = s2_sim::BuildingType::new(9, s2_sim::BuildingSize::Large);
+        castle.territory_range = 9;
+        castle.warehouse = true;
+        castle.worker_limit = 0;
+        let rules = s2_sim::Rules {
+            building_types: vec![castle],
+            headquarters: Some(9),
+            ..s2_sim::Rules::empty()
+        };
+        let setup = s2_sim::GameSetup {
+            players: vec![(PlayerId(0), (12, 12)), (PlayerId(1), (45, 45))],
+            local_player: PlayerId(0),
+            ..Default::default()
+        };
+        let world = World::new_game(1, terrain, rules, &setup);
+        assert!(attackable(&world, PlayerId(0), (45, 45)));
+        assert!(!attackable(&world, PlayerId(0), (12, 12)));
+        assert!(!attackable(&world, PlayerId(0), (30, 30)));
     }
 
     // spec: MIL-SOL-7.1

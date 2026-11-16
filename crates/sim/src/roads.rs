@@ -698,6 +698,8 @@ impl World {
             traffic: Default::default(),
             water: road.water,
         }));
+        // W19: both halves keep a pavement.
+        self.paving_split(road.number, first_number, second_number);
         self.streets[index] = None;
         // TRN-ROAD-3.1 (T26): the new flag has the two halves attached.
         self.mark_flag_streets(&[at]);
@@ -928,6 +930,9 @@ mod tests {
         assert_eq!(apply(&mut world, gone), Ok(()));
         assert!(world.roads().next().is_none());
         assert_eq!(world.doodads_removed(), &removed);
+        // Play test 16, item 46: saved and loaded, they stay gone.
+        let loaded = World::from_snapshot(&world.snapshot()).unwrap();
+        assert_eq!(loaded.doodads_removed(), &removed);
         // A game saved before the record: the fields as they stand.
         let mut older = world.clone();
         older.doodads_removed_from_state();

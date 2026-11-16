@@ -23,6 +23,10 @@ pub struct ModelLibrary {
     /// The Sound events of each settler animation entry by name (the
     /// first entry of a name).
     pub entry_sounds: HashMap<String, Vec<(String, f32)>>,
+    /// GFX-OBJ-8.3b, 8.3c: the Particle events of each settler animation
+    /// entry by name (the effect's name and its start in clip seconds; the
+    /// first entry of a name).
+    pub entry_particles: HashMap<String, Vec<(String, f32)>>,
     /// GFX-OBJ-1.2: the landscape elements.
     pub landscape: Vec<s2_assets::landscape::LandscapeElement>,
     /// Where each element's name is in [`Self::landscape`] (F55).
@@ -75,6 +79,7 @@ impl ModelLibrary {
             tables: root.map(read_tables).unwrap_or_default(),
             animations: root.map(read_animations).unwrap_or_default(),
             clip_sounds: HashMap::new(),
+            entry_particles: HashMap::new(),
             entry_sounds: HashMap::new(),
             // The first of a name is the one that counts.
             landscape_by_name: landscape
@@ -112,13 +117,23 @@ impl ModelLibrary {
             }
         };
         let mut by_entry: HashMap<String, Vec<(String, f32)>> = HashMap::new();
+        let mut particles: HashMap<String, Vec<(String, f32)>> = HashMap::new();
         for e in &self.animations.entries {
             add(&e.file, &e.events);
             by_entry
                 .entry(e.name.clone())
                 .or_insert_with(|| sound_events(&e.events));
+            particles.entry(e.name.clone()).or_insert_with(|| {
+                e.events
+                    .iter()
+                    .filter(|v| !v.sound && !v.name.is_empty())
+                    .map(|v| (v.name.clone(), v.start))
+                    .collect()
+            });
         }
+        particles.retain(|_, v| !v.is_empty());
         self.entry_sounds = by_entry;
+        self.entry_particles = particles;
         for b in &self.tables.buildings {
             if let Some(w) = &b.working {
                 add(&w.file, &w.events);
@@ -130,6 +145,11 @@ impl ModelLibrary {
     /// The Sound events of a settler animation entry (SND-2.1).
     pub fn sounds_of_entry(&self, name: &str) -> &[(String, f32)] {
         self.entry_sounds.get(name).map_or(&[], Vec::as_slice)
+    }
+
+    /// The Particle events of a settler animation entry (GFX-OBJ-8.3b).
+    pub fn particles_of_entry(&self, name: &str) -> &[(String, f32)] {
+        self.entry_particles.get(name).map_or(&[], Vec::as_slice)
     }
 
     /// The Sound events of a clip file.

@@ -779,3 +779,77 @@ fn con_the_taker_walks_in_from_the_flag() {
     }
     panic!("never inside");
 }
+
+/// A hut of player 0 on (20, 20) whose type costs frame 1 plank and main
+/// 1 plank (the woodcutter's hut of T17a).
+fn woodcutter_like_hut(world: &mut World) {
+    let hut = world.building_types.get_mut(&HUT).unwrap();
+    hut.frame_costs = vec![(PLANK, 1)];
+    hut.costs = vec![(PLANK, 1)];
+}
+
+// MIL-CON T17a (4.1b, Q-150): the human player's demolish
+// (`Command::RemoveBuilding`, the building window's destroy button) removes
+// with remains as the computer's tear-down: the finished hut (frame 1 plank,
+// main 1 plank) gives 1 plank on its flag (2 halved, rounded up) and leaves
+// a ruin burning 333 ticks; a site whose frame is done, main share 0, with
+// its main plank delivered and unused gives 1 plank for the frame plus the
+// unused one, 2 planks, and no ruin. The flag and its roads stay.
+// spec: MIL-CON-4.1b (MIL-CON T17a), MIL-CON-4.1, MIL-CON-4.4
+#[test]
+fn con_t17a_the_players_demolish_leaves_material_and_a_ruin() {
+    let mut world = owned_world(40, 40);
+    woodcutter_like_hut(&mut world);
+    finished(&mut world, P0, HUT, (20, 20));
+    let flag = world.flag_of((20, 20));
+    let other = (24, 20);
+    assert_eq!(
+        apply(
+            &mut world,
+            Command::PlaceFlag {
+                player: P0,
+                at: other
+            }
+        ),
+        Ok(())
+    );
+    let road = Command::BuildRoad {
+        player: P0,
+        from: flag,
+        to: other,
+    };
+    assert_eq!(apply(&mut world, road), Ok(()));
+    let roads = world.roads().count();
+    let demolish = Command::RemoveBuilding {
+        player: P0,
+        at: (20, 20),
+    };
+    assert_eq!(apply(&mut world, demolish), Ok(()));
+    assert!(world.building_at((20, 20)).is_none());
+    assert_eq!(goods_at(&world, flag), [PLANK]);
+    assert_eq!(world.ruins().len(), 1);
+    assert_eq!(world.ruins()[0].burns_until, world.tick() - 1 + 333);
+    assert!(world.flag_at(flag).is_some());
+    assert_eq!(world.roads().count(), roads);
+    // The site: its frame done, its main plank on site.
+    let mut world = owned_world(40, 40);
+    woodcutter_like_hut(&mut world);
+    let placed = Command::PlaceBuilding {
+        player: P0,
+        building: HUT,
+        at: (20, 20),
+    };
+    assert_eq!(apply(&mut world, placed), Ok(()));
+    let site = world.sites.get_mut(&(20, 20)).unwrap();
+    site.work_done = site.frame_end;
+    site.on_site = vec![(PLANK, 1)];
+    let flag = world.flag_of((20, 20));
+    let demolish = Command::RemoveBuilding {
+        player: P0,
+        at: (20, 20),
+    };
+    assert_eq!(apply(&mut world, demolish), Ok(()));
+    assert_eq!(goods_at(&world, flag), [PLANK, PLANK]);
+    assert!(world.ruins().is_empty());
+    assert!(world.flag_at(flag).is_some());
+}

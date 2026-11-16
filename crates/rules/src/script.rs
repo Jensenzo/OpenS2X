@@ -856,7 +856,20 @@ pub fn function_names() -> Vec<String> {
 /// `properties` stays the original's). `reborn.bp_addInput(building, good,
 /// count)` appends to the building type's own recipe (`Building::inputs`).
 /// W12: `reborn.bp_setAiAlternative(building, good, stock_below, input,
-/// input_at_least, most)` sets `Building::ai_alternative`.
+/// input_at_least, most)` sets `Building::ai_alternative`. W20:
+/// `reborn.bp_addRecipe(building, product)` starts a recipe of the type's
+/// set (`Building::recipes`), `reborn.bp_addRecipeInput(building, good,
+/// count)` appends to its last one. W15: `reborn.bp_setDeepening(building,
+/// share_per_mille, most)` gives a mine type its deepening,
+/// `reborn.bp_addDeepeningCost(building, good, count)` and
+/// `reborn.bp_addDeepeningFood(building, food_per_product)` add to it. W16:
+/// `reborn.cfg_setRecipeKeep(good, count)` sets `RuleSet::recipe_keep`. W19:
+/// `reborn.cfg_setPaving(good, per_field, speed_percent)` sets
+/// `RuleSet::paving`. `reborn.dist_addConsumer(good, building, weight)` adds
+/// to `RuleSet::dist_consumers`. W25: `reborn.ai_setDeepen(food_at_least)`,
+/// `reborn.ai_setPaving(traffic_at_least, reserve)` and
+/// `reborn.ai_setRecipeRule(building, index, good, above)` fill
+/// `RuleSet::ai_project`.
 fn install_project(lua: &Lua, state: &Shared) -> mlua::Result<()> {
     let reborn = strict_table(lua, "reborn")?;
     let r = Registry {
@@ -882,6 +895,127 @@ fn install_project(lua: &Lua, state: &Shared) -> mlua::Result<()> {
                 input,
                 input_at_least,
                 most,
+            });
+            Ok(())
+        },
+    )?;
+    r.def(
+        "bp_addRecipe",
+        |rules, (h, Handle(product)): (Handle, Handle)| {
+            object(&mut rules.buildings, h)?.recipes.push(RecipeChoice {
+                product,
+                inputs: Vec::new(),
+            });
+            Ok(())
+        },
+    )?;
+    r.def(
+        "dist_addConsumer",
+        |rules, (Handle(good), h, Count(weight)): (Handle, Handle, Count)| {
+            if !rules.goods.contains(good) {
+                return Err(format!("unknown good {good}"));
+            }
+            let Handle(building) = h;
+            object(&mut rules.buildings, h)?;
+            rules.dist_consumers.push((good, building, weight));
+            Ok(())
+        },
+    )?;
+    r.def(
+        "cfg_setPaving",
+        |rules, (Handle(good), Count(per_field), Count(speed_percent)): (Handle, Count, Count)| {
+            if !rules.goods.contains(good) {
+                return Err(format!("unknown good {good}"));
+            }
+            if speed_percent == 0 {
+                return Err("the speed must be at least 1 percent".to_string());
+            }
+            rules.paving = Some((good, per_field, speed_percent));
+            Ok(())
+        },
+    )?;
+    r.def(
+        "cfg_setRecipeKeep",
+        |rules, (Handle(good), Count(count)): (Handle, Count)| {
+            if !rules.goods.contains(good) {
+                return Err(format!("unknown good {good}"));
+            }
+            rules.recipe_keep.insert(good, count);
+            Ok(())
+        },
+    )?;
+    r.def(
+        "bp_setDeepening",
+        |rules, (h, Count(share_per_mille), Count(most)): (Handle, Count, Count)| {
+            object(&mut rules.buildings, h)?.deepening = Some(DeepeningRule {
+                share_per_mille,
+                most,
+                ..DeepeningRule::default()
+            });
+            Ok(())
+        },
+    )?;
+    r.def(
+        "bp_addDeepeningCost",
+        |rules, (h, Handle(good), Count(count)): (Handle, Handle, Count)| {
+            object(&mut rules.buildings, h)?
+                .deepening
+                .as_mut()
+                .ok_or_else(|| "no deepening: call reborn.bp_setDeepening first".to_string())?
+                .costs
+                .push(Amount { good, count });
+            Ok(())
+        },
+    )?;
+    r.def(
+        "bp_addDeepeningFood",
+        |rules, (h, Count(food)): (Handle, Count)| {
+            object(&mut rules.buildings, h)?
+                .deepening
+                .as_mut()
+                .ok_or_else(|| "no deepening: call reborn.bp_setDeepening first".to_string())?
+                .food
+                .push(food);
+            Ok(())
+        },
+    )?;
+    r.def(
+        "bp_addRecipeInput",
+        |rules, (h, Handle(good), Count(count)): (Handle, Handle, Count)| {
+            object(&mut rules.buildings, h)?
+                .recipes
+                .last_mut()
+                .ok_or_else(|| "no recipe: call reborn.bp_addRecipe first".to_string())?
+                .inputs
+                .push(Amount { good, count });
+            Ok(())
+        },
+    )?;
+    // W25: the computer players' use of the project's rules.
+    r.def("ai_setDeepen", |rules, (Count(food),): (Count,)| {
+        rules.ai_project.deepen_food = Some(food);
+        Ok(())
+    })?;
+    r.def(
+        "ai_setPaving",
+        |rules, (Count(traffic), Count(reserve)): (Count, Count)| {
+            rules.ai_project.paving = Some((traffic, reserve));
+            Ok(())
+        },
+    )?;
+    r.def(
+        "ai_setRecipeRule",
+        |rules, (h, Count(index), Handle(good), Count(above)): (Handle, Count, Handle, Count)| {
+            if !rules.goods.contains(good) {
+                return Err(format!("unknown good {good}"));
+            }
+            let Handle(building) = h;
+            object(&mut rules.buildings, h)?;
+            rules.ai_project.recipes.push(crate::model::AiRecipeRule {
+                building,
+                index,
+                good,
+                above,
             });
             Ok(())
         },
@@ -1007,6 +1141,206 @@ mod tests {
         // Without overlays, no type has a recipe of its own.
         let (plain, _) = run(source(), "main.lua").unwrap();
         assert!(plain.buildings.iter().all(|b| b.inputs.is_empty()));
+    }
+
+    /// Hook W20: an overlay gives a type a set of recipes, each a product
+    /// and its inputs, with `reborn.bp_addRecipe` and
+    /// `reborn.bp_addRecipeInput`; an input before any recipe is an error;
+    /// without overlays no type has a set.
+    // spec: none (hook W20, docs/extending.md "Recipes a player chooses")
+    #[test]
+    fn an_overlay_gives_a_type_recipes_to_choose_from() {
+        let main = "good_wood = properties.gp_create(\"00000006\")
+                    good_stone = properties.gp_create(\"00000002\")
+                    good_coal = properties.gp_create(\"00000007\")
+                    good_fish = properties.gp_create(\"00000008\")
+                    building_hut = properties.bp_create(\"00000003\")";
+        let source = || Rc::new(Memory([("main.lua", main)].into_iter().collect()));
+        let post = Overlay {
+            name: "trading-post".into(),
+            code: b"tradingPost = properties.bp_create(\"00000041\")
+                    properties.bp_setGoods(tradingPost, good_coal, 1)
+                    reborn.bp_addRecipe(tradingPost, good_coal)
+                    reborn.bp_addRecipeInput(tradingPost, good_fish, 2)
+                    reborn.bp_addRecipeInput(tradingPost, good_wood, 1)
+                    reborn.bp_addRecipe(tradingPost, good_stone)
+                    reborn.bp_addRecipeInput(tradingPost, good_wood, 4)"
+                .to_vec(),
+        };
+        let (rules, report) =
+            run_with_overlays(source(), "main.lua", std::slice::from_ref(&post)).unwrap();
+        let b = rules.buildings.get(0x41).expect("the new type");
+        assert_eq!(
+            b.recipes,
+            [
+                RecipeChoice {
+                    product: 7,
+                    inputs: vec![Amount { good: 8, count: 2 }, Amount { good: 6, count: 1 }],
+                },
+                RecipeChoice {
+                    product: 2,
+                    inputs: vec![Amount { good: 6, count: 4 }],
+                },
+            ]
+        );
+        assert_eq!(report.call_count("bp_addRecipe"), 2);
+        assert!(rules.dangling_references().is_empty());
+        let early = Overlay {
+            name: "early".into(),
+            code: b"reborn.bp_addRecipeInput(building_hut, good_wood, 1)".to_vec(),
+        };
+        let err = run_with_overlays(source(), "main.lua", &[early]).unwrap_err();
+        assert!(err.0.contains("bp_addRecipe first"), "{}", err.0);
+        let (plain, _) = run(source(), "main.lua").unwrap();
+        assert!(plain.buildings.iter().all(|b| b.recipes.is_empty()));
+    }
+
+    /// Hook W15: an overlay gives a mine type a deepening with
+    /// `reborn.bp_setDeepening`, its costs and foods with the companions;
+    /// a cost before the deepening is an error; without overlays no type
+    /// has one.
+    // spec: none (hook W15, docs/extending.md "Deepening a mine")
+    #[test]
+    fn an_overlay_gives_a_mine_a_deepening() {
+        let main = "good_wood = properties.gp_create(\"00000006\")
+                    good_stone = properties.gp_create(\"00000002\")
+                    good_plank = properties.gp_create(\"00000001\")
+                    building_coalmine = properties.bp_create(\"00000003\")";
+        let source = || Rc::new(Memory([("main.lua", main)].into_iter().collect()));
+        let deep = Overlay {
+            name: "deep-mines".into(),
+            code: b"reborn.bp_setDeepening(building_coalmine, 250, 2)
+                    reborn.bp_addDeepeningCost(building_coalmine, good_plank, 4)
+                    reborn.bp_addDeepeningCost(building_coalmine, good_stone, 2)
+                    reborn.bp_addDeepeningFood(building_coalmine, 2)
+                    reborn.bp_addDeepeningFood(building_coalmine, 3)"
+                .to_vec(),
+        };
+        let (rules, report) =
+            run_with_overlays(source(), "main.lua", std::slice::from_ref(&deep)).unwrap();
+        assert_eq!(
+            rules.buildings.get(3).unwrap().deepening,
+            Some(DeepeningRule {
+                share_per_mille: 250,
+                most: 2,
+                costs: vec![Amount { good: 1, count: 4 }, Amount { good: 2, count: 2 }],
+                food: vec![2, 3],
+            })
+        );
+        assert_eq!(report.call_count("bp_setDeepening"), 1);
+        assert!(rules.dangling_references().is_empty());
+        let early = Overlay {
+            name: "early".into(),
+            code: b"reborn.bp_addDeepeningCost(building_coalmine, good_wood, 1)".to_vec(),
+        };
+        let err = run_with_overlays(source(), "main.lua", &[early]).unwrap_err();
+        assert!(err.0.contains("bp_setDeepening first"), "{}", err.0);
+        let (plain, _) = run(source(), "main.lua").unwrap();
+        assert!(plain.buildings.iter().all(|b| b.deepening.is_none()));
+    }
+
+    /// Hook W16: a recipe that takes a group good makes the group a recipe
+    /// group with its members in good order; `reborn.cfg_setRecipeKeep` on
+    /// the group keeps that many of each member, on a good that many of it.
+    // spec: none (hook W16, docs/extending.md "A group good in a recipe")
+    #[test]
+    fn a_recipe_group_and_its_kept_stock() {
+        let main = "good_tools = properties.gp_create(\"00000032\")
+                    good_saw = properties.gp_create(\"0000003E\")
+                    properties.gp_setGroupGoodId(good_saw, good_tools)
+                    good_axe = properties.gp_create(\"0000003D\")
+                    properties.gp_setGroupGoodId(good_axe, good_tools)
+                    good_coal = properties.gp_create(\"00000007\")
+                    good_iron = properties.gp_create(\"00000009\")
+                    building_smelter = properties.bp_create(\"00000003\")";
+        let source = || Rc::new(Memory([("main.lua", main)].into_iter().collect()));
+        let melt = Overlay {
+            name: "tool-recycling".into(),
+            code: b"reborn.bp_addRecipe(building_smelter, good_iron)
+                    reborn.bp_addRecipeInput(building_smelter, good_tools, 2)
+                    reborn.bp_addRecipeInput(building_smelter, good_coal, 1)
+                    reborn.cfg_setRecipeKeep(good_tools, 2)
+                    reborn.cfg_setRecipeKeep(good_saw, 1)"
+                .to_vec(),
+        };
+        let (rules, report) =
+            run_with_overlays(source(), "main.lua", std::slice::from_ref(&melt)).unwrap();
+        assert_eq!(report.call_count("cfg_setRecipeKeep"), 2);
+        assert_eq!(rules.recipe_keep.get(&0x32), Some(&2));
+        let groups = rules.recipe_groups();
+        assert_eq!(groups.get(&0x32), Some(&vec![0x3D, 0x3E]));
+        assert_eq!(groups.len(), 1);
+        let keep = rules.recipe_keep_by_member();
+        assert_eq!(keep.get(&0x3D), Some(&2));
+        assert_eq!(keep.get(&0x3E), Some(&1));
+        let (plain, _) = run(source(), "main.lua").unwrap();
+        assert!(plain.recipe_groups().is_empty() && plain.recipe_keep_by_member().is_empty());
+    }
+
+    /// Hook W19: `reborn.cfg_setPaving` sets the paving rule; a speed of
+    /// 0 percent is an error; without overlays there is none.
+    // spec: none (hook W19, docs/extending.md "Paved roads")
+    #[test]
+    fn an_overlay_sets_the_paving_rule() {
+        let main = "good_stone = properties.gp_create(\"00000002\")";
+        let source = || Rc::new(Memory([("main.lua", main)].into_iter().collect()));
+        let paving = Overlay {
+            name: "paved-roads".into(),
+            code: b"reborn.cfg_setPaving(good_stone, 1, 130)".to_vec(),
+        };
+        let (rules, _) =
+            run_with_overlays(source(), "main.lua", std::slice::from_ref(&paving)).unwrap();
+        assert_eq!(rules.paving, Some((2, 1, 130)));
+        let still = Overlay {
+            name: "still".into(),
+            code: b"reborn.cfg_setPaving(good_stone, 1, 0)".to_vec(),
+        };
+        let err = run_with_overlays(source(), "main.lua", &[still]).unwrap_err();
+        assert!(err.0.contains("percent"), "{}", err.0);
+        let (plain, _) = run(source(), "main.lua").unwrap();
+        assert_eq!(plain.paving, None);
+    }
+
+    /// Hook W25: the three `reborn.ai_set*` calls fill the computer
+    /// players' rules; an unknown good is an error; without overlays there
+    /// are none.
+    // spec: none (hook W25, docs/extending.md "The computer players and a project's rules")
+    #[test]
+    fn an_overlay_sets_the_computer_players_rules() {
+        let main = "good_stone = properties.gp_create(\"00000002\")
+                    good_tools = properties.gp_create(\"00000005\")
+                    building_smelter = properties.bp_create(\"00000009\")";
+        let source = || Rc::new(Memory([("main.lua", main)].into_iter().collect()));
+        let ai = Overlay {
+            name: "ai".into(),
+            code: b"reborn.ai_setDeepen(6)
+                    reborn.ai_setPaving(3, 10)
+                    reborn.ai_setRecipeRule(building_smelter, 1, good_tools, 40)"
+                .to_vec(),
+        };
+        let (rules, report) =
+            run_with_overlays(source(), "main.lua", std::slice::from_ref(&ai)).unwrap();
+        assert_eq!(rules.ai_project.deepen_food, Some(6));
+        assert_eq!(rules.ai_project.paving, Some((3, 10)));
+        assert_eq!(
+            rules.ai_project.recipes,
+            [crate::model::AiRecipeRule {
+                building: 9,
+                index: 1,
+                good: 5,
+                above: 40
+            }]
+        );
+        assert!(rules.ai_project.any());
+        assert_eq!(report.call_count("ai_setPaving"), 1);
+        let wrong = Overlay {
+            name: "wrong".into(),
+            code: b"reborn.ai_setRecipeRule(building_smelter, 1, 99, 40)".to_vec(),
+        };
+        let err = run_with_overlays(source(), "main.lua", &[wrong]).unwrap_err();
+        assert!(err.0.contains("unknown good"), "{}", err.0);
+        let (plain, _) = run(source(), "main.lua").unwrap();
+        assert!(!plain.ai_project.any());
     }
 
     /// Hook W12: the types an overlay creates are the project's, an

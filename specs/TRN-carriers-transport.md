@@ -257,6 +257,17 @@ ticks each. Roads and flags as in `TRN-roads-flags.md`.
     is bound for **keeps that destination**, with no next flag; `ECO-requests-
     dispatch.md` ECO-REQ-5.7 (a) or (c) takes it from there. Donkeys go into
     buildings in the same way as carriers. Confidence: high (code and T59);
+  - **The building gone while he walks in (2026-11-16 day, Q-230 c; E-trn-038, code reading and
+    the R6 recording, high; T60).** The walk into the building, once started, goes on to the
+    building's field. In the tick after it ends (the hand-over tick) the hand-over finds no order
+    for the ware (the removal cleared its destination, `ECO-requests-dispatch.md` ECO-REQ-5.5),
+    so **nothing is delivered and the ware stays in his hands**; the road still counts the trip
+    (3.4). He walks back out to the flag as after any delivery (the walk ordered in the hand-over
+    tick, at progress 0), and on the flag, **holding a ware, he puts it down** like any ware
+    (the drop-time and pickup-time actions of the next item). The ware then lies at the flag
+    without destination and is sent to storage by ECO-REQ-5.5; carried on from there like any
+    other ware (in T60 by the same carrier, his road's next job). He is not sent home: his road
+    still exists. Nothing is lost;
   - otherwise it puts the ware down: a timed action of the drop time, then one
     of the pickup time. The ware lies at the flag (and is free for other
     carriers) when the drop-time action ends; it was already counted there
@@ -713,6 +724,19 @@ ticks each. Roads and flags as in `TRN-roads-flags.md`.
   holds is destroyed and a ware it had only claimed stays at its flag, free
   again; wares lying at a removed flag are destroyed with it. Details in
   `TRN-roads-flags.md` TRN-ROAD-6 (Q-139). Confidence: high.
+- **TRN-CARRY-7.2a Every settler sent home loses the ware in his hands (2026-11-16 day, Q-230 a,
+  b; E-trn-036, code reading, high).** Going home (`TRN-free-walk.md` TRN-FREE-6.4) is one state
+  shared by all settlers, and its start does what 7.2 says for every settler, not only carriers: a
+  ware **in his hands** is destroyed (its order, if any, open again), a ware he had only claimed at
+  a flag is released and stays there. A worker carries a real ware once he has picked his product
+  up: the woodcutter's log and the stonemason's stone are made at the pickup at the tree or pile
+  and are in his hands from there to the flag. So a worker whose building is removed while he
+  carries his product home loses it at once: it goes into no warehouse and is not put down. A
+  settler who later dies homeless therefore never holds a ware.
+  Test: a woodcutter carrying a log to his hut's flag when the hut is torn down: the log is gone
+  in that tick; the player's wood stock does not change when he reaches a warehouse.
+  Confidence: high for the going-home step; medium-high that the woodcutter's and stonemason's
+  pickup is the one at the tree or pile (the shared take action makes a new ware of the job's good when he holds none).
 
 ### Transport priority (shipped `Goods.lua`)
 
@@ -827,6 +851,7 @@ one tick off (confidence medium), totals within 2 ticks.
 | T57 | 3.7 (the exchange ware taken away in the arrival tick, Q-381): E-trace-018 (R5, the Weak game), carrier 90802 of the road (136, 57) - (132, 58) carrying 95639 to the flag 90786 (132, 58), its exchange ware 95728 lying there (claimed, for the castle 90180, next (136, 57)); in counter 49082 95728 gets the destination 95647 and loses its claim, 90802 arrives on (132, 58) (standing, trace 49083), and 95692 (next (136, 57)) lies at (132, 58) from 49082, put down by carrier 91504 | 90802's ticks at (132, 58) | 49083: 95692 claimed for 90802; drop-time action 49083 .. 49086, pickup-time 49087 .. 49090 (95639 down, 95692 up in 49087); walks back with 95692 at progress 0 in 49091 (trace 49092). Treating the dropped claim as still bound: 95639 put down, a standing tick, a second 4 + 4 cycle for 95692, walking in trace 49101: the Weak game against R5 differs from settlers 49093. With the rule (experiment build): settlers 50151, buildings 51126 against R5, the 150 000 generator 50113 unchanged; every other pair unchanged (the Hard 45700 / 46700 / 45865, Fight 784) |
 | T58 | 3.5a (the own road costs 1 in the carry walk): E-trace-019 (R6, MP_4P_Fight), player 1's carrier 15038 of the road 15153 "53,53 53,52 52,51" (L 4; made by the split of 14998 at table tick 2272), taking up the ware 14982 at (53, 53) (claimed before the split; for the building 14432, next flag still (54, 49), two roads away). Roads at counter 2320: 15156 "54,49 53,49 53,50 52,51" (L 6), 15057 "53,53 54,52 54,51" and 15060 "54,49 54,50 54,51" (L 4 each; heap dump of 2500) | his carry walk | pickup-time action to trace 2323; walk from (53, 53) at progress 0 in trace 2324 towards (53, 52); on (52, 51) in trace 2383, the put-down there (the walk ends at the first flag, his road's far end); the ware lies at 15149 (52, 51) from 2387 with next flag (54, 49) (recorded). Route costs: own road 1 + 6 = 7 against 4 + 4 = 8. With every road at L (4 + 6 = 10) he walks over (54, 52): the Fight game against R6 differs from settlers 2325. With the rule (experiment build, with the Fight rules before it): settlers 2325 -> 3663; every pair of the fidelity set unchanged |
 | T59 | 3.3 (the building stops taking the good on the way), 3.2, ECO-REQ-5.7 (c): E-trace-013 (R3, the Hard game), player 1's donkey 95957 of the road (143, 45) - (144, 45) - (145, 46) carrying the plank 96452 to the harbour 90366 (144, 47) (flag 90367 (145, 46), its next flag); the goods arrangement of counter 45647 (step 0, `AI-construction.md` T100) sets *stop* for planks on the harbour and the castle | the donkey and the plank | entry settled by step 1 from its walk's start; in 45648 the harbour no longer takes planks: the check runs, the flag is full, the donkey is on its step onto (145, 46) and stands back on (144, 45) in 45649 (trace 45650); admitted on its grid at 45653 (95957 + 45653 = 0 mod 10), on (145, 46) in 45681, the put-down 45682 .. 45689; the plank lies there from 45686 with destination 90366 and no next flag, loses it at the storage run of 45690 and gets the storehouse 94359 at 45695 (recorded). The castle's plank 96454 (carrier 91084, flag 90344) goes the same way (lying 45657, destination dropped 45660, 94359 at 45665). Settling the building case once (ours) carries both into the buildings: the Hard game against R3 differs from settlers 45650; with this rule, the acceptance test of step 1 and T100 (experiment build) settlers 45723, buildings 46675 -> 46985 (the Hard 150 000 pair at its 100th-tick rows: settlers 45700 -> 45800, buildings 46700 -> 47000, generator 45865 -> 45969; every other pair unchanged); dropping the destination at the put-down instead gives 45693 |
+| T60 | 3.3, the building gone while he walks in (Q-230 c): E-trace-019 (R6), player 1's carrier 16778 of the road from the flag (57, 59), carrying ware 16677 for the site 16688 on (57, 60); the site removed during counter 8399 while he walks in (counters 8392 .. 8412 at 0.045 a tick) | his and the ware's rows (counters) | on the building's field in 8413 (the hand-over tick: no delivery, the ware stays his, its destination already empty since 8402); walking out from 8414 at progress 0 (0.027 a tick), on the flag in 8452; putting it down 8452 .. 8461 (the ware at the flag 16689 in 8456); 8462 the next job; from 8463 taking the ware again, now bound for the headquarters 14158 (8467). Not sent home. A build that sends him home (or loses the ware) differs from the fight game's generator at trace tick 8456 (experiment) |
 
 ## Evidence
 
@@ -874,6 +899,8 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-trn-021, E-trace-013 | code reading and recording | the wares, flags, streets tables of E-trace-013 and the Hard pair's settlers | TRN-CARRY-3.2, 3.7 (T42), `ECO-worker-cycle.md` ECO-WORK-3.4 (T-room-2) |
 | E-trace-011 | recording | `wares.csv.gz` (water 91201, plank 91126, water 90981, counters 11580 .. 11640), `streets.csv.gz` and `flags.csv.gz` (counter 11598), `settlers.csv.gz` (carrier 91072) | 3.7 (T31) |
 | E-trn-031 | code reading | = E-gfx-039, session 2026-11-06 | TRN-CARRY-3.6a |
+| E-trn-036 | code reading | session 2026-11-16 day: the going-home start's held-ware step shared by all settlers; the pickup action that makes a worker's product | TRN-CARRY-7.2a (Q-230 a, b) |
+| E-trn-038 | code reading and recording | session 2026-11-16 day: the carrier's states into a building, the hand-over (no order: no delivery), back out, put down; E-trace-019's carrier 16778 | TRN-CARRY-3.3 (Q-230 c), T60 |
 
 ## Open questions
 

@@ -726,6 +726,10 @@ impl World {
         for ship in &saved.ships {
             let on_map = self.terrain.contains(ship.coast) && self.terrain.contains(ship.water);
             if valid(ship.player) && on_map {
+                // SHIP-2.7: since its creation its last port position is
+                // the coast field (no route has started yet).
+                let mut vessel = crate::navy::Vessel::new(ship.coast);
+                vessel.port = Some(ship.coast);
                 self.ships.push(crate::Ship {
                     owner: ship.player,
                     at: ship.coast,
@@ -734,7 +738,7 @@ impl World {
                     main_work: ship.main_left.clamp(0.0, 1.0).to_bits(),
                     step_amount: None,
                     name: None,
-                    vessel: crate::navy::Vessel::new(ship.coast),
+                    vessel,
                 });
                 report.ships += 1;
             }

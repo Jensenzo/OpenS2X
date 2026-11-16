@@ -142,6 +142,21 @@ impl AudioState {
     }
 }
 
+/// GFX-OBJ-8.7 (4), SND-2.2: the fields whose finished building (field,
+/// serial) went between two ticks: a collapse each, in field order. Not a
+/// capture, whose new building stands finished on the same field at once
+/// (2.2a (4)); an upgrade keeps its building.
+pub(crate) fn collapses(before: &HashSet<(Point, u32)>, now: &HashSet<(Point, u32)>) -> Vec<Point> {
+    let mut gone: Vec<Point> = before
+        .difference(now)
+        .map(|&(f, _)| f)
+        .filter(|f| !now.iter().any(|(at, _)| at == f))
+        .collect();
+    gone.sort_unstable();
+    gone.dedup();
+    gone
+}
+
 /// SND-2.2: the code events read off the world each frame: a footstep of
 /// every walking settler and carrier every 0.5 s, a tree that starts to
 /// fall, a building that goes, a catapult's shot and impact. SND-3.4:
@@ -267,16 +282,10 @@ pub fn world_events(
                 source: None,
             });
         }
-        for (f, _) in state.seen.buildings.difference(&buildings) {
-            // GFX-OBJ-8.7 (4), SND-2.2: a finished building's collapse; not
-            // a capture, whose new building stands finished on the same
-            // field at once (2.2a (4); an upgrade keeps its building).
-            if buildings.iter().any(|(at, _)| at == f) {
-                continue;
-            }
+        for f in collapses(&state.seen.buildings, &buildings) {
             queue.0.push(SoundRequest::At {
                 name: sound::COLLAPSE.into(),
-                at: at(*f),
+                at: at(f),
                 source: None,
             });
         }
@@ -865,5 +874,76 @@ pub(crate) mod output {
         pub fn playing(&self) -> usize {
             0
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn finished(world: &s2_sim::World) -> HashSet<(Point, u32)> {
+        world
+            .buildings()
+            .filter(|b| !b.under_construction)
+            .map(|b| (b.at, b.serial))
+            .collect()
+    }
+
+    // Play test 50 (GFX-OBJ-8.7 (4), SND-2.2): a finished building the
+    // player tears down gives the collapse sound once, at its field, over
+    // the whole collapse and the ruin's 333 ticks; another building
+    // standing on gives none.
+    // spec: GFX-OBJ-8.7, SND-2.2
+    #[test]
+    fn a_tear_down_plays_the_collapse_sound_once() {
+        let n = 30 * 30;
+        let terrain = s2_sim::map::Terrain {
+            width: 30,
+            height: 30,
+            heights: vec![0; n],
+            height_floor: -100,
+            states: vec![s2_sim::map::state::FOR_BUILDING; n],
+            samples: Vec::new(),
+        };
+        let rules = s2_sim::Rules {
+            building_types: vec![s2_sim::BuildingType::new(7, s2_sim::BuildingSize::Small)],
+            ..s2_sim::Rules::empty()
+        };
+        let p0 = s2_sim::PlayerId(0);
+        let mut world = s2_sim::World::with_map(1, terrain, rules, p0);
+        for at in [(10, 10), (16, 10)] {
+            world.submit(s2_sim::Command::CreateBuilding {
+                player: p0,
+                building: 7,
+                at,
+                settler: None,
+            });
+        }
+        world.step();
+        assert_eq!(finished(&world).len(), 2);
+        world.submit(s2_sim::Command::RemoveBuilding {
+            player: p0,
+            at: (10, 10),
+        });
+        let mut seen = finished(&world);
+        let mut heard = Vec::new();
+        for _ in 0..600 {
+            world.step();
+            let now = finished(&world);
+            heard.extend(collapses(&seen, &now));
+            seen = now;
+        }
+        assert_eq!(heard, [(10, 10)]);
+    }
+
+    // GFX-OBJ-8.7 (4), 2.2a (4): a captured building (another serial on the
+    // same field at once) and a building that stays are no collapse.
+    // spec: GFX-OBJ-8.7
+    #[test]
+    fn a_capture_is_no_collapse() {
+        let before: HashSet<(Point, u32)> = [((3, 3), 1), ((5, 5), 2), ((7, 7), 3)].into();
+        let now: HashSet<(Point, u32)> = [((3, 3), 9), ((5, 5), 2)].into();
+        assert_eq!(collapses(&before, &now), [(7, 7)]);
+        assert!(collapses(&now, &now).is_empty());
     }
 }

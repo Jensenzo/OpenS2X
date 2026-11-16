@@ -660,6 +660,7 @@ impl World {
                 text: UNDER_ATTACK,
                 until: now + MESSAGE_TICKS,
                 building: self.building_at(target.at).map(|b| b.building_type),
+                ship: None,
             }),
         }
     }

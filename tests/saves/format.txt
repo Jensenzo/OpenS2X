@@ -1,4 +1,4 @@
-save format 2, world format 75
+save format 2, world format 81
 s2_ai::AiSystem
     counter: u64
     players: seq<Option<s2_ai::player::AiPlayer>>
@@ -321,6 +321,16 @@ s2_sim::World
     stone: Option<u32>
     goods: map<u32, s2_sim::rules::GoodRules>
     recipes @67: map<u32, seq<(u32, u32)>>
+    recipe_sets @76: map<u32, seq<s2_sim::rules::Recipe>>
+    chosen_recipes @76: map<(u32, u32), u32>
+    deepenings @77: map<u32, s2_sim::deepening::Deepening>
+    first_resources @77: map<(u32, u32), s2_sim::workshop::FieldResource>
+    mine_deepenings @77: map<(u32, u32), s2_sim::deepening::MineDeepening>
+    recipe_groups @78: map<u32, seq<u32>>
+    recipe_keep @78: map<u32, u32>
+    paving_rule @79: Option<s2_sim::paving::PavingRule>
+    pavings @79: map<u32, s2_sim::paving::PavingWork>
+    paved @79: seq<u32>
     roles: s2_sim::rules::Roles
     tribes: map<s2_sim::PlayerId, u8>
     next_object: u32
@@ -468,6 +478,9 @@ s2_sim::command::Command
     52 PlanRoad { player: s2_sim::PlayerId, from: (u32, u32), to: (u32, u32) }
     53 PlanBuilding { player: s2_sim::PlayerId, building: u32, at: (u32, u32), records: u32 }
     54 TearDown { player: s2_sim::PlayerId, at: (u32, u32) }
+    55 ChooseRecipe { player: s2_sim::PlayerId, at: (u32, u32), index: u32 }
+    56 DeepenMine { player: s2_sim::PlayerId, at: (u32, u32) }
+    57 PaveRoad { player: s2_sim::PlayerId, at: (u32, u32) }
 s2_sim::command::CommandResult
     command: s2_sim::command::Command
     outcome: Result<(), s2_sim::command::Rejection>
@@ -514,6 +527,10 @@ s2_sim::command::Rejection
     39 BuildingLocked
     40 NoSuchTrigger
     41 PlannedRoadTooLong
+    42 NotARecipe
+    43 NotDeepenable
+    44 NotPavable
+    45 TooCloseToMilitary
 s2_sim::conquest::Catapult
     serial: u32
     facing: u8
@@ -565,6 +582,14 @@ s2_sim::construction::Leveller
     number: u32
     timer: u32
     walker: s2_sim::movement::Walker
+s2_sim::deepening::Deepening
+    share_per_mille: u32
+    most: u32
+    costs: seq<(u32, u32)>
+    food: seq<u32>
+s2_sim::deepening::MineDeepening
+    done: u32
+    under_way: bool
 s2_sim::distribution::DistEntry
     key: u32
     weight: u32
@@ -746,6 +771,14 @@ s2_sim::navy::Vessel
     aboard: seq<(u32, u32)>
     target: Option<s2_sim::navy::Landing>
     options: [Option<s2_sim::navy::Landing>; 6]
+s2_sim::paving::PavingRule
+    good: u32
+    per_field: u32
+    speed_percent: u32
+s2_sim::paving::PavingWork
+    needed: u32
+    sent: u32
+    laid: u32
 s2_sim::placement::BuildingSize
     0 Small
     1 Medium
@@ -856,6 +889,7 @@ s2_sim::requests::Message
     text: string
     until: u64
     building: Option<u32>
+    ship @81: Option<u32>
 s2_sim::requests::Order
     player: s2_sim::PlayerId
     good: u32
@@ -902,6 +936,9 @@ s2_sim::rules::GoodRules
     resource: bool
     kind: s2_sim::rules::GoodKind
     production_counter @66: Option<u8>
+s2_sim::rules::Recipe
+    product: u32
+    inputs: seq<(u32, u32)>
 s2_sim::rules::Roles
     helper: Option<u32>
     builder: Option<u32>

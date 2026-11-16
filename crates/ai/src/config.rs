@@ -197,6 +197,9 @@ pub struct AiConfig {
     /// Hook W12: the alternative producers, by the good they stand in for.
     /// Empty for the original's rules and every overlay without one.
     pub alternatives: BTreeMap<u32, AiAlternative>,
+    /// Hook W25: when the computer players use the project's rules
+    /// (deepening, paving, recipes). Empty for the original's rules.
+    pub project_rules: s2_rules::model::AiProjectRules,
     /// Index of a building type id in `sim.building_types`.
     type_index: BTreeMap<u32, usize>,
 }
@@ -317,6 +320,8 @@ impl AiConfig {
         if !rules.project_buildings.is_empty() || !alternatives.is_empty() {
             config.set_project(rules.project_buildings.clone(), alternatives);
         }
+        // W25: none in the original's rules.
+        config.project_rules = rules.ai_project.clone();
         config
     }
 
@@ -364,6 +369,7 @@ impl AiConfig {
                 .collect(),
             project_types: BTreeSet::new(),
             alternatives: BTreeMap::new(),
+            project_rules: Default::default(),
             type_index: sim
                 .building_types
                 .iter()
@@ -487,11 +493,16 @@ impl AiConfig {
             .map_or(&[], |g| g.costs.as_slice())
     }
 
-    /// The inputs of one product `product` of building type `building`: a
-    /// project's recipe for the type (hook H6, `s2_sim::Rules::recipes`),
-    /// else the product's [`inputs`](Self::inputs). The original's rules
-    /// have no recipes.
+    /// The inputs of one product `product` of building type `building`: the
+    /// first recipe of a project's recipe set for the type (hook W20,
+    /// `s2_sim::Rules::recipe_sets`: the one a building works until a
+    /// player chooses another, which the computer players never do), else
+    /// its recipe (hook H6, `s2_sim::Rules::recipes`), else the product's
+    /// [`inputs`](Self::inputs). The original's rules have neither.
     pub fn type_inputs(&self, building: u32, product: u32) -> &[(u32, u32)] {
+        if let Some(first) = self.sim.recipe_sets.get(&building).and_then(|s| s.first()) {
+            return &first.inputs;
+        }
         self.sim
             .recipes
             .get(&building)

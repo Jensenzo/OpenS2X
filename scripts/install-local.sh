@@ -7,7 +7,8 @@
 #                  public name (13 Nov 2026) is removed
 #   - the game to  %USERPROFILE%\Games\S2-data\   (copied from $S2_GAME_DIR
 #                  or ~/s2/game, only on first run or with --data)
-#   - game_dir in  %APPDATA%\s2-reborn\settings.txt, other lines kept
+#   - game_dir in  %APPDATA%\s2-reborn\settings.txt, other lines kept (the
+#                  file is not touched when it names that folder already)
 #   - a desktop shortcut "OpenS2X"; the old "s2-reborn" one is removed
 #   - the films the program shows, converted from the game's own Bink files
 #     with FFmpeg into %USERPROFILE%\Games\s2-reborn\video\ (docs/video.md;
@@ -77,13 +78,19 @@ fi
 echo "films:    $install_w\\video"
 
 # game_dir in the settings file; every other line stays as it is.
+# A file that names this folder already is left as it is, not written again
+# with the same bytes (the player's file: nothing of ours rewrites it).
 settings="$(wslpath -u "$appdata_w")/s2-reborn/settings.txt"
-mkdir -p "$(dirname "$settings")"
-touch "$settings"
-grep -v '^game_dir=' "$settings" > "$settings.new" || true
-{ echo "game_dir=$gamedata_w"; cat "$settings.new"; } > "$settings"
-rm -f "$settings.new"
-echo "settings: $appdata_w\\s2-reborn\\settings.txt"
+if [ -f "$settings" ] && tr -d '\r' <"$settings" | grep -qxF "game_dir=$gamedata_w"; then
+    echo "settings: $appdata_w\\s2-reborn\\settings.txt (game_dir already this folder; left as it is)"
+else
+    mkdir -p "$(dirname "$settings")"
+    touch "$settings"
+    grep -v '^game_dir=' "$settings" > "$settings.new" || true
+    { echo "game_dir=$gamedata_w"; cat "$settings.new"; } > "$settings"
+    rm -f "$settings.new"
+    echo "settings: $appdata_w\\s2-reborn\\settings.txt"
+fi
 
 powershell.exe -NoProfile -Command "
 \$s = (New-Object -ComObject WScript.Shell).CreateShortcut('$desktop_w\\OpenS2X.lnk');

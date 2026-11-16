@@ -18,6 +18,12 @@ read at start-up; a missing file means defaults.
 
 - **SET-1.1** Path `<Documents>\S2\users\<profile>.cfg`. The profile name defaults to `default`
   (observed file `default01.cfg`, profile `default01`). The file is plain, not rc00-wrapped.
+  **Which profile at start (2026-11-16 day, Q-188 a; E-set-003, code reading, high):** the
+  game has no profile choice. At start-up, once, it makes its settings object with the fixed
+  name `default01` and reads `<Documents>\S2\users\default01.cfg`; nothing renames it later, so
+  it always reads and writes that one file, whatever other `.cfg` files the folder holds. The
+  player name inside the file (the profile name shown in the game, `default` when the file has
+  none) is a separate field.
 - **SET-1.2** Written when a settings page is closed; read when the settings object is created
   (start-up). If the file is missing or unreadable the defaults of SET-3 apply.
 - **SET-1.3** The file is two objects in the marker format of FMT-S2M-1.2: `UserObject` (version 5)
@@ -213,6 +219,7 @@ copying step has one caller, the view's set-up), medium that the set-up runs exa
 | E-ui-032 | code reading | (session 2026-11-14 b) | SET-5.6 the `!Infowindow` drop-down and the help panel it gates; not the messages window |
 | E-trace-026 | a picture of the running original | the game settings page at 2560 x 1440 (session 2026-11-14 b) | SET-2 field 17: a profile with 0 shows On |
 | E-set-002 | data | the profile file `default01.cfg`, parsed | observed values, exact length |
+| E-set-003 | code reading | S2DNG.exe (session 2026-11-16 day): the start-up's one settings object, created with the fixed name default01 and loaded | SET-1.1 (Q-188 a) |
 | E-gfx-056 | code reading | the scene settings' setters, getters and presets; the engine page's widgets, labels and slider handlers | SET-4a, T5 |
 | E-gfx-063 | code reading | (session 2026-11-13) the Engine page's change handler; every reader of the scene settings (the per-frame pass set-up, frame, mirror draw and update; the view's settings copy and its one caller, the view's set-up; the mirror image's size function; the device's shader-level setter) | SET-4b, T6 |
 | E-ui-035 | code reading, a picture | (session 2026-11-15 night; the pictures of E-trace-026) | SET-5.2, 5.5, 5.7: the Graphics, Input and Network pages' controls, choices, fields and places; SET-2 fields 5, 6, 8, 9, 21 |

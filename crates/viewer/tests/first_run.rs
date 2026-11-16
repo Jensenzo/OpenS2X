@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-// spec: none (the program's own settings file; the folders of SET-1.1 untouched)
+// spec: none (the program's own settings file and its log; the folders of SET-1.1 untouched)
 #[test]
 fn the_profile_dir_holds_the_first_runs_settings() {
     let Some(game) = std::env::var_os("S2_GAME_DIR") else {
@@ -72,9 +72,21 @@ fn the_profile_dir_holds_the_first_runs_settings() {
          (exit {status:?}):\n{err}"
     );
     assert!(status.is_some_and(|s| !s.success()), "{status:?}\n{err}");
-    // The player's file is as it was; nothing was written in either folder.
+    // The player's file is as it was; nothing was written in the player's
+    // folder, and the own folder holds only the game's log, which starts
+    // with the version line (docs/releasing.md, "The version").
     assert_eq!(std::fs::read_to_string(&theirs).unwrap(), text);
-    assert_eq!(std::fs::read_dir(&own).unwrap().count(), 0);
+    assert!(!player.join("s2-reborn").join("log.txt").exists());
+    let names: Vec<String> = std::fs::read_dir(&own)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["log.txt"]);
+    let log = std::fs::read_to_string(own.join("log.txt")).unwrap();
+    assert_eq!(
+        log.lines().next(),
+        Some(format!("OpenS2X {}", env!("CARGO_PKG_VERSION")).as_str())
+    );
 }
 
 // spec: none (the public name OpenS2X: the program's own settings stay in the folder `s2-reborn`, SET-1.1's folders untouched)

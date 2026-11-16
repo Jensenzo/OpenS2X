@@ -387,6 +387,48 @@ fn screen_height(eye: &Eye, point: [f32; 3], aspect: f32) -> f32 {
     dot(p, up) / dot(p, d) / (vertical_fov(aspect) / 2.0).tan()
 }
 
+/// F30 (UI-GAME-12.1, GFX-VIEW-3.6): H and HOME (`View3d::jump_home`: the
+/// start zoom, then the jump to the headquarters' field) put a camera that
+/// was moved, zoomed and turned back where the game started it: the start
+/// target, zoom 3, no turn.
+// spec: UI-GAME-12.1, GFX-VIEW-3.6
+#[test]
+fn home_puts_the_camera_back_on_its_start() {
+    let flat = Grid {
+        frame: Frame::new(40, 40),
+        height: |_, _| 5000,
+    };
+    let [x0, z0] = flat.frame.field_xz(20, 20);
+    let mut start = CameraRig::start(Some([x0, z0]));
+    let mut moved = CameraRig::start(Some([x0, z0]));
+    for _ in 0..30 {
+        start.update(&flat);
+        moved.update(&flat);
+    }
+    moved.jump_to(x0 + 30.0, z0 + 20.0);
+    moved.zoom = 1;
+    moved.yaw_target = 1.0;
+    for _ in 0..30 {
+        moved.update(&flat);
+    }
+    assert!(!close(moved.target[0], start.target[0]));
+    // H: the start zoom, then the jump home.
+    moved.zoom = start.zoom;
+    moved.jump_to(x0, z0);
+    for _ in 0..30 {
+        moved.update(&flat);
+    }
+    assert_eq!((moved.zoom, moved.yaw, moved.yaw_target), (3, 0.0, 0.0));
+    for k in 0..3 {
+        assert!(
+            close(moved.target[k], start.target[k]),
+            "{:?} {:?}",
+            moved.target,
+            start.target
+        );
+    }
+}
+
 // GFX-VIEW T13, T13a (3.6): a new game starts at zoom 3, yaw 0, the
 // target 18 units in front of the headquarters' field point; the HQ
 // then stands a little above the centre of the screen.

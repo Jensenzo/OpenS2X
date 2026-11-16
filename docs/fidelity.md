@@ -1,5 +1,31 @@
 # Fidelity: our game against the original's recording
 
+## In short
+
+OpenS2X is compared with recordings of the original game playing the same
+map with the same set-up: every settler's place, every building and the
+game's random number generator, tick by tick (a tick is a tenth of a second
+of game time). The recordings belong to the investigation and are not in the
+public repository, so the numbers can be measured only in the working
+repository; this page keeps them. Measured on 0.11.1, on MP_2P_Storm_Coast:
+
+| Game | Equal up to tick | Game time |
+|---|---|---|
+| Two players, the computer player Weak: settlers and buildings | every compared tick to 40,000 | 67 minutes |
+| The same game: the random number generator | 51,723 | 86 minutes |
+| The same game recorded densely, each settler's animation compared too | 17,532 | 29 minutes |
+| You alone, no computer player: settlers and buildings | 27,672 | 46 minutes |
+| Two players, the computer player Strong: the generator; settlers and buildings | 48,042; 48,199 | 80 minutes |
+| The Strong game recorded densely, with the animations | 7,053 | 12 minutes |
+
+"Equal up to" means the first difference comes in the next tick. A change
+that moves a first difference later adds a line to the record at the end of
+this page; no change may move one earlier (a test checks it before every
+release). The rest of the page is the working record: which recordings are
+compared, how, and each step, with the evidence ids of the specifications.
+
+## How it is measured
+
 The investigation recorded the original playing MP_2P_Storm_Coast with the
 default set-up (evidence E-trace-002): player 0 a
 human who gives no command, player 1 the computer of the default slot strength

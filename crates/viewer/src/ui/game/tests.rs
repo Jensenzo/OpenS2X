@@ -50,6 +50,7 @@ fn message(tick: u64, text: &'static str) -> s2_sim::Message {
         text,
         until: tick + 36_000,
         building: Some(1),
+        ship: None,
     }
 }
 
@@ -1793,6 +1794,211 @@ fn the_shipyard_shows_the_ship_when_switched() {
     )));
 }
 
+/// Hook W20 (docs/extending.md "Recipes a player chooses"): a building of a
+/// type with a recipe set shows the chosen recipe's product and inputs, and
+/// the third button at (307, 157) chooses the next recipe, after the last
+/// the first again; a type without a set has no such button.
+// spec: none (hook W20; the window is UI-GAME-4.1a's)
+#[test]
+fn a_recipe_set_shows_the_chosen_recipe_and_a_next_button() {
+    let (mut world, at) = hut_game_with(|rules| {
+        rules.recipe_sets.insert(
+            4,
+            vec![
+                s2_sim::Recipe {
+                    product: 78,
+                    inputs: vec![(1, 2)],
+                },
+                s2_sim::Recipe {
+                    product: 90,
+                    inputs: vec![(2, 1)],
+                },
+            ],
+        );
+    });
+    let texts = Texts::parse("");
+    let mut catalog = Catalog::default();
+    catalog.good_icons.insert(78, (1, 0));
+    catalog.good_icons.insert(90, (2, 0));
+    let product_icon = |world: &World| {
+        let p = production_window(&ctx(world, &texts, &catalog), at);
+        p.widgets.iter().find_map(|w| match w {
+            Widget::Sprite {
+                atlas: Atlas::Elements1,
+                rect,
+                at,
+                ..
+            } if at[1] >= 43.0 && at[0] >= 136.0 && at[0] < 184.0 => Some(*rect),
+            _ => None,
+        })
+    };
+    let next = |world: &World| {
+        let p = production_window(&ctx(world, &texts, &catalog), at);
+        p.widgets.iter().find_map(|w| match w {
+            Widget::Button {
+                action: Action::Command(Command::ChooseRecipe { index, .. }),
+                at: place,
+                ..
+            } if *place == [307.0, 157.0] => Some(*index),
+            _ => None,
+        })
+    };
+    assert_eq!(product_icon(&world), Some([48, 0, 48, 48]));
+    assert_eq!(next(&world), Some(1));
+    world.submit(Command::ChooseRecipe {
+        player: PlayerId(0),
+        at,
+        index: 1,
+    });
+    world.step();
+    assert_eq!(product_icon(&world), Some([96, 0, 48, 48]));
+    assert_eq!(next(&world), Some(0));
+    let (plain, plain_at) = hut_game_with(|_| {});
+    let p = production_window(&ctx(&plain, &texts, &catalog), plain_at);
+    assert!(!p.widgets.iter().any(|w| matches!(
+        w,
+        Widget::Button {
+            action: Action::Command(Command::ChooseRecipe { .. }),
+            ..
+        }
+    )));
+}
+
+/// Hook W23 (docs/extending.md "Recipes a player chooses"): a type with
+/// three recipes has a Recipes button in the next-recipe button's place,
+/// opening the production window's recipe tab: one row per recipe, the
+/// check box marked on the chosen one; a click on the third row's box sends
+/// `ChooseRecipe` with index 2, after which the third is marked; the close
+/// button goes back to the production window.
+// spec: none (hook W23; the production window is UI-GAME-4.1a's)
+#[test]
+fn three_recipes_are_listed_in_a_tab() {
+    let recipe = |product, input| s2_sim::Recipe {
+        product,
+        inputs: vec![(input, 2)],
+    };
+    let (mut world, at) = hut_game_with(|rules| {
+        rules
+            .recipe_sets
+            .insert(4, vec![recipe(78, 1), recipe(90, 2), recipe(91, 1)]);
+    });
+    let texts = Texts::parse("");
+    let catalog = Catalog::default();
+    let p = production_window(&ctx(&world, &texts, &catalog), at);
+    let opener = p.widgets.iter().find_map(|w| match w {
+        Widget::Button {
+            action,
+            tooltip,
+            at: place,
+            ..
+        } if *place == [307.0, 157.0] => Some((action.clone(), tooltip.clone())),
+        _ => None,
+    });
+    assert_eq!(
+        opener,
+        Some((
+            Action::BuildingTab(RECIPES_TAB),
+            Some("Recipes.".to_owned())
+        ))
+    );
+    let rows = |world: &World| -> Vec<(u32, bool, [f32; 2])> {
+        let p = building_window(&ctx(world, &texts, &catalog), at, RECIPES_TAB).unwrap();
+        p.widgets
+            .iter()
+            .filter_map(|w| match w {
+                Widget::Button {
+                    action: Action::Command(Command::ChooseRecipe { index, .. }),
+                    selected,
+                    at,
+                    ..
+                } => Some((*index, *selected, *at)),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(
+        rows(&world),
+        [
+            (0, true, [20.0, 60.0]),
+            (1, false, [20.0, 100.0]),
+            (2, false, [20.0, 140.0])
+        ]
+    );
+    world.submit(Command::ChooseRecipe {
+        player: PlayerId(0),
+        at,
+        index: 2,
+    });
+    world.step();
+    assert_eq!(
+        rows(&world).iter().map(|r| r.1).collect::<Vec<_>>(),
+        [false, false, true]
+    );
+    let list = building_window(&ctx(&world, &texts, &catalog), at, RECIPES_TAB).unwrap();
+    assert!(list.widgets.iter().any(|w| matches!(
+        w,
+        Widget::Button {
+            action: Action::BuildingTab(0),
+            ..
+        }
+    )));
+    // Two recipes keep the next-recipe button and no list.
+    let (two, two_at) = hut_game_with(|rules| {
+        rules
+            .recipe_sets
+            .insert(4, vec![recipe(78, 1), recipe(90, 2)]);
+    });
+    let p = building_window(&ctx(&two, &texts, &catalog), two_at, RECIPES_TAB).unwrap();
+    assert!(p.widgets.iter().any(|w| matches!(
+        w,
+        Widget::Button {
+            action: Action::Command(Command::ChooseRecipe { index: 1, .. }),
+            ..
+        }
+    )));
+}
+
+/// Hook W15 (docs/extending.md "Deepening a mine"): a building of a type
+/// with a deepening shows the deepen button at (307, 157), usable only while
+/// the command would be accepted (here never: the type is not a mine), its
+/// tooltip the cost and the count; a type without one has no such button.
+// spec: none (hook W15; the window is UI-GAME-4.1a's)
+#[test]
+fn a_deepening_shows_its_button() {
+    let (world, at) = hut_game_with(|rules| {
+        rules.deepenings.insert(
+            4,
+            s2_sim::Deepening {
+                share_per_mille: 250,
+                most: 2,
+                costs: vec![(1, 4)],
+                food: vec![2],
+            },
+        );
+    });
+    let texts = Texts::parse("");
+    let catalog = Catalog::default();
+    let deepen = |world: &World, at| {
+        let p = production_window(&ctx(world, &texts, &catalog), at);
+        p.widgets.iter().find_map(|w| match w {
+            Widget::Button {
+                action: Action::Command(Command::DeepenMine { .. }),
+                at: place,
+                enabled,
+                tooltip,
+                ..
+            } => Some((*place, *enabled, tooltip.clone().unwrap_or_default())),
+            _ => None,
+        })
+    };
+    let (place, enabled, tip) = deepen(&world, at).expect("the button");
+    assert_eq!(place, [307.0, 157.0]);
+    assert!(!enabled);
+    assert!(tip.contains("Deepened 0 of 2"), "{tip}");
+    let (plain, plain_at) = hut_game_with(|_| {});
+    assert_eq!(deepen(&plain, plain_at), None);
+}
+
 /// UI-GAME-9.4: a click selects a ship only by its model under the pointer,
 /// never by its field, and opens its window only on a field of build class 0;
 /// a flag, building or road on the field comes first.
@@ -1897,7 +2103,8 @@ fn harbour_game() -> (World, Point) {
 /// UI-GAME-4.4, 8.1a (lesson 4 stopped here): a harbour's window has the tabs 9,
 /// 10 and 12, the headquarters' 9, 10 and 11. The expedition page has four
 /// slots at x stepping 54 from (23, 60), builder n/1, stones n/6, planks n/4 and
-/// the ship 0/1, with no click action; Exploration at (298, 386) starts the
+/// the ship 0/1 (each `-/-` before a preparation, seen in E-trace-030), with
+/// no click action; Exploration at (298, 386) starts the
 /// preparation (SHIP-5.1) and is disabled while it runs, with its tooltip
 /// (SHIP-5.1a: nothing stops it); the jump at (248, 386) is off without a ship
 /// in expedition mode and goes to the nearest one.
@@ -1960,7 +2167,8 @@ fn a_harbour_has_the_expedition_page() {
         })
         .collect();
     let texts_of: Vec<&str> = labels.iter().map(|(_, t)| t.as_str()).collect();
-    assert_eq!(texts_of, ["0/1", "0/6", "0/4", "0/1"]);
+    // Seen (E-trace-030): before a preparation every slot reads -/-.
+    assert_eq!(texts_of, ["-/-", "-/-", "-/-", "-/-"]);
     for (i, (place, _)) in labels.iter().enumerate() {
         assert_eq!(place[0], 23.0 + 54.0 * i as f32 + 28.0);
     }
@@ -1999,6 +2207,16 @@ fn a_harbour_has_the_expedition_page() {
         s2_sim::ExpeditionState::Gathering
     );
     let p = page(&world);
+    // While it is prepared, each slot counts what is set aside.
+    let counts: Vec<String> = p
+        .widgets
+        .iter()
+        .filter_map(|w| match w {
+            Widget::Text { text, .. } if text.contains('/') => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(counts, ["0/1", "0/6", "0/4", "0/1"]);
     let (_, _, enabled, tip) = start(&p);
     assert!(!enabled, "disabled while it is prepared");
     assert!(tip.expect("a tooltip").contains("Exploration is running"));
@@ -2132,7 +2350,9 @@ fn speed_indicator_place() {
 
 /// UI-GAME-1.9: a context dialog's bottom-right corner on the click, x
 /// at most screenWidth - 600, kept on the screen; (20, 20) in the
-/// tutorial; global dialogs centred.
+/// tutorial; global dialogs centred; the places seen in the original,
+/// the `,` key's window among them (UI-GAME-4.4).
+// spec: UI-GAME-1.9, UI-GAME-4.4
 #[test]
 fn dialog_placement() {
     let world = flat_world(10, 10);
@@ -2149,6 +2369,24 @@ fn dialog_placement() {
     c.tutorial = true;
     assert_eq!(context_origin(&c, [200.0, 100.0]), [20.0, 20.0]);
     assert_eq!(global_origin(&c, [400.0, 300.0]), [312.0, 234.0]);
+    // Seen (E-trace-029, 2560 x 1440): a producer window (480 x 224) clicked
+    // at (1440, 200) opened at (960, 0); a dialog clicked at (2450, 236) at
+    // x 1960 (W - 600); a flag menu (304 x 96) clicked at (1640, 1318) with
+    // its top at about 1224 (0.85 H, here 1222 by the rule).
+    c.tutorial = false;
+    c.screen = [2560.0, 1440.0];
+    c.click = Some([1440.0, 200.0]);
+    assert_eq!(context_origin(&c, [480.0, 224.0]), [960.0, 0.0]);
+    c.click = Some([2450.0, 236.0]);
+    assert_eq!(context_origin(&c, [480.0, 224.0])[0], 1960.0);
+    c.click = Some([1640.0, 1318.0]);
+    let y = context_origin(&c, [304.0, 96.0])[1];
+    assert!((y - 0.85 * 1440.0).abs() <= 2.0, "{y}");
+    // UI-GAME-4.4 (E-ui-038): the `,` key's 376 x 464 depot window placed
+    // by the pointer at (2400, 1300): at (min(2400 - 376, W - 600), 1300 -
+    // 464) = (1960, 836), as seen.
+    c.click = Some([2400.0, 1300.0]);
+    assert_eq!(context_origin(&c, [376.0, 464.0]), [1960.0, 836.0]);
 }
 
 /// UI-GAME-8.5d: the buildings page: a cell per building type from
@@ -2531,8 +2769,8 @@ fn the_headquarters_military_page_has_five_slider_rows() {
         assert_eq!((at[0], width, usize::from(rank)), (50.0, 200.0, k));
         assert_eq!(
             at[1],
-            90.0 + 65.0 * k as f32 + 14.0,
-            "the bar's middle on 108 + 65 k"
+            90.0 + 65.0 * k as f32 + 8.0,
+            "the 20 px bar's middle on 108 + 65 k (UI-GAME-6.5)"
         );
     }
     let boxes = p
@@ -2582,4 +2820,498 @@ fn the_headquarters_military_page_has_five_slider_rows() {
         names,
         ["Private", "Corporal", "Sergeant", "Officer", "General"]
     );
+}
+
+/// UI-GAME-2.5 (with the measures of E-trace-028 and E-trace-030): the
+/// minimap dialog's frame at (W - 326, 10), the map 265 x 265 at (+30, +36)
+/// of it, the borders button centred at (W - 28, 292), the close cross at
+/// (W - 17, 31).
+// spec: UI-GAME-2.5
+#[test]
+fn the_minimap_dialog_stands_at_the_right_edge() {
+    let world = flat_world(10, 10);
+    let (texts, catalog) = (Texts::default(), Catalog::default());
+    let mut c = ctx(&world, &texts, &catalog);
+    c.screen = [2560.0, 1440.0];
+    let p = crate::ui::game::hud::minimap(&c, false);
+    assert_eq!(p.at, [2234.0, 10.0]);
+    assert!(p.widgets.iter().any(|w| matches!(
+        w,
+        Widget::Picture { at, size, .. } if *at == [30.0, 36.0] && *size == 265.0
+    )));
+    // Measured (E-trace-030): the borders button centred at (w - 28, 292),
+    // the close cross at (w - 17, 31).
+    let centre = |action: Action, side: f32| {
+        p.widgets.iter().find_map(|w| match w {
+            Widget::Button { action: a, at, .. } if *a == action => {
+                Some([p.at[0] + at[0] + side / 2.0, p.at[1] + at[1] + side / 2.0])
+            }
+            _ => None,
+        })
+    };
+    assert_eq!(centre(Action::Hud(20), 48.0), Some([2560.0 - 28.0, 292.0]));
+    assert_eq!(centre(Action::Hud(5), 24.0), Some([2560.0 - 17.0, 31.0]));
+}
+
+/// Hook W19 (docs/extending.md "Paved roads"): with a paving rule the road
+/// menu of a road of the player's has the pave button, usable while the
+/// command would be accepted (no warehouse is needed to order it); without
+/// the rule it has none.
+// spec: none (hook W19; the menu is UI-GAME-3.3's)
+#[test]
+fn a_paving_rule_adds_the_pave_button_to_the_road_menu() {
+    let road_world = |paving: Option<s2_sim::PavingRule>| {
+        let n = 10 * 10;
+        let terrain = s2_sim::map::Terrain {
+            width: 10,
+            height: 10,
+            heights: vec![0; n],
+            height_floor: -100,
+            states: vec![0; n],
+            samples: Vec::new(),
+        };
+        let rules = s2_sim::Rules {
+            paving,
+            ..s2_sim::Rules::empty()
+        };
+        let mut world = World::with_map(1, terrain, rules, PlayerId(0));
+        for at in [(2, 2), (4, 2)] {
+            world.submit(Command::PlaceFlag {
+                player: PlayerId(0),
+                at,
+            });
+        }
+        world.step();
+        world.submit(Command::BuildRoad {
+            player: PlayerId(0),
+            from: (2, 2),
+            to: (4, 2),
+        });
+        world.step();
+        world
+    };
+    let (texts, catalog) = (Texts::default(), Catalog::default());
+    let rule = s2_sim::PavingRule {
+        good: 2,
+        per_field: 1,
+        speed_percent: 130,
+    };
+    let world = road_world(Some(rule));
+    let p = road_menu(&ctx(&world, &texts, &catalog), (3, 2));
+    let pave = Action::Command(Command::PaveRoad {
+        player: PlayerId(0),
+        at: (3, 2),
+    });
+    assert!(
+        p.buttons().any(|b| *b.0 == pave),
+        "{:?}",
+        p.buttons().collect::<Vec<_>>()
+    );
+    let plain = road_world(None);
+    let p = road_menu(&ctx(&plain, &texts, &catalog), (3, 2));
+    assert!(!p.buttons().any(|b| *b.0 == pave));
+}
+
+/// UI-GAME-11.4 (confirmed, E-trace-030): a row's icon takes the left click
+/// (marks the message read and jumps), its text does nothing on a left
+/// click; a read row shows the teal frame with the tick (`uiElements3`
+/// (168, 344)) over its icon and its text in grey; an unread row neither.
+// spec: UI-GAME-11.4
+#[test]
+fn a_read_message_shows_the_tick_and_grey_text() {
+    let world = flat_world(10, 10);
+    let (texts, catalog) = (Texts::default(), Catalog::default());
+    let posted = [message(10, "Building constructed")];
+    let mut c = ctx(&world, &texts, &catalog);
+    c.posted_messages = &posted;
+    let key: MessageKey = (10, (3, 3), "Building constructed");
+    let row = |ui: &GameUi| {
+        let p = crate::ui::game::hud::messages(&c, ui);
+        let icon = p.widgets.iter().any(
+            |w| matches!(w, Widget::Button { action: Action::MessageRow(k), .. } if *k == key),
+        );
+        let text = p.widgets.iter().find_map(|w| match w {
+            Widget::TextButton {
+                action: Action::MessageText(k),
+                colour,
+                ..
+            } if *k == key => Some(*colour),
+            _ => None,
+        });
+        let tick = p.widgets.iter().any(|w| {
+            matches!(w, Widget::Sprite { atlas: Atlas::Elements3, rect, .. } if *rect == [168, 344, 28, 28])
+        });
+        (icon, text, tick)
+    };
+    let mut ui = GameUi::default();
+    assert_eq!(row(&ui), (true, Some([255, 255, 255]), false));
+    ui.read_messages.insert(key);
+    assert_eq!(row(&ui), (true, Some([120, 120, 120]), true));
+}
+
+/// UI-GAME-3.2 (seen, E-trace-030): a build menu cell's tooltip is the
+/// type's name with the player's count of it in brackets.
+// spec: UI-GAME-3.2
+#[test]
+fn a_build_cell_names_the_type_and_the_count() {
+    assert_eq!(
+        crate::ui::game::context::build_cell_tooltip("Woodcutter's Hut", 0),
+        "Woodcutter's Hut (0)"
+    );
+    assert_eq!(
+        crate::ui::game::context::build_cell_tooltip("Quarry", 2),
+        "Quarry (2)"
+    );
+}
+
+/// UI-GAME-2.2 (seen, E-trace-030): a control's tooltip box has its top-left
+/// corner at the pointer + (25, -45), is moved left to end at the screen's
+/// right edge, and stays on the screen at the top.
+// spec: UI-GAME-2.2
+#[test]
+fn a_control_tooltip_sits_above_right_of_the_pointer() {
+    let screen = [2560.0, 1440.0];
+    assert_eq!(
+        control_tooltip_at([1000.0, 500.0], [200.0, 32.0], screen),
+        [1025.0, 455.0]
+    );
+    assert_eq!(
+        control_tooltip_at([2550.0, 31.0], [180.0, 32.0], screen),
+        [2380.0, 0.0]
+    );
+    assert_eq!(CONTROL_TOOLTIP_HEIGHT, 32.0);
+}
+
+/// UI-GAME-4.5 (b), (e), (f) (seen again in E-trace-030): the ship window's
+/// twelve cargo slots from (16, 255),
+/// six per row 56 px apart, the rows 63 px apart; Jump to port enabled
+/// while the ship has a port (a ship a script made has its first land
+/// neighbour, SHIP-2.7), disabled with `!Ship has no target port.` while it
+/// has none; in expedition mode Cancel at (8, 176) and, while it waits for
+/// orders, the six compass buttons around the porthole with their tooltips
+/// (East at (278, 118) .. NorthEast at (240, 46)); Build harbour only while
+/// SHIP-7.1 holds (none here: the map has no harbour spot; Q-1060); the two
+/// separators `uiElements3` (0, 432, 350 x 8) at (2, 232) and (2, 376)
+/// (Q-1059).
+// spec: UI-GAME-4.5, SHIP-2.7, CAM-5.3
+#[test]
+fn the_ship_window_as_the_spec_lays_it_out() {
+    let (mut world, _) = harbour_game();
+    world.submit(Command::CreateShip {
+        player: PlayerId(0),
+        at: (30, 30),
+    });
+    world.step();
+    let ship = world.ships().len() - 1;
+    assert!(world.ships()[ship].vessel.expedition);
+    let (texts, catalog) = (Texts::default(), Catalog::default());
+    let p = ship_window(&ctx(&world, &texts, &catalog), ship).unwrap();
+    let slots: Vec<[f32; 2]> = p
+        .widgets
+        .iter()
+        .filter_map(|w| match w {
+            Widget::Sprite {
+                atlas: Atlas::Elements3,
+                rect,
+                at,
+                ..
+            } if *rect == [440, 216, 48, 48] => Some(*at),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(slots.len(), 12);
+    assert_eq!(
+        (slots[0], slots[5], slots[6]),
+        ([16.0, 255.0], [296.0, 255.0], [16.0, 318.0])
+    );
+    // (b) the two separators: the separator line of uiElements3, 350 wide
+    // (Q-1059).
+    let separators: Vec<[f32; 2]> = p
+        .widgets
+        .iter()
+        .filter_map(|w| match w {
+            Widget::Sprite {
+                atlas: Atlas::Elements3,
+                rect: [0, 432, 350, 8],
+                at,
+                ..
+            } => Some(*at),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(separators, [[2.0, 232.0], [2.0, 376.0]]);
+    let button = |pred: &dyn Fn(&Action) -> bool| {
+        p.buttons()
+            .find(|(a, ..)| pred(a))
+            .map(|(_, at, enabled, tip)| (at, enabled, tip.map(str::to_owned)))
+    };
+    let port_button = |p: &Panel| {
+        p.buttons()
+            .find(|(_, at, ..)| *at == [8.0, 392.0])
+            .map(|(_, _, enabled, tip)| (enabled, tip.map(str::to_owned)))
+            .expect("the port button")
+    };
+    assert!(world.ships()[ship].vessel.port.is_some());
+    assert_eq!(port_button(&p), (true, Some("!Jump to port.".to_string())));
+    let cancel = button(&|a| matches!(a, Action::Command(Command::ExpeditionStop { .. })));
+    assert_eq!(cancel.map(|c| c.0), Some([8.0, 176.0]));
+    assert!(!world.can_found_harbour(PlayerId(0), ship));
+    let harbour = button(&|a| matches!(a, Action::Command(Command::ExpeditionBuildHarbor { .. })));
+    assert_eq!(harbour, None);
+    let compass: Vec<([f32; 2], Option<String>)> = p
+        .buttons()
+        .filter(|(a, ..)| matches!(a, Action::Command(Command::ExpeditionGo { .. })))
+        .map(|(_, at, _, tip)| (at, tip.map(str::to_owned)))
+        .collect();
+    assert_eq!(compass.len(), 6);
+    assert_eq!(compass[0], ([278.0, 118.0], Some("!East".to_string())));
+    assert_eq!(compass[2], ([104.0, 192.0], Some("!SouthWest".to_string())));
+    assert_eq!(compass[5], ([240.0, 46.0], Some("!NorthEast".to_string())));
+    // A ship without a port: Jump to port disabled.
+    let bare = world.debug_add_ship(PlayerId(0), (30, 32));
+    let p = ship_window(&ctx(&world, &texts, &catalog), bare).unwrap();
+    assert!(world.ships()[bare].vessel.port.is_none());
+    assert_eq!(
+        port_button(&p),
+        (false, Some("!Ship has no target port.".to_string()))
+    );
+}
+
+/// UI-GAME-5.1, MIL-ATK-1.3 (E-trace-031, catalogue part 4): with no
+/// soldiers in reach (A = 0) the attack menu keeps its title, the weak /
+/// strong pair, "Soldiers" and the four count buttons, and shows the line
+/// `!Can not attack this building!` in place of the slider, the number and
+/// ATTACK.
+// spec: UI-GAME-5.1, MIL-ATK-1.3
+#[test]
+fn the_attack_menu_with_no_attackers() {
+    let world = flat_world(20, 20);
+    let (texts, catalog) = (Texts::default(), Catalog::default());
+    let c = ctx(&world, &texts, &catalog);
+    assert_eq!(c.world.attack_available(c.player, (10, 10)), 0);
+    let p = attack_dialog(&c, (10, 10), 0.5, false);
+    let texts: Vec<&str> = p
+        .widgets
+        .iter()
+        .filter_map(|w| match w {
+            Widget::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        texts.contains(&"!Can not attack this building!"),
+        "{texts:?}"
+    );
+    assert!(texts.contains(&"!Soldiers"));
+    assert!(!p.widgets.iter().any(|w| matches!(w, Widget::Slider { .. })));
+    assert!(!p.widgets.iter().any(|w| matches!(
+        w,
+        Widget::TextButton {
+            action: Action::AttackGo,
+            ..
+        }
+    )));
+    let presets = p
+        .buttons()
+        .filter(|(a, ..)| matches!(a, Action::AttackPreset(_)))
+        .count();
+    assert_eq!(presets, 4);
+}
+
+/// ECO-PLACE T18, T19 (UI-GAME-3.2): the build menu greys each military
+/// cell (a type with a territory range) within 4 fields of a military
+/// building or site, with `!Too close to other military
+/// buildings.`; the other cells stay enabled. Five fields off every cell
+/// is enabled. A locked type is greyed with `!Building not allowed`, after
+/// the clearance.
+// spec: ECO-PLACE-6.1, ECO-PLACE-6.2, ECO-PLACE-6.3, UI-GAME-3.2 (T18, T19)
+#[test]
+fn t18_military_cells_too_close_to_a_military_building() {
+    const HQ: u32 = 1;
+    const BARRACKS: u32 = 2;
+    const LOOKOUT: u32 = 3;
+    const WORKSHOP: u32 = 4;
+    let kind = |id, size, range| {
+        let mut t = s2_sim::BuildingType::new(id, size);
+        t.territory_range = range;
+        t
+    };
+    let mut lookout = kind(LOOKOUT, BuildingSize::Medium, 0);
+    lookout.soldier_limit = 1;
+    let rules = s2_sim::Rules {
+        building_types: vec![
+            kind(HQ, BuildingSize::Large, 9),
+            kind(BARRACKS, BuildingSize::Medium, 8),
+            lookout,
+            kind(WORKSHOP, BuildingSize::Medium, 0),
+        ],
+        ..s2_sim::Rules::empty()
+    };
+    let n = 50 * 40;
+    let terrain = s2_sim::map::Terrain {
+        width: 50,
+        height: 40,
+        heights: vec![0; n],
+        height_floor: -100,
+        states: vec![s2_sim::map::state::FOR_BUILDING; n],
+        samples: Vec::new(),
+    };
+    let mut world = World::with_map(1, terrain, rules, PlayerId(0));
+    world.submit(Command::CreateBuilding {
+        player: PlayerId(0),
+        building: HQ,
+        at: (20, 20),
+        settler: None,
+    });
+    world.step();
+    assert!(world.building_at((20, 20)).is_some());
+    let entry = |id, military| BuildingEntry {
+        id,
+        name: format!("type {id}"),
+        size: BuildingSize::Medium,
+        icon: Some((0, 0)),
+        military,
+        headquarters: false,
+        sort: i64::from(id),
+        has_cost: true,
+        production: false,
+    };
+    let catalog = Catalog {
+        buildings: vec![
+            entry(BARRACKS, true),
+            entry(LOOKOUT, true),
+            entry(WORKSHOP, false),
+        ],
+        ..Catalog::default()
+    };
+    let texts = Texts::parse("");
+    let cells = |world: &World, at: Point| -> Vec<(u32, bool, String)> {
+        let c = ctx(world, &texts, &catalog);
+        build_menu(&c, at, 6)
+            .buttons()
+            .filter_map(|b| match b.0 {
+                Action::Command(Command::PlaceBuilding { building, .. }) => {
+                    Some((*building, b.2, b.3.unwrap_or("").to_owned()))
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    let too_close = "!Too close to other military buildings.".to_owned();
+    for at in [(24, 20), (20, 24)] {
+        let got = cells(&world, at);
+        assert_eq!(got.len(), 3, "{at:?}: {got:?}");
+        assert_eq!(got[0], (BARRACKS, false, too_close.clone()), "{at:?}");
+        // The lookout tower and the workshop have no territory range.
+        assert!(got[1].1 && got[2].1, "{at:?}: {got:?}");
+        assert_eq!(got[1].2, "type 3 (0)");
+    }
+    for at in [(25, 20), (20, 25)] {
+        let got = cells(&world, at);
+        assert!(got.iter().all(|c| c.1), "{at:?}: {got:?}");
+        assert_eq!(got[0].2, "type 2 (0)");
+    }
+    // T19: a construction site counts as soon as it is placed (another
+    // player's site: the simulation's T19).
+    world.submit(Command::PlaceBuilding {
+        player: PlayerId(0),
+        building: BARRACKS,
+        at: (40, 20),
+    });
+    world.step();
+    assert!(world.building_at((40, 20)).unwrap().under_construction);
+    assert!(!cells(&world, (36, 20))[0].1);
+    assert!(cells(&world, (35, 20))[0].1);
+    // A locked type: "Building not allowed", but "Too close" comes first.
+    world.submit(Command::LockBuilding {
+        player: PlayerId(0),
+        building: BARRACKS,
+    });
+    world.submit(Command::LockBuilding {
+        player: PlayerId(0),
+        building: WORKSHOP,
+    });
+    world.step();
+    assert_eq!(cells(&world, (24, 20))[0], (BARRACKS, false, too_close));
+    let far = cells(&world, (30, 30));
+    assert_eq!(
+        far[0],
+        (BARRACKS, false, "!Building not allowed".to_owned())
+    );
+    assert_eq!(
+        far[2],
+        (WORKSHOP, false, "!Building not allowed".to_owned())
+    );
+}
+
+/// UI-GAME-2.4, CAM-3.3 T21 (a): the coins target's panel reads
+/// `(<n>/100)` with the local player's coins made so far: 0 with no mint,
+/// whatever the stock.
+// spec: UI-GAME-2.4, CAM-3.3 (T21)
+#[test]
+fn the_coins_target_shows_the_coins_made() {
+    let mut world = flat_world(12, 12);
+    world.set_mission(s2_sim::mission::Mission::new(3, Vec::new()));
+    let texts = Texts::parse("");
+    let catalog = Catalog::default();
+    let p = briefing(&ctx(&world, &texts, &catalog));
+    let lines: Vec<&str> = p
+        .widgets
+        .iter()
+        .filter_map(|w| match w {
+            Widget::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(lines, ["!MissionTarget: Produce coins", "(0/100)"]);
+    assert_eq!(coin_line(60), "(60/100)");
+}
+
+/// UI-GAME-11.1, 4.5 c (E-trace-030): a message naming a ship shows the
+/// ship's name in brackets after its text ("Ship is awaiting orders
+/// (Aurora)"); one whose ship is gone shows the text alone.
+// spec: UI-GAME-11.1, UI-GAME-4.5
+#[test]
+fn a_ship_message_names_the_ship() {
+    let (mut world, _) = harbour_game();
+    world.submit(Command::CreateShip {
+        player: PlayerId(0),
+        at: (30, 30),
+    });
+    world.step();
+    let ship = world.ships().len() - 1;
+    let texts = Texts::parse(
+        "!Ship waiting for Orders\tShip is awaiting orders\nRomanShipName0\tAurora\nRomanShipName1\tBellona\n",
+    );
+    let catalog = Catalog::default();
+    let c = ctx(&world, &texts, &catalog);
+    let name = ship_name(&c, ship);
+    assert!(name == "Aurora" || name == "Bellona", "{name}");
+    let mut m = message(10, "Ship waiting for Orders");
+    m.ship = Some(ship as u32);
+    m.building = None;
+    assert_eq!(
+        message_text(&c, &m),
+        format!("Ship is awaiting orders ({name})")
+    );
+    m.ship = Some(99);
+    assert_eq!(message_text(&c, &m), "Ship is awaiting orders");
+}
+
+/// UI-GAME-11.1, 11.4 (E-trace-032, seen): "No resources found" names its
+/// building in brackets, as "Building completed (Woodcutter's Hut)" does;
+/// a geologist's find stands on no building and shows its text alone.
+// spec: UI-GAME-11.1, UI-GAME-11.4
+#[test]
+fn no_resources_names_its_building() {
+    let world = flat_world(12, 12);
+    let texts = Texts::parse("!No resources found.\tNo resources found\nhut\tFisherman's Hut\n");
+    let mut catalog = Catalog::default();
+    catalog.building_names.insert(1, "hut".into());
+    let c = ctx(&world, &texts, &catalog);
+    let m = message(10, "No resources found.");
+    assert_eq!(message_text(&c, &m), "No resources found (Fisherman's Hut)");
+    let mut found = message(10, "Found Coal!");
+    found.building = None;
+    assert_eq!(message_text(&c, &found), "!Found Coal!");
 }

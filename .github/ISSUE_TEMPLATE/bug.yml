@@ -10,8 +10,8 @@ body:
     id: version
     attributes:
       label: Version
-      description: The version in the download's name (OpenS2X-<version>-windows-x64.zip) or the commit you built.
-      placeholder: "0.10.1"
+      description: "Right-click OpenS2X.exe, Properties, Details: the Product version; or the first line of the log (below); or the commit you built."
+      placeholder: "0.11.1"
     validations:
       required: true
   - type: textarea
@@ -45,5 +45,5 @@ body:
     id: log
     attributes:
       label: Log
-      description: If the program printed errors (start it from a command prompt to see them), paste them here.
+      description: "The game's log, %APPDATA%\\s2-reborn\\log.txt (paste the path into Explorer's address bar). The game starts it afresh each time, so copy it before starting the game again; paste it here or drag the file here."
       render: text

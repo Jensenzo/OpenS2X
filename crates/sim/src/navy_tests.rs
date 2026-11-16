@@ -168,8 +168,10 @@ fn ship_docks_skip_blocked_water() {
     assert_eq!(docks, [ring[5]]);
 }
 
-// T1: the ship starts Idle, searches, and docks at the harbour.
-// spec: SHIP-2.1, SHIP-2.3, SHIP-2.4, SHIP-2.5, SHIP-2.6 (T1)
+// T1: the ship starts Idle, searches, and docks at the harbour. SHIP-2.7
+// (T17): its route start cleared its last port position; docked, it is the
+// harbour's own field, not the docking place.
+// spec: SHIP-2.1, SHIP-2.3, SHIP-2.4, SHIP-2.5, SHIP-2.6, SHIP-2.7 (T1, T17)
 #[test]
 fn ship_t01_launch_search_dock() {
     let mut w = sea_world();
@@ -187,6 +189,7 @@ fn ship_t01_launch_search_dock() {
     assert_eq!(state_of(&w, s), ShipState::ToHarbour);
     let v = &w.ships()[s].vessel;
     assert_eq!(v.harbour, Some(WEST_HARBOUR));
+    assert_eq!(v.port, None, "cleared at the route start");
     let dock = w.harbour_at(WEST_HARBOUR).unwrap().docks[0].clone();
     assert_eq!(dock.reserved, Some(s));
     assert!(w.terrain().has(dock.field, state::LANDING_POSITION));
@@ -195,7 +198,8 @@ fn ship_t01_launch_search_dock() {
     assert_eq!(dock.docked, Some(s));
     assert_eq!(dock.reserved, None);
     assert_eq!(w.ships()[s].vessel.walker.at, dock.field);
-    assert_eq!(w.ships()[s].vessel.port, Some(dock.field));
+    assert_ne!(dock.field, WEST_HARBOUR);
+    assert_eq!(w.ships()[s].vessel.port, Some(WEST_HARBOUR));
     w.step();
     assert_eq!(state_of(&w, s), ShipState::Idle);
 }
@@ -383,7 +387,7 @@ fn ship_t14_served_orders_on_their_way_count() {
 
 // T5, T6: with everything there the next pass gets a ship; when it is
 // docked the goods and the builder go aboard.
-// spec: SHIP-5.3, SHIP-5.4, SHIP-5.5 (T5, T6)
+// spec: SHIP-5.3, SHIP-5.4, SHIP-5.5, UI-GAME-11.1 (T5, T6)
 #[test]
 fn ship_t05_t06_getting_the_ship_and_loading() {
     let (mut w, s) = gather_world();
@@ -434,10 +438,11 @@ fn ship_t05_t06_getting_the_ship_and_loading() {
         .all(|d| d.docked.is_none()));
     run(&mut w, 2);
     assert_eq!(state_of(&w, s), ShipState::Waiting);
-    assert!(w
-        .messages()
-        .iter()
-        .any(|m| m.player == P0 && m.text == "Ship waiting for Orders"));
+    // UI-GAME-11.1, 4.5 c (E-trace-030): the message names the ship, whose
+    // name follows its text in the row ("Ship is awaiting orders (Aurora)").
+    assert!(w.messages().iter().any(|m| m.player == P0
+        && m.text == "Ship waiting for Orders"
+        && m.ship == Some(s as u32)));
 }
 
 /// A ship of player 0 on an expedition, waiting at (22, 12), with the
@@ -587,8 +592,104 @@ fn ship_t08_t09_go_and_found() {
     assert!(w.site(b).is_some());
 }
 
+// T17: a ship docked at a harbour, then loaded for an expedition: its
+// options skip the spots of the harbour's continent within 3 fields of the
+// ship, not the others.
+// spec: SHIP-2.5, SHIP-2.7, SHIP-6.1 (T17)
+#[test]
+fn ship_t17_the_harbour_field_is_the_port() {
+    let mut w = sea_world();
+    harbour(&mut w, P0, WEST_HARBOUR);
+    let s = ship(&mut w, P0, (20, 10));
+    step_until(&mut w, 2000, |w| state_of(w, s) == ShipState::Docked);
+    assert_eq!(w.ships()[s].vessel.port, Some(WEST_HARBOUR));
+    // Two spots on the west land where a harbour fits: one within 3 fields
+    // of the ship, one farther; one on the east land.
+    let at = w.ships()[s].vessel.walker.at;
+    let near = (0..30)
+        .map(|y| (13, y))
+        .find(|&f| grid::distance(at, f) <= 3 && w.harbour_site_for(P0, f))
+        .expect("a free spot near the ship");
+    let far = (0..30)
+        .rev()
+        .map(|y| (13, y))
+        .find(|&f| grid::distance(at, f) > 6 && w.harbour_site_for(P0, f))
+        .expect("a free spot far from the ship");
+    w.set_harbour_spots(vec![near, far, (28, 12)]);
+    let options = w.landing_options(s);
+    let spots: Vec<Point> = options.iter().flatten().map(|l| l.spot).collect();
+    assert!(!spots.contains(&near), "{spots:?}");
+    assert!(
+        spots.contains(&far) && spots.contains(&(28, 12)),
+        "{spots:?}"
+    );
+    // Without a port none is skipped.
+    w.ships[s].vessel.port = None;
+    let spots: Vec<Point> = w
+        .landing_options(s)
+        .iter()
+        .flatten()
+        .map(|l| l.spot)
+        .collect();
+    assert!(spots.contains(&near), "{spots:?}");
+}
+
+// T18: an expedition ship's arrival: its port is the first land neighbour
+// of the stop field in the order of directions 4, 5, 0, 1, 2, 3; a field
+// with six Water neighbours gives none, and no harbour can be founded.
+// spec: SHIP-2.7, SHIP-6.4, SHIP-7.1 (T18), UI-GAME-4.5
+#[test]
+fn ship_t18_the_first_land_neighbour() {
+    let mut terrain = sea_terrain();
+    // The stop field F (25, 10) on the sea's east shore: its neighbours in
+    // directions 4 and 5 made Water, the one in direction 0 is land.
+    let f = (25, 10);
+    let n = |d: u8| terrain.neighbour(f, d).unwrap();
+    let (n4, n5, n0) = (n(4), n(5), n(0));
+    set(&mut terrain, n4, state::WATER);
+    set(&mut terrain, n5, state::WATER);
+    assert!(!terrain.has(n0, state::WATER));
+    let mut w = world(terrain);
+    assert_eq!(w.first_land_neighbour(f), Some(n0));
+    // Direction 4 tested first: from (14, 10) its land wins over the land
+    // in direction 3, (13, 10).
+    assert_eq!(
+        w.first_land_neighbour((14, 10)),
+        w.terrain().neighbour((14, 10), 4)
+    );
+    assert_eq!(w.first_land_neighbour((20, 10)), None);
+    // The arrival sets it: an expedition ship sails to (25, 10)'s field.
+    w.set_harbour_spots(vec![(28, 10)]);
+    let s = ship(&mut w, P0, (20, 10));
+    let v = &mut w.ships[s].vessel;
+    v.launched = true;
+    v.expedition = true;
+    v.port = Some((11, 10));
+    v.target = Some(crate::navy::Landing {
+        spot: (28, 10),
+        field: f,
+    });
+    v.state = ShipState::Sailing;
+    v.walker = movement::Walker::new(f);
+    w.step();
+    let v = &w.ships()[s].vessel;
+    assert_eq!(state_of(&w, s), ShipState::Waiting);
+    assert_eq!(v.port, Some(n0));
+    // Stopping in open water: no port, Build harbour not possible.
+    let v = &mut w.ships[s].vessel;
+    v.target = Some(crate::navy::Landing {
+        spot: (28, 10),
+        field: (20, 10),
+    });
+    v.state = ShipState::Sailing;
+    v.walker = movement::Walker::new((20, 10));
+    w.step();
+    assert_eq!(w.ships()[s].vessel.port, None);
+    assert!(!w.can_found_harbour(P0, s));
+}
+
 // T10: five fields away is too far.
-// spec: SHIP-7.1 (T10)
+// spec: SHIP-7.1 (T10), UI-GAME-4.5
 #[test]
 fn ship_t10_too_far_to_found() {
     let (mut w, s) = voyage_world();
@@ -597,6 +698,8 @@ fn ship_t10_too_far_to_found() {
     v.port = Some((26, 12));
     v.walker = movement::Walker::new((23, 12));
     assert_eq!(grid::distance((23, 12), b), 5);
+    // UI-GAME-4.5 (f): the window's view says the same as the command.
+    assert!(!w.can_found_harbour(P0, s));
     assert_eq!(
         apply(
             &mut w,
@@ -609,6 +712,8 @@ fn ship_t10_too_far_to_found() {
     );
     w.ships[s].vessel.walker = movement::Walker::new((24, 12));
     assert_eq!(grid::distance((24, 12), b), 4);
+    assert!(w.can_found_harbour(P0, s));
+    assert!(!w.can_found_harbour(P1, s));
     assert_eq!(
         apply(
             &mut w,

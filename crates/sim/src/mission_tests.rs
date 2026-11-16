@@ -132,20 +132,33 @@ fn conquering_three_quarters_wins_and_the_rest_lose() {
     assert_eq!(world.mission().unwrap().completed, Some(target::CONQUER));
 }
 
-// spec: CAM-3.3, CAM-3.4 (T5)
+// T5, T21: the coins target counts the coins the team's mints have made
+// (the statistics' running total), not the stock: 106 coins put into the
+// headquarters win nothing; the 100th coin made wins at the next test, and
+// the other team loses with the mission not completed.
+// spec: CAM-3.3, CAM-3.4 (T5, T21)
 #[test]
 fn the_other_team_loses_with_mission_not_completed() {
-    // T5: 100 coins in the team's depots.
     let mut world = game(60, 30, &[(P0, (10, 10)), (P1, (45, 15))]);
     world.set_mission(Mission::new(target::COINS, Vec::new()));
-    let add = |amount| Command::AddGoods {
+    let add = Command::AddGoods {
         player: P0,
         good: COIN,
-        amount,
+        amount: 106,
     };
-    assert_eq!(apply(&mut world, add(99)), Ok(()));
+    assert_eq!(apply(&mut world, add), Ok(()));
+    world.step();
     assert_eq!(world.outcome(P0), None);
-    assert_eq!(apply(&mut world, add(1)), Ok(()));
+    world.statistics.entry(P0).or_default().coins = 99;
+    world.step();
+    assert_eq!(world.outcome(P0), None);
+    // Coins spent meanwhile are not taken off: the stock emptied.
+    assert_eq!(
+        apply(&mut world, Command::ClearGoods { player: P0 }),
+        Ok(())
+    );
+    world.statistics.entry(P0).or_default().coins = 100;
+    world.step();
     assert!(matches!(world.outcome(P0), Some(Outcome::Won { .. })));
     assert_eq!(
         world.outcome(P1),
@@ -157,6 +170,37 @@ fn the_other_team_loses_with_mission_not_completed() {
     assert!(world
         .mission_events()
         .contains(&MissionEvent::Won { player: P0 }));
+}
+
+// T21 (c): two allies whose mints made 60 and 40 win together; a lone
+// enemy's coins are not theirs.
+// spec: CAM-3.3 (T21)
+#[test]
+fn t21_a_team_sums_the_coins_its_players_made() {
+    let setup = crate::GameSetup {
+        players: vec![(P0, (10, 10)), (P1, (45, 15)), (PlayerId(2), (10, 25))],
+        local_player: P0,
+        teams: vec![(P0, 0), (PlayerId(2), 0), (P1, -1)],
+        ..Default::default()
+    };
+    let mut world = World::new_game(5, flat(60, 40), rules(), &setup);
+    world.set_mission(Mission::new(target::COINS, Vec::new()));
+    world.statistics.entry(P0).or_default().coins = 60;
+    world.statistics.entry(P1).or_default().coins = 99;
+    world.step();
+    assert_eq!(world.outcome(P0), None);
+    assert_eq!(world.outcome(P1), None);
+    world.statistics.entry(PlayerId(2)).or_default().coins = 40;
+    world.step();
+    assert!(matches!(world.outcome(P0), Some(Outcome::Won { .. })));
+    assert!(matches!(
+        world.outcome(PlayerId(2)),
+        Some(Outcome::Won { .. })
+    ));
+    assert!(matches!(world.outcome(P1), Some(Outcome::Lost { .. })));
+    // The briefing panel's figure is each player's own (UI-GAME-2.4).
+    assert_eq!(world.coins_produced(P0), 60);
+    assert_eq!(world.coins_produced(PlayerId(2)), 40);
 }
 
 // spec: CAM-3.2, CAM-3.3 (T6, T7)

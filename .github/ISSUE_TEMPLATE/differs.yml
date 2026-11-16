@@ -10,8 +10,8 @@ body:
     id: version
     attributes:
       label: Version
-      description: The download's name or the commit you built.
-      placeholder: "0.10.1"
+      description: "Right-click OpenS2X.exe, Properties, Details: the Product version; or the commit you built."
+      placeholder: "0.11.1"
     validations:
       required: true
   - type: textarea

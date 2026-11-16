@@ -40,6 +40,9 @@ pub struct GameSetup {
     /// each player in slot order draws one of the positions of `players`
     /// not yet taken. Off: each player gets its own (3.1).
     pub shuffle_starts: bool,
+    /// ECO-HQ-3.6, UI-SETUP-1.8: the free game's fog of war set to Off:
+    /// each player gets the whole map explored when it is made.
+    pub fog_of_war_off: bool,
     /// ECO-FOOD-5.15, FMT-S2M-5.5: the map's respawn record.
     pub respawn: crate::Respawn,
     /// SIM-START-4.5: the object counter's value when the start sequence
@@ -232,7 +235,15 @@ impl World {
         // SIM-START-1.1, 3.1: the players in slot order.
         let mut players = setup.players.clone();
         players.sort_by_key(|&(player, _)| player);
+        let (width, height) = (world.terrain.width, world.terrain.height);
         for (player, own) in players {
+            // ECO-HQ-3.6: fog of war Off: right after the player is made, the
+            // exploration of ECO-HQ-3.3 around the map's centre with radius
+            // 2 x max(width, height) (the outermost rows and columns stay
+            // unexplored).
+            if setup.fog_of_war_off {
+                world.explore(player, (width / 2, height / 2), 2 * width.max(height));
+            }
             let at = if setup.shuffle_starts {
                 // SIM-START-3.2: `draw mod (positions left)`.
                 let k = world.rng.draw() as usize % free.len();
@@ -370,6 +381,8 @@ impl World {
             return;
         };
         building.building_type = to;
+        // W15: a deepening's construction completes as an upgrade does.
+        self.deepening_done(at);
         let applied = self.military.get(&at).is_some_and(|m| m.applied);
         if applied {
             self.apply_territory(at);
@@ -733,6 +746,33 @@ mod tests {
             assert_eq!(world.is_explored(P0, field), expected, "{field:?}");
         }
         assert!(!world.is_explored(PlayerId(1), at));
+    }
+
+    // ECO-HQ T27: a free game on an 80 x 80 map, two players, fog of war
+    // Off: at the first tick every field with 0 < x < 79 and 0 < y < 79 is
+    // explored for both players, the outermost rows and columns are not;
+    // with fog of war On only the fields within 12 of each headquarters.
+    // spec: ECO-HQ-3.6 (T27), ECO-HQ-3.3
+    #[test]
+    fn fog_of_war_off_explores_the_map_at_the_start() {
+        let (p0, p1) = ((20, 20), (60, 60));
+        let setup = |off: bool| GameSetup {
+            players: vec![(P0, p0), (crate::PlayerId(1), p1)],
+            local_player: P0,
+            fog_of_war_off: off,
+            ..Default::default()
+        };
+        let off = World::new_game(3, flat(80, 80), rules(), &setup(true));
+        let on = World::new_game(3, flat(80, 80), rules(), &setup(false));
+        for field in off.terrain().fields() {
+            let edge = field.0 == 0 || field.1 == 0 || field.0 == 79 || field.1 == 79;
+            for player in [P0, crate::PlayerId(1)] {
+                assert_eq!(off.is_explored(player, field), !edge, "{field:?}");
+            }
+            let near = |at: Point| grid::distance(at, field) <= 12 && !edge;
+            assert_eq!(on.is_explored(P0, field), near(p0), "{field:?}");
+            assert_eq!(on.is_explored(crate::PlayerId(1), field), near(p1));
+        }
     }
 
     // ECO-HQ T10: the headquarters' ground is levelled at once, to the

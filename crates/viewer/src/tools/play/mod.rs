@@ -42,7 +42,7 @@ fn widget_size(w: &Widget) -> Option<[f32; 2]> {
         Widget::Button { size, rect, .. } => Some(size.unwrap_or([rect[2] as f32, rect[3] as f32])),
         Widget::BarButton { bar, .. } => Some(bar.size),
         Widget::TextButton { .. } => Some([16.0, 14.0]),
-        Widget::Slider { width, .. } => Some([*width, 8.0]),
+        Widget::Slider { width, .. } => Some(crate::ui::widgets::SliderArt::of(*width).size()),
         Widget::Picture { size, .. } => Some([*size, *size]),
         _ => None,
     }

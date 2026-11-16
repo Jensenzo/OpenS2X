@@ -60,9 +60,10 @@ pub fn tools_dialog(ctx: &Ctx) -> Panel {
     for (i, &tool) in ctx.catalog.tool_slots.iter().enumerate().take(12) {
         let row = [87.0, 70.0 + 30.0 * i as f32];
         good_icon(&mut p, ctx, tool, [row[0] - 38.0, row[1] - 6.0], 30.0);
+        // UI-GAME-6.1, 6.5: the economy slider, its top-left on the row.
         p.widgets.push(Widget::Slider {
-            at: [row[0], row[1] + 4.0],
-            width: 160.0,
+            at: row,
+            width: crate::ui::widgets::ECONOMY_SLIDER,
             value: priorities.weight(i),
             kind: SliderKind::Tool(i as u8),
             enabled: true,
@@ -110,9 +111,10 @@ pub fn military_dialog(ctx: &Ctx) -> Panel {
     let row = |p: &mut Panel, icon: [u32; 2], label: &str, at: [f32; 2], value: f32, kind| {
         p.sprite(Atlas::Elements5, [icon[0], icon[1], 48, 48], at);
         p.text(ctx.t(label), Font::Body, [at[0] + 60.0, at[1] + 2.0], WHITE);
+        // UI-GAME-6.2, 6.5: the economy slider at (+60, +20).
         p.widgets.push(Widget::Slider {
-            at: [at[0] + 60.0, at[1] + 22.0],
-            width: 160.0,
+            at: [at[0] + 60.0, at[1] + 20.0],
+            width: crate::ui::widgets::ECONOMY_SLIDER,
             value,
             kind,
             enabled: true,
@@ -210,9 +212,10 @@ pub fn distribution_dialog(ctx: &Ctx, table: u8) -> Panel {
         for (i, entry) in entries.iter().enumerate().take(4) {
             let at = [110.0, 162.0 + 75.0 * i as f32];
             building_icon(&mut p, ctx, entry.key, [at[0] - 60.0, at[1] - 20.0], 48.0);
+            // UI-GAME-6.3, 6.5: the economy slider.
             p.widgets.push(Widget::Slider {
                 at,
-                width: 180.0,
+                width: crate::ui::widgets::ECONOMY_SLIDER,
                 value: entry.weight(),
                 kind: SliderKind::Distribution {
                     table,

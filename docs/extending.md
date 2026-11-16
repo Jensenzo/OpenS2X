@@ -15,7 +15,15 @@ simulation only through its public API (`docs/api.md`).
 |---|---|---|
 | Rules: costs, production, jobs, goods, military values, anything the property scripts set | Lua run after the original property scripts, in their environment: it sees their globals (`woodCutter`, `stone`) and calls the same `properties` functions (LUA-PROP) | `s2_rules::Overlay`, `s2_rules::load_with_overlays`, `Extensions::rules_overlays`, `--rules-overlay <file>` |
 | New building types | an overlay creates them with the original's `properties.bp_create` and sets them up as the scripts do theirs; what one product consumes is the type's own recipe | `reborn.bp_addInput` (in an overlay), `s2_sim::Rules::recipes`, `World::recipe` |
+| The computer players and a project's rules | they deepen, pave and choose recipes when the overlay says when (hook W25) | `reborn.ai_setDeepen`, `reborn.ai_setPaving`, `reborn.ai_setRecipeRule` (in an overlay), `s2_rules::model::AiProjectRules`, `s2_ai::AiConfig::project_rules` |
 | The computer players and a new type | they leave a project's types alone unless the overlay says when one is worth building in place of a mine | `reborn.bp_setAiAlternative` (in an overlay), `s2_ai::AiConfig::alternatives` |
+| Recipes a player chooses | a type (a project's or an original one) with several recipes, each a product and its inputs; the building's window chooses which one it works | `reborn.bp_addRecipe`, `reborn.bp_addRecipeInput` (in an overlay), `Command::ChooseRecipe`, `World::recipe_set`, `World::chosen_recipe` |
+| A group good in a recipe, a kept stock | a recipe takes "any 2 tools"; a warehouse hands out a member above the stock the player keeps back | a group good in `reborn.bp_addRecipeInput` or `reborn.bp_addInput`, `reborn.cfg_setRecipeKeep` (in an overlay), `s2_sim::Rules::recipe_groups`, `recipe_keep` |
+| Paved roads | a road paved with a good per field, carried there over the roads; its carriers and donkeys walk it faster | `reborn.cfg_setPaving` (in an overlay), `Command::PaveRoad`, `World::can_pave`, `World::is_paved`, `World::paving_work` |
+| The look of a paved road | a project's street textures for paved roads (hook W21) | `RenderOptions::paved_road` (`StreetLook`) |
+| Deepening a mine | an exhausted mine of a type the overlay names is deepened for material a builder works; part of the ore comes back and the mine eats more food per product | `reborn.bp_setDeepening`, `reborn.bp_addDeepeningCost`, `reborn.bp_addDeepeningFood` (in an overlay), `Command::DeepenMine`, `World::can_deepen`, `World::mine_deepening` |
+| The pictures of the hooks' buttons | the Deepen and Next recipe buttons of a building's window drawn with a 48 x 48 cell of the project's picture | `Extensions::button_pictures` (`ButtonPictures`, `ButtonPicture`) |
+| A message when a project's rule finishes | the player's message when a mine's deepening is done or a road is paved, in the project's words (hook W24) | `Extensions::messages` (`ProjectEvent`) |
 | A whole property script | a file of the same path in an asset folder (below) | `GameDir::with_overlay` |
 | Models, textures, sounds, interface pictures, fonts, settings files | asset folders laid out like the install (`data/...`, any case); a file there takes the place of the install's file of the same path; the last folder wins | `GameDir::with_overlay`, `Extensions::asset_folders`, `--assets <dir>` |
 | Textures by name | a `.dds` anywhere in an asset folder replaces the install's texture of that file name (models name their textures without a path) | as above |
@@ -26,6 +34,7 @@ simulation only through its public API (`docs/api.md`).
 | The films at start-up | start at the start screen, without the intro | `Extensions::skip_launch_films` |
 | Music | what the viewer's player switches to, as Bevy messages; its own player silent while a project plays | `MusicSlot`, `Extensions::music_external`, `CurrentSettings` (`Settings::music_volume`) |
 | The camera | a point the 3D camera follows until the player moves it | `CameraFollow` (a resource) |
+| Particle effects at settlers at work | a `.pfx` effect played at every settler of a profession while his work loop runs (dust where a builder hammers, chips where a woodcutter chops) | `Extensions::effects` (`EffectRule`) |
 | What is on the map | the settlers, wares and animals under the pointer, nearest first, and where each is drawn, read only | `Extensions::map_things`, `MapThings` (a resource) |
 | The window's title | the game window, its message boxes and the folder picker | `Extensions::window_title` |
 | Screenshots | the folder the viewer's F12 screenshots go to | `Extensions::screenshot_dir` |
@@ -173,6 +182,396 @@ What it does not cover:
 - **Tearing it down** when the good's mine comes: they keep what they
   built (AI-CON-9 as for any producer).
 
+### The computer players and a project's rules
+
+The computer players never deepen a mine, pave a road or choose a recipe of
+their own accord (the original has none of these). An overlay tells them
+when (hook W25); each call is optional and none is the default:
+
+```lua
+-- deepen an exhausted mine while 6 or more food is in stock
+reborn.ai_setDeepen(6)
+-- pave the busiest road once its traffic average is 3 or more and more
+-- than 10 stones beyond the road's cost are in stock
+reborn.ai_setPaving(3, 10)
+-- the smelter works its second recipe (index 1) while more than 40 tools
+-- (a group good: its members together) are in stock, else its first
+reborn.ai_setRecipeRule(building_smelter, 1, good_tools, 40)
+```
+
+| Call | What a computer player does |
+|---|---|
+| `reborn.ai_setDeepen(food_at_least)` | when its destruction run (AI-CON-9.2, every 41 ticks, one building at a time) comes to an exhausted mine it would tear down, and the mine's type has a deepening (W15) with deepenings left: it sends `Command::DeepenMine` if its stock of fish, meat and bread together is at least `food_at_least`, no other mine of its own is being deepened and the command would be accepted; otherwise it **keeps** the mine for a later run. A mine being deepened is kept; a mine at its most deepenings is torn down as in the original |
+| `reborn.ai_setPaving(traffic_at_least, reserve)` | every 97 counts (shifted per player as its parts are): while none of its roads is being paved, it paves its land road of the highest traffic average (TRN-CARRY-6.1; the lowest object number of equal ones) that can be paved, when that average is at least `traffic_at_least` and its stock of the paving good (`reborn.cfg_setPaving`'s) is more than `reserve` plus the road's cost (the good per field times the path's fields): `Command::PaveRoad` through the road's first inner field |
+| `reborn.ai_setRecipeRule(building, index, good, above)` | every 97 counts: each of its finished buildings of the type works recipe `index` (0 the first) while its stock of `good` is more than `above` (a group good of W16: its members together), else the first; it sends `Command::ChooseRecipe` when the building's choice differs. The last call for a type wins; an index the type's set has not got does nothing |
+
+The stock is the computer player's own count of its warehouses (AI-CON-1.7),
+as for its other decisions. `s2_rules::RuleSet::ai_project`
+(`AiProjectRules { deepen_food, paving, recipes }`) holds the calls, and
+`AiConfig::project_rules` takes it from the rules; it is not saved (it
+comes from the rules, as the rest of the configuration). Without any call
+nothing of it runs: the golden hashes and the fidelity pairs are the
+original's game. `crates/ai/src/project.rs` has the decisions' tests and
+a computer player paving its road on the AI fixture.
+
+What it does not cover: a computer player building a project's new type
+(that is W12's `bp_setAiAlternative`), paving a waterway, deepening more
+than one mine at a time, choosing by anything but one good's stock, and any
+rule changing what it builds or where.
+
+### Recipes a player chooses
+
+A type can have several recipes, each one product and what one product
+consumes; every building of the type works one of them, the first until
+its player chooses another in the building's window (hook W20). The type
+may be a project's own (a trading post) or an original one (a smelting
+works that melts tools as well as ore):
+
+```lua
+tradingPost = properties.bp_create("C4A4C0A2")
+-- ... size, costs, worker, stock limit as for any new type (above);
+-- bp_setGoods gives the type its product class (a workshop), the
+-- recipes say what each cycle makes
+properties.bp_setGoods(tradingPost, coal, 1)
+reborn.bp_addRecipe(tradingPost, coal)          -- recipe 1: coal from
+reborn.bp_addRecipeInput(tradingPost, fish, 2)  -- 2 fish and 1 bread
+reborn.bp_addRecipeInput(tradingPost, bread, 1)
+reborn.bp_addRecipe(tradingPost, ironOre)       -- recipe 2: iron ore
+reborn.bp_addRecipeInput(tradingPost, wood, 4)  -- from 4 wood
+```
+
+| Item | What |
+|---|---|
+| `reborn.bp_addRecipe(building, product)` | starts the type's next recipe: one cycle makes one `product` |
+| `reborn.bp_addRecipeInput(building, good, count)` | appends (good, count) to the type's last recipe (an error before the first `bp_addRecipe`) |
+| `s2_rules::model::Building::recipes` (`RecipeChoice { product, inputs }`) | the set as the scripts left it; empty for every original type |
+| `s2_sim::Rules::recipe_sets`, `s2_sim::Recipe { product, inputs }`, `World::recipe_set(type)` | the sets by type id, in the game state and its saves (world format 76). Empty in the original's game, which then has the hashes it had without the hook |
+| `Command::ChooseRecipe { player, at, index }` | the building on `at` works recipe `index` (0 the first) from now on; refused (`Rejection::NotARecipe`) for an index the set does not have, and as any building command for another player's or an unfinished building |
+| `World::chosen_recipe(at)` | the index the building works; `None` for a type without a set |
+
+What it does: the building orders the chosen recipe's inputs up to its
+stock limit (ECO-PROD-6.1), begins a cycle when they are in stock and
+makes the recipe's product (ECO-WORK-3, ECO-PROD-5; a recipe whose product
+is the tools group makes a tool by the tool priorities, ECO-PROD-7). A
+choice withdraws the open orders of goods the new recipe does not take
+(wares already on their way are delivered, as when production is switched
+off, ECO-PROD-1.2) and orders the new inputs; what the building holds of
+the old recipe's goods stays in its stock. A recipe set comes before an H6
+recipe (`bp_addInput`) and before the product switch of a switchable type.
+The production window shows the chosen recipe's product and its inputs as
+the needed goods, and a button in the third place of its column (the
+fourth on a switchable type) chooses the next recipe, after the last the
+first again. A type with three recipes or more (hook W23) has a Recipes
+button there instead, which turns the window to its list: the big panel
+titled with the building's name, a row every 40 px from y 56, each the
+tools window's check box at x 20 (marked on the recipe the building works),
+the product's icon, `<` and each input's icon with its count; a click on a
+box chooses that recipe, the close button goes back to the production
+window; ten rows fit. The computer players choose only by a rule of the overlay
+(hook W25, `reborn.ai_setRecipeRule`, below); else their buildings work the
+first recipe, and they read its inputs as the type's
+(`AiConfig::type_inputs`). `crates/sim/src/production/tests.rs`
+(`a_type_with_a_recipe_set_works_the_chosen_recipe`) is a two-recipe type
+on the test fixture.
+
+What it does not cover:
+
+- **More than one ware per cycle.** A recipe makes one product per cycle
+  (the worker carries one ware out, ECO-PROD-5); "1 coal for 2 fish" is a
+  recipe, "3 boards for 1 tree" is not.
+- **A list of the recipes in the window.** The window shows the chosen one
+  and steps to the next; a project that wants a list draws its own window
+  (`Extensions::plugins`) and sends the command.
+- **A good with a distribution table** (coal, iron, planks, water, grain,
+  the foods: ECO-DIST-2.1, `s2_rules::DISTRIBUTION`) as an input of a
+  project's new type needs the type in that table, or it is never served
+  those goods (as for H6). An overlay adds it:
+  `reborn.dist_addConsumer(good, building, weight)` puts `building` into the
+  table of `good` (any of the table's goods names it: `fish` the food
+  table) after the original's consumers, with its default weight in
+  thousandths (`s2_rules::RuleSet::dist_consumers`); the player's weights
+  work on it as on any entry (ECO-DIST-2.2). The economy dialog's
+  distribution page shows a table's first four consumers only (UI-GAME-6.3),
+  so a fifth is served but not shown.
+- **A group good as an input and a kept stock**: the next section.
+- **The computer players choosing a recipe**, and the original's saves
+  (which name the original's types and no choice).
+
+### A group good in a recipe
+
+A recipe (a recipe set's, above, or an H6 recipe's) may take a **group
+good**, a good that is the group of other goods (`gp_setGroupGoodId` in
+the original's scripts: the tools group of the twelve tools). The building
+then orders the group, and a warehouse serves the order with any member it
+holds; the delivered ware counts as the group in the building's stock and
+is taken per product as the group (hook W16). An overlay sets how many of
+each member a player keeps back from such orders, so a tool melter does not
+take the tools new workers are made from:
+
+```lua
+-- the smelting works: iron from ore and coal (the original's recipe,
+-- first, so the computer players' buildings work it), or from 2 tools of
+-- any kind and 1 coal; 2 of every tool are kept back
+reborn.bp_addRecipe(building_smeltery, good_iron)
+reborn.bp_addRecipeInput(building_smeltery, good_ironore, 1)
+reborn.bp_addRecipeInput(building_smeltery, good_coal, 1)
+reborn.bp_addRecipe(building_smeltery, good_iron)
+reborn.bp_addRecipeInput(building_smeltery, good_tools, 2)
+reborn.bp_addRecipeInput(building_smeltery, good_coal, 1)
+reborn.cfg_setRecipeKeep(good_tools, 2)
+```
+
+| Item | What |
+|---|---|
+| a group good in `reborn.bp_addRecipeInput` or `reborn.bp_addInput` | makes the group a recipe group: `s2_sim::Rules::recipe_groups` (group to members, in good order), in the game state and its saves (world format 78); empty in the original's game |
+| `reborn.cfg_setRecipeKeep(good, count)` | on a group: each member keeps `count`; on a good: that good (a good's own keep wins over its group's). `s2_rules::RuleSet::recipe_keep`, `s2_sim::Rules::recipe_keep` (by member) |
+
+Where it acts (ECO-REQ-5.3's serving, unchanged for every other good): a
+warehouse can serve a recipe group's order when it holds a member of which
+the player has more than the kept number across all its warehouses; it
+hands out the first such member in good order. A free ware lying at a flag
+never serves a group's order. Wares and helpers on their way for such an
+order count as the group when the building tops up its orders
+(ECO-PROD-6.1). Workers' tools (ECO-REQ-3.3, the professions' cost lists)
+are taken as before: the kept stock is only for the groups' orders.
+`crates/sim/src/requests/tests.rs`
+(`a_recipe_group_is_served_by_a_member_above_the_kept_stock`): 3 axes and 1
+hammer in store, a keep of 2: one axe goes, the rest stays.
+
+What it does not cover:
+
+- **Free wares** of a member lying at a flag serve no group order (they go
+  to a warehouse as usual, ECO-REQ-5.5).
+- **The production switch** as the recipe's switch: Frontier asked for the
+  smithy's `ProductionSwitch` to toggle the recipes; the recipe choice is
+  `Command::ChooseRecipe` and the window's next-recipe button (above).
+- **A kept stock for exact goods' orders**: the keep holds back only from
+  the orders of a group.
+- **The computer players** choosing a recipe on their own: only by the
+  overlay's rule (hook W25, "The computer players and a project's rules").
+
+### Paved roads
+
+A project can let the player pave a road (hook W19): its material is taken
+from the warehouses and carried over the roads to the road, and once it has
+all arrived the road's own carriers and donkeys walk it faster:
+
+```lua
+-- one stone per field of the road; 130: 30 % faster on a paved road
+reborn.cfg_setPaving(good_stone, 1, 130)
+```
+
+| Item | What |
+|---|---|
+| `reborn.cfg_setPaving(good, per_field, speed_percent)` | the rule, into `s2_rules::RuleSet::paving` and `s2_sim::Rules::paving` (`s2_sim::PavingRule { good, per_field, speed_percent }`), in the game state and its saves (world format 79); none in the original's game, which then has the hashes it had without the hook |
+| `Command::PaveRoad { player, at }` | `at` an inner field of the player's road (as `RemoveRoad` takes it); refused (`Rejection::NotPavable`) without the rule, for a waterway, and for a road paved or being paved (`Rejection::NoRoad` for no road of the player's there) |
+| `World::can_pave(player, at)`, `World::is_paved(number)`, `World::paving_work(number)` (`PavingWork { needed, sent, laid }`), `World::paving_rule()` | by the road's object number (`Road::number`) |
+
+What it does: an accepted pavement needs `per_field` times the road's
+fields (both flags included) of the good. Each tick, while some is still to
+be sent, one ware of it leaves the warehouse nearest to the road's first
+flag that holds the good (ECO-REQ-5.3's choice of the warehouse), put at
+that warehouse's flag with the road's first flag as its destination, and
+the carriers take it there as any ware (TRN-CARRY); where the road starts
+at the warehouse's own flag it is laid at once. Each ware that reaches the
+road's first flag is laid there and leaves the world; the last one makes
+the road paved. A ware lost on its way (destroyed with a road it was on) is
+sent again: each tick a pavement counts the wares of the good still bound
+for its first flag. A carrier or donkey of a paved road walks a step whose two
+fields both lie on its road at its base speed times the factor (on top of
+the slope factor: TRN-MOVE-1.2's rate with base x factor); every other
+step, and every other walker on it, as before. A road split by a new flag
+keeps the pavement on both halves; a pavement under way is dropped by a
+split, and what was laid is lost. The road menu (UI-GAME-3.3) has a pave
+button (the flag-with-hammer picture, "Pave the road."), usable while the
+command would be accepted. `crates/sim/src/requests/tests.rs`
+(`a_paved_road_costs_its_stone_and_is_walked_faster`).
+
+What it does not cover:
+
+- **Laying it field by field**: the road's carrier does not stop to lay
+  the stone, and no part of the road is paved before all of it has
+  arrived; the stone leaves the warehouse at its flag without a helper
+  carrying it out (ECO-REQ-5.3c's walk).
+- **Its look** without W21 (below): a paved road is drawn as a dirt road.
+- **The computer players** paving on their own: only by the overlay's
+  rule (hook W25, "The computer players and a project's rules").
+
+### The look of a paved road
+
+A project gives paved roads (hook W19) street textures of its own (hook
+W21); without them a paved road is drawn as the original's dirt road:
+
+```rust
+use s2_viewer::{Extensions, RenderOptions, StreetLook};
+
+let extensions = Extensions {
+    asset_folders: vec!["assets".into()], // assets/data/textures/paved_street.dds, ..._n.dds
+    render: RenderOptions {
+        paved_road: Some(StreetLook {
+            texture: "paved_street.dds".into(),
+            normal: "paved_street_n.dds".into(),
+        }),
+        ..Default::default()
+    },
+    ..Default::default()
+};
+```
+
+| Item | What |
+|---|---|
+| `RenderOptions::paved_road: Option<StreetLook { texture, normal }>` | the colour texture (its alpha the blend, as `street.dds`) and the tangent-space normal map (as `street_n.dds`), by file name, found as the install's textures are (an asset folder first); default `None` |
+
+What it does: the street pass (GFX-OBJ-6.2) gets a fifth part. Every land
+road with `World::is_paved(road.number)` leaves its own part (0 with a
+donkey, 1 without) and is drawn in the fifth with the project's textures,
+the same strip (its width, its texture stretch, stopping short at shared
+flags), lit as a road strip. The crossings at its flags stay the
+original's (parts 2 and 3). The part's number includes the pavement, so the
+square's mesh is made again in the frame a road becomes paved, and a split
+keeps both halves in the fifth part. Without the option nothing changes:
+the four parts and their numbers are the original's (`crates/viewer/src/
+world/scene3d/tests.rs`, `a_paved_look_draws_paved_roads_in_a_part_of_
+their_own`; the golden images unchanged).
+
+What it does not cover: a crossing of its own at a paved road's flags; a
+texture per player or per road; a road paved field by field (W19 paves a
+road whole). It was not looked at on screen in OpenS2X.
+
+### Deepening a mine
+
+A mine type can be deepened once its mine is exhausted (hook W15): the
+player orders it in the mine's window, the material comes and a builder
+works it, and then part of each field's first amount of ore is back:
+
+```lua
+-- the coal mine: a quarter of each field's first amount comes back, at
+-- most twice per mine, for 4 planks and 2 stone; after the first
+-- deepening the mine eats 2 food per coal, after the second 3
+reborn.bp_setDeepening(building_coalmine, 250, 2)
+reborn.bp_addDeepeningCost(building_coalmine, good_plank, 4)
+reborn.bp_addDeepeningCost(building_coalmine, good_stone, 2)
+reborn.bp_addDeepeningFood(building_coalmine, 2)
+reborn.bp_addDeepeningFood(building_coalmine, 3)
+```
+
+| Item | What |
+|---|---|
+| `reborn.bp_setDeepening(building, share_per_mille, most)` | gives a mine type its deepening: of each field's first amount the share that comes back, per mille, and the most deepenings of one mine |
+| `reborn.bp_addDeepeningCost(building, good, count)` | adds to what one deepening costs (an error before `bp_setDeepening`) |
+| `reborn.bp_addDeepeningFood(building, food)` | the food one product eats after the next deepening: the first call after the first, the second after the second; the last one given for any later deepening (1 before the first, as ECO-PROD-2.2) |
+| `s2_rules::model::Building::deepening` (`DeepeningRule`) | as the scripts left it; none for every original type |
+| `s2_sim::Rules::deepenings`, `s2_sim::Deepening`, `World::deepening(type)` | by type id, in the game state and its saves (world format 77); empty in the original's game, which then has the hashes it had without the hook |
+| `Command::DeepenMine { player, at }` | accepted for the player's finished mine of a type with a deepening that is exhausted (it has no current ore field and none within its working radius holds its product: ECO-FOOD-2's own search), has fewer deepenings than the most and none under way; else `Rejection::NotDeepenable` (`Rejection::NoBuilding` for another player's) |
+| `World::can_deepen(player, at)`, `World::mine_deepening(at)` (`MineDeepening { done, under_way }`) | whether the command would be accepted now; the mine's deepenings so far |
+
+What it does: a game whose rules have any deepening keeps each field's
+resource as it was before its first unit was dug (in the state; an older
+save's fields keep what is left at their first dig after the load). An
+accepted deepening is a construction of the mine's own type on its field,
+with the costs as its main material and no frame and no levelling, worked
+as an upgrade's (MIL-UPG-2.3): its site orders the material by the
+construction table (ECO-HQ-4), a builder comes and works it, and the mine
+goes on meanwhile. When it is done, each field within the mine's working
+radius whose first resource was the mine's product holds `share` per mille
+of its first amount again, rounded down but at least 1 (at most 7, the
+field's cap; a field holding another good, or more of it, is left as it
+is), the count rises by one, and from then on one product eats the
+deepening's food: that many times the first of fish, bread, ham in stock,
+a cycle beginning only with that many in stock, each food ordered up to 2
+plus the extra. The mine's next search (every 101 ticks, ECO-FOOD-2) finds
+the ore again. The production window of such a type has a button in the
+third place of its column, usable while the command would be accepted;
+its tooltip names the cost and the deepenings so far.
+`crates/sim/src/workshop.rs` (`a_deepened_mine_digs_again_at_a_higher_food_cost`)
+is a coal mine on the test fixture.
+
+What it does not cover:
+
+- **The computer players** deepening on their own: only by the overlay's
+  rule (hook W25, "The computer players and a project's rules"); without
+  it their exhausted mines are torn down as in the original.
+- **A look of its own**: while it is deepened the mine is drawn as an
+  upgrading building (GFX-OBJ-8.4: the house above a rising plane, the
+  same house growing below it, the type's site model around both), and its
+  window is the production window as before.
+- **A status line** in the window ("Deepened twice"): the tooltip says it.
+  A message when a deepening is done is hook W24 (below).
+- **The map's first amounts** of fields never dug before the first save of
+  an older game: such a field keeps what it has when first dug after the
+  load (only a game saved before 0.11.0, which had no deepenings).
+- **A geologist's signs** for the restored ore: they show what a search
+  finds as for any field (ECO-SPC), nothing more.
+
+### The pictures of the hooks' buttons
+
+The Deepen button (W15) and the Next recipe button (W20) of a building's
+window are drawn with the boat-and-ship switch's picture (`uiElements5`
+(256, 88)) unless the project names a picture of its own for each:
+
+```rust
+use s2_viewer::{ButtonPicture, ButtonPictures, Extensions};
+
+let extensions = Extensions {
+    button_pictures: ButtonPictures {
+        deepen: Some(ButtonPicture {
+            file: "frontier_buttons.dds".into(), // in an asset folder
+            at: [0, 0],
+            hover: Some([0, 48]),
+        }),
+        recipe: Some(ButtonPicture {
+            file: "frontier_buttons.dds".into(),
+            at: [48, 0],
+            hover: None,
+        }),
+    },
+    ..Default::default()
+};
+```
+
+`file` is a `.dds` found by its file name as the models' textures are: one
+of the install's interface sheets (`uiElements4.dds`) or a file anywhere
+in an asset folder. The button is the 48 x 48 cell at `at` of it, and while
+the pointer is over it the cell at `hover` (none: the same); greyed as any
+button while it cannot be used. A picture that is not found leaves the
+button with the switch's picture. Each picture is loaded once with the
+interface's atlases.
+
+### Messages when a project's rule finishes
+
+The original has no deepening and no paving, so it has no message for
+them. With hook W24 the player gets one, in the project's words:
+
+```rust
+use s2_viewer::{Extensions, ProjectEvent};
+
+let extensions = Extensions {
+    messages: vec![
+        (ProjectEvent::MineDeepened, "Mine deepened".into()),
+        (ProjectEvent::RoadPaved, "Road paved".into()),
+    ],
+    ..Default::default()
+};
+```
+
+| Event | When | The message |
+|---|---|---|
+| `ProjectEvent::MineDeepened` | one of the local player's mines has finished a deepening (`World::mine_deepening(at).done` rose) | at the mine, with its type's name in brackets as "Building completed (Woodcutter's Hut)" has |
+| `ProjectEvent::RoadPaved` | one of the local player's roads is paved (its last stone laid; the halves of a later split keep the pavement and give none) | at the road's first flag |
+
+Each is listed in the messages window as the original's misc messages
+(UI-GAME-11.1 kind 4: the exclamation mark, its filter, its 36 000 ticks,
+a left click jumps to the place, a right click deletes it); the text is
+shown as given, not looked up in the language file. The messages are the
+viewer's, as the autosave's (not game state, not in saves): after a load
+the watch starts from what it finds. `ProjectEvent` is `#[non_exhaustive]`.
+None given (the default): nothing is watched and no message comes, as in
+the game.
+
+What it does not cover: the computer players' events (only the local
+player's); a sound with the message; a message of the project's own
+choosing for any other event.
+
 ### Asset folders
 
 ```rust
@@ -225,6 +624,30 @@ adds a hook does not break the build.
 | `shadow_cascades` | 2 | Bevy shadow cascades (docs/shadows.md) |
 | `anisotropy` | 8 | anisotropic filtering of the repeating textures |
 | `clear_color` | `[0.02, 0.03, 0.06]` | the colour behind everything |
+| `shadow_filter` | `ShadowFilter::Hardware2x2` (GFX-VIEW-2.5c) | the map camera's shadow filter; `ShadowFilter::Gaussian` is Bevy's wider filter, soft edges over several texels (hook W17) |
+| `shore_foam` | `None` (the original has none) | foam on the water along the shores (hook W18, S2N-005): `ShoreFoam { reach, colour, strength }`, the foam colour mixed in by `strength` at the waterline, fading out where the ground lies `reach` below the water level (raw height units of the water's depth term, GFX-WATER-4.4: about 2 900 from the waterline to the deepest; 300 a narrow band) |
+| `shadow_map_scale` | `None` (the profile's size) | the profile's shadow map size (`SHADOW QUALITY`) times this factor, at most `MAX_SHADOW_MAP` (8192); the Shadows switch, quality 0 and shader detail 1 still turn shadows off. `shadow_map_size` wins when both are set (hook W17) |
+
+A project that draws sharper or softer shadows than the original (hook
+W17) sets them like this; the engine page keeps its say over whether
+shadows are drawn at all:
+
+```rust
+render: RenderOptions {
+    shadow_filter: s2_viewer::ShadowFilter::Gaussian,
+    shadow_map_scale: Some(2), // 2048 at SHADOW QUALITY 0.75, 4096 at 1.0
+    ..default()
+},
+```
+
+The viewer's own shaders read the shadow map through Bevy's lookup
+(`fetch_directional_shadow`), so the filter acts on the ground, the
+objects and the water alike. What W17 does not cover: **screen-space
+ambient occlusion** (the third part asked for). It needs the depth and
+normal prepasses on the viewer's own materials and their shaders to read
+the occlusion texture, which touches every map material and the water's
+mirror camera (a further material or prepass setup has blanked that
+camera before); it is not built, and no option for it exists yet.
 
 ### Bevy's derives in a project
 
@@ -312,6 +735,7 @@ Extensions {
 | `PageWidget::Toggle { label, value: bool, on_change: OnChange<bool> }` | Off and On, as INFORMATION WINDOW |
 | `PageWidget::Choice { label, options: Vec<String>, index: usize, on_change: OnChange<usize> }` | the options three to a line, as AUTOSAVE |
 | `PageWidget::Button { label, on_click: OnClick }` | the dialogs' 152 x 22 button |
+| `PageWidget::PageBreak` | hook W22: the rows after it start the page's next part |
 | `OnChange<T> = Box<dyn FnOnce(&mut World, T) + Send + Sync>`, `OnClick = Box<dyn FnOnce(&mut World) + Send + Sync>` | run with the app's world after the frame's menu actions, before the page is asked for its rows again |
 
 **The main menu.** The entries take the two empty rows of UI-MENU-1.2
@@ -329,8 +753,17 @@ stepping 32 px, the label at x 24 in the headings' font and colour, the
 values from x 168 (Off and On at 168 and 268; a choice's options 100 px
 apart, three to a line, lines 24 px apart, 32 px of the page per line), the
 chosen value yellow, a button's bar at x 168. Eleven rows fit (down to y
-424, above where the settings pages have their page switch); rows past
-them are not drawn. BACK at (50, 480) returns to the main menu; ESC, the
+424). **A longer page** (hook W22) is shown a part at a time: a row that
+would reach past y 424 starts the next part, and so does a
+`PageWidget::PageBreak` (a project breaks before each section; breaks at
+the start, the end or twice make no empty part). A page of more than one
+part has a switch at its foot, y 436: `<` at x 168, `n/m` at 218, `>` at
+268, in the body font, an arrow greyed at either end; a click shows that
+part's rows from y 72. The part shown is the viewer's (`MenuState::page_part`,
+the first whenever the page is opened), each row keeps its index for its
+callback. The original's settings pages switch by their tab row instead,
+which has a picture per page; the switch is a project's look of its own.
+A page that fits shows no switch, as before. BACK at (50, 480) returns to the main menu; ESC, the
 mouse and the click sound behave as on the settings pages.
 `--menu-screen extension` opens the first page (for screenshots).
 
@@ -447,6 +880,48 @@ camera goes on from O's eye and follows the point, without `cleared`. So a
 project that wants O to keep the camera sets no point while O follows; one
 that sets a point every frame after `cleared` takes it back from O at once.
 Without a project's point, O is as without the hook.
+
+### Effects at settlers at work
+
+The original plays particle effects (`.pfx` scripts, GFX-OBJ-8.3a) at a
+building's status, at a collapse, and at two settlers' work: the
+leveller's and the forester's work loops start `StoneDust`; a builder's
+hammering and a woodcutter's chopping have sounds only (GFX-OBJ-8.3b). A
+project adds effects of its own at settlers at work (hook W18):
+
+```rust
+effects: vec![s2_viewer::EffectRule {
+    effect: "data/scripts/effects/StoneDust.pfx".into(), // or a project's own
+    profession: "good_constructor".into(),               // the builder
+    work_loop: Some(0),                                  // WorkLoop0: hammering
+}],
+```
+
+| Field | Meaning |
+|---|---|
+| `effect` | the `.pfx` script's path in the game data, of an asset folder (a project's own effect) or the install |
+| `profession` | the settler's profession by its script name (`good_constructor`, `good_woodcutter`, ...) |
+| `work_loop` | the work loop it plays during (`WorkLoop<n>` of GFX-ANIM-3.8: 0 is the builder's hammering and the woodcutter's chopping); `None` any |
+
+Each rule plays at every settler of that profession, any player's, while
+the logic asks for that work loop (`SettlerView::request`): the effect
+starts at his feet as drawn when the loop begins, is played on the
+animation clock (game time) as the original's effects are, with the
+original's particle texture, and is gone when the loop ends or he is no
+longer drawn. Render side only: nothing of it is game state, and with no
+rules the system is not even in the app. `crates/viewer/examples/extended.rs`
+plays `StoneDust` at the builders.
+
+What W18 does not cover (the rest of the plan's step 8.3, not built):
+
+- **Normal maps on objects** (S2N-005): the object shader takes no
+  project textures yet. (Shore foam is built: `RenderOptions::shore_foam`,
+  above.)
+- **Animation crossfades** (S2N-007): clips still cut as the original's.
+- **Weather** (S2N-024): no fog or rain layer; the original's day and
+  night cycle stays the only change of light.
+- **Effects at other moments** than a settler's work loop (a felled tree's
+  fall, a finished building).
 
 ### Things on the map
 

@@ -47,7 +47,7 @@ The bar at the bottom centre is the original one:
 
 Click on the map:
 
-- a **free field** of your land: the build menu (tabs by size; the flag button at the top right, greyed where no flag fits); a field that takes only a flag opens the road menu with "Erect flag" alone;
+- a **free field** of your land: the build menu (tabs by size; the flag button at the top right, greyed where no flag fits; the barracks, guard house, watchtower and fortress greyed, "Too close to other military buildings", within four fields of any military building or construction site, an enemy's too); a field that takes only a flag opens the road menu with "Erect flag" alone;
 - one of your **flags**: the flag menu, the mouse pointer on its first button:
   - **Build road**: click field after field; each click lays the road along the best way to that field. A click on a flag finishes it, a click on the road's end offers "Erect flag" there, a click on a part already laid cuts it back to there, a click on the starting flag cancels.
   - **Build waterway** (only at a flag on the coast): click a coast field across the water.
@@ -88,9 +88,9 @@ Saves survive updates: from version 0.6.0 on, a save loads in every later versio
 
 After 25 seconds of play the mission's briefing opens over the game (**Next Page**, then **Continue**). Mission 1 has a second one when your land reaches the middle of the island. The game runs on behind them. **T**, or the bar's mission button, shows the condition for victory.
 
-**Winning.** Every mission is won by reaching its portal: your land has to cover the portal's field. Mission 1 has no enemy and no computer player, and of the military buildings only barracks may be built, so lay a chain of barracks along the land with roads back to your headquarters. A scripted player does it with 8 barracks in about 45 minutes of game time, without any production (the headquarters starts with 44 planks; the 8 barracks use 16 of them). In most other missions the portal stands in a small pocket behind steep ground that no road reaches: a military building close enough claims it across the slope. The check comes every 5 seconds of game time. The victory book opens, **VICTORY** over the mission's last pages: **Continue** plays on, **Exit map** leads to the island map, with the next mission's eagle there.
+**Winning.** Every mission is won by reaching its portal: your land has to cover the portal's field. Mission 1 has no enemy and no computer player, and of the military buildings only barracks may be built, so lay a chain of barracks along the land with roads back to your headquarters. Eight barracks are enough, in about 45 minutes of game time, with no production at all: the headquarters starts with 44 planks and the eight barracks use 16 of them. In most other missions the portal stands in a small pocket behind steep ground that no road reaches: a military building close enough claims it across the slope. The check comes every 5 seconds of game time. The victory book opens, **VICTORY** over the mission's last pages: **Continue** plays on, **Exit map** leads to the island map, with the next mission's eagle there.
 
-**Which missions are known to be winnable.** The computer players are now as each map sets them: their tribes, teams and strengths, so from mission 4 on the enemies never fight each other, and in mission 5 the African player is your ally. A scripted player, with a player's commands only, has won missions 1, 2, 3 and 9, missions 3 and 9 only with a computer player's help on your own slot. It has not won missions 4, 5, 6, 7, 8 and 10; it has no food and mine economy of its own, so that says more about it than about the missions.
+**Which missions are known to be winnable.** The enemies in each mission are as its map sets them: their tribes, teams and strengths. From mission 4 on the enemies never fight each other, and in mission 5 the African player is on your side. Missions 1, 2, 3 and 9 have been won in OpenS2X by an automatic test player (3 and 9 with a computer player helping on your side). It has not won missions 4 to 8 and 10, because it builds no food and mining economy; those wait for a human's game. If you win one of them, or find one that cannot be won, please say so in an issue.
 
 **Your progress** is kept in your profile (`Documents\S2\users\<profile>.cfg`), the list of maps the original keeps too, so a mission won in one game is open in the other.
 
@@ -101,15 +101,15 @@ After 25 seconds of play the mission's briefing opens over the game (**Next Page
 **Good to know** (the campaign, and the game in general):
 
 - **Expeditions:** a harbour's window has the expedition page: the builder, stones, planks and ship set aside so far, **Exploration** to start a preparation (greyed while one runs: as in the original nothing stops it) and **Jump to next expedition**, which goes to your expedition ship nearest that harbour and opens its window.
-- Every mission's goal is "Reach the portal", missions 4 to 10 too (their maps say none, but the campaign menu sets it, as in the original). A free game plays with the victory condition chosen on its setup page.
-- A free game's end screen and its button column are our own layout until the original's is known; its **Statistics** button is off.
-- The tutorial moves the camera to the next marked field at 16 steps, as the original does: a glide at zoom 3 during which the arrows, wheel and right button do nothing. In lesson 4 the ship window's right arrow jumps to the second ship.
-- All ten missions and four lessons start, show their briefing or window and run 3,000 game ticks (five minutes of game time) without a fault. All four lessons have been followed click by click to their ends. At 1024 x 768 the lesson's window can lie over a marked field: scroll the map to find it (the window's place is our guess).
-- Sounds pan between the speakers as the original's sound library pans them (an equal-power law), and a settler's sounds move with him. The original's listener leans a little to the side (a slip in its code, reproduced), so a sound in the middle of the screen is heard slightly to the right.
+- Every mission's goal is "Reach the portal", missions 4 to 10 too (their maps say none, but the campaign menu sets it, as in the original). A free game plays with the victory condition chosen on its setup page; **Collect 100 gold coins** counts the coins your team's mints have made (not the coins in store), and the panel under the main bar shows your own count, "(n/100)".
+- A free game ends on the original's end screen: a row per player (the computer players are called "AI", as in the original), their team and result. Its **Statistics** button is greyed: there is no statistics page after a game yet.
+- When a lesson moves on, the camera glides to the next marked place, as in the original; during the glide the arrow keys, the wheel and the right mouse button do nothing. In lesson 4 the ship window's right arrow jumps to the second ship, and its **Construct harbor** button founds the harbour on the island.
+- Every mission and lesson has been started and played for five minutes of game time without a fault, and all four lessons have been played click by click to their ends. At 1024 x 768 the lesson's window can cover a marked field: scroll the map to find it.
+- Sounds move between the speakers with what makes them, as in the original, and so does a settler's sound as he walks. Like the original, the balance leans a little to the right: a sound in the middle of the screen is heard slightly right of centre.
 - **RETURN** opens the chat line (also when you play alone): type `INeedSomeHelp`, `ShowMeTheWorld` or `GiveMeSomeMore` and RETURN for the original's cheats. `TooFast` and `FreedomOfMovement` are known words whose effect is not, so they do nothing. Where the line sits is ours (over the bar).
 - A ship's name: what you type in its window stays only until the window shows another ship or is closed, as in the original; the ship keeps its default name.
 - The statistics pages' series and span are drop-down lists. The buildings page lists the 31 types that have a building cost, by size; each type shows its finished buildings and those under construction, updated every 22 game ticks.
-- On level ground no footstep sounds at any zoom, as in the original by its code; they belong to following a settler with **O** and to steep ground at zoom 0. **O** puts the camera just behind the settler under the pointer; **PAGE DOWN** or the wheel up turns it to face him from ahead, **PAGE UP** or the wheel down goes back behind him and, from behind, ends the follow. The zoom plays no part while following, and the arrows do nothing.
+- On level ground there are no footstep sounds, as in the original; you hear them when you follow a settler with **O**, and on steep ground at the closest zoom. **O** puts the camera just behind the settler under the pointer; **PAGE DOWN** or the wheel up turns it to face him from ahead, **PAGE UP** or the wheel down goes back behind him and, from behind, ends the follow. The zoom plays no part while following, and the arrows do nothing.
 
 ## Not there yet
 
@@ -121,7 +121,15 @@ After 25 seconds of play the mission's briefing opens over the game (**Next Page
 
 The open points against the original game are listed in [specs/OPEN_QUESTIONS.md](https://github.com/Jensenzo/OpenS2X/blob/main/specs/OPEN_QUESTIONS.md), and how close OpenS2X is in the [README](https://github.com/Jensenzo/OpenS2X#how-close-it-is-to-the-original).
 
-Something wrong, or different from the original? [Open an issue](https://github.com/Jensenzo/OpenS2X/issues/new/choose); a save, or a screenshot of each program, helps most.
+Something wrong, or different from the original? [Open an issue](https://github.com/Jensenzo/OpenS2X/issues/new/choose) and say which version you have (below); a save, or a screenshot of each program, helps most.
+
+## Which version you have
+
+- Right-click `OpenS2X.exe`, then **Properties**, **Details**: **Product version** is the release, `0.11.1` say.
+- The game's log names it in its first line: `%APPDATA%\s2-reborn\log.txt` (paste the path into Explorer's address bar). The game starts the log afresh each time it starts, so copy it right after a problem, before you start the game again; if the game stops with an error, the log's last lines say where. Attach it to a bug report.
+- In a command prompt in its folder, `OpenS2X.exe --version` prints `OpenS2X 0.11.1`.
+
+The game's menus show no version, as the original's show none.
 
 ## Building it yourself
 

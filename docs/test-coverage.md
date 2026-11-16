@@ -277,6 +277,40 @@ the pointer to another computer (`scripts/input-guard.sh`);
 `crates/app/tests/input_guard.rs` runs them with a log of the test's
 (`S2_SYNERGY_LOG`) and a stand-in pointer probe (`S2_POINTER_PROBE`).
 
+## The player's own files
+
+Nothing the safety net starts writes the player's settings
+(`%APPDATA%\s2-reborn\settings.txt`), profiles (`Documents\S2\users`) or saves
+(`Documents\S2\saves`), not even the same bytes:
+
+- `golden-images.sh` gives each scene a profile folder of its own
+  (`--profile-dir target/golden-images/profile/<scene>`), made fresh with
+  only the seed profile `s2-app profile-seed` writes as its
+  `users\default01.cfg` (the first start's values, SET-3, with the Very high
+  graphic preset applied, SET-4a: every engine slider at its maximum; no
+  settings file), and a save folder in it unless the scene names one (the menu
+  scenes use `tests/golden/images/saves`). The end screens record their
+  completed map (CAM-3.5) there. The pictures so no longer depend on the
+  profile of the PC they are drawn on (an empty folder, the first start's
+  sliders at 0, drew the far zooms, the water's mirror and the engine page
+  differently from a profile at Very high).
+- `frame-bench.sh` the same in `target/frame-bench/profile`; `look-compare.sh`
+  through `s2-app shot --profile-dir` in `target/look-compare/profile/<picture>`.
+- `play-test.sh`: a play script without `--profile-dir` holds both files
+  unwritten (`settings::hold_files`), its saves go to `target/tmp/play/saves`.
+- `install-local.sh` leaves the settings file as it is when it names the game
+  folder already.
+- `view-map.sh` opens the viewer for a person: what that person changes in its
+  menus is written to their files, as in the game.
+
+`scripts/player-files-guard.sh` checks it: these four scripts read the modified
+times of those files when they start (names and times only, never the
+contents) and fail when one changed, or a file came or went, by the end
+(`golden-images.sh` and `look-compare.sh` after each scene, naming it).
+`crates/app/tests/player_files_guard.rs` checks the guard on folders of the
+test's (`S2_PLAYER_SETTINGS`, `S2_PLAYER_USERS`, `S2_PLAYER_SAVES`) and runs
+`golden-images.sh` with a stand-in viewer that rewrites the profile.
+
 
 ## File formats
 

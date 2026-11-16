@@ -197,7 +197,14 @@ fn mission_one_victory_opens_mission_two() {
     assert_eq!(enabled(&page, &MenuAction::EndExit), Some(true));
 
     // CAM-3.6: the end screen says so, and only EXIT MAP leads on.
-    let end = end_panel(&texts, SCREEN, EndScreen::Victory(4), &game.world);
+    let end = end_panel(
+        &texts,
+        SCREEN,
+        EndScreen::Victory(4),
+        &game.world,
+        "campaign01",
+        "default",
+    );
     assert!(shows(&end, texts.get("!VICTORY")), "{:?}", shown(&end));
     assert!(shows(&end, texts.get("!You have reached the magic gate!")));
     assert_eq!(enabled(&end, &MenuAction::EndExit), Some(true));
@@ -306,12 +313,21 @@ fn mission_one_defeat_records_nothing() {
     });
     tick(&mut game, &mut ui);
     assert_eq!(ui.end, Some(EndScreen::Defeat));
-    let end = end_panel(&texts, SCREEN, EndScreen::Defeat, &game.world);
+    let end = end_panel(
+        &texts,
+        SCREEN,
+        EndScreen::Defeat,
+        &game.world,
+        "campaign01",
+        "default",
+    );
+    // CAM-3.6a: DEFEAT, its reason (the headquarters is gone), and no
+    // CONTINUE on a defeat.
     assert!(shows(&end, texts.get("!DEFEAT")), "{:?}", shown(&end));
-    assert!(shows(&end, texts.get("!You have lost the Map!")));
+    assert!(shows(&end, texts.get("!Castle destroyed!")));
     assert!(shown(&end).iter().any(|t| t.contains(texts.get("!DEFEAT"))));
     assert_eq!(enabled(&end, &MenuAction::EndExit), Some(true));
-    assert_eq!(enabled(&end, &MenuAction::EndContinue), Some(true));
+    assert_eq!(enabled(&end, &MenuAction::EndContinue), Some(false));
 
     assert!(!ui.record_completed(&mut settings));
     assert!(!settings.completed("campaign01"));
@@ -388,7 +404,7 @@ fn every_mission_starts_with_its_briefing_and_goal() {
             crate::ui::widgets::picture(&picture).is_some(),
             "{name}: its picture has a place in the atlases"
         );
-        let panel = panels(&ui, &texts, SCREEN, &game.world);
+        let panel = panels(&ui, &texts, SCREEN, &game.world, "default");
         assert_eq!(panel.len(), 1, "{name}");
         let page = texts.entry(&key).expect("the briefing's text");
         assert!(shows(&panel[0], page), "{name}: {:?}", shown(&panel[0]));
@@ -428,7 +444,7 @@ fn every_lesson_starts_with_its_window() {
             tick(&mut game, &mut ui);
         }
         assert!(ui.book.is_none(), "{name}: a lesson has no book");
-        let panel = panels(&ui, &texts, SCREEN, &game.world);
+        let panel = panels(&ui, &texts, SCREEN, &game.world, "default");
         assert_eq!(panel.len(), 1, "{name}");
         let key = step_key(tutorial.step);
         let text = texts.entry(key).expect("the step's text");
@@ -467,11 +483,20 @@ fn the_last_steps_buttons_lie_inside_the_window() {
 
 // The end screen's buttons lie inside its dialog and do not overlap (seen in
 // the harness: three bars side by side stood out over its right edge).
-// spec: CAM-3.6
+// CAM-3.6a: the book's 728 x 568 frame; Statistics, EXIT MAP, CONTINUE one
+// under the other at x 300.
+// spec: CAM-3.6, CAM-3.6a
 #[test]
 fn the_end_screens_buttons_lie_inside_the_dialog() {
     let world = s2_sim::World::new(0);
-    let panel = end_panel(&Texts::default(), SCREEN, EndScreen::Defeat, &world);
+    let panel = end_panel(
+        &Texts::default(),
+        SCREEN,
+        EndScreen::Defeat,
+        &world,
+        "MP_2P_Storm_Coast",
+        "default",
+    );
     let bars: Vec<[f32; 4]> = panel
         .widgets
         .iter()
@@ -481,9 +506,12 @@ fn the_end_screens_buttons_lie_inside_the_dialog() {
         })
         .collect();
     assert_eq!(bars.len(), 3);
+    let mut places: Vec<[f32; 2]> = bars.iter().map(|b| [b[0], b[1]]).collect();
+    places.sort_by(|a, b| a[1].total_cmp(&b[1]));
+    assert_eq!(places, [[300.0, 445.0], [300.0, 467.0], [300.0, 489.0]]);
     for (i, b) in bars.iter().enumerate() {
-        assert!(b[0] >= 0.0 && b[0] + b[2] <= 506.0, "{b:?}");
-        assert!(b[1] >= 0.0 && b[1] + b[3] <= 540.0, "{b:?}");
+        assert!(b[0] >= 0.0 && b[0] + b[2] <= 728.0, "{b:?}");
+        assert!(b[1] >= 0.0 && b[1] + b[3] <= 568.0, "{b:?}");
         for c in &bars[i + 1..] {
             assert!(b[1] + b[3] <= c[1] || c[1] + c[3] <= b[1], "{b:?} {c:?}");
         }
@@ -516,7 +544,8 @@ fn a_page_step_takes_only_the_medium_tab() {
         assert_eq!(wrong_click_error(step), "T01_ERROR_SelectStreetIcon");
     }
     assert_eq!(wrong_click_error(0x10), "T01_ERROR_SelectMarkedButton");
-    assert_eq!(wrong_click_error(0x05), "T01_ERROR_SelectMarkedButton");
+    // T19b (E-cam-014): the harbour's page choice (5) is a page step too.
+    assert_eq!(wrong_click_error(0x05), "T01_ERROR_SelectStreetIcon");
 }
 
 /// CAM-5.2a (E-trace-028): an explaining step's window is the game menu's
@@ -602,4 +631,255 @@ fn the_tutorial_arrow_points_at_the_expected_widget() {
     assert_eq!(expected_widget_corner(&panels, 0x37), Some([123.0, 110.0]));
     // 0x1e: the construction view's button.
     assert_eq!(expected_widget_corner(&panels, 0x1e), Some([360.0, 704.0]));
+}
+
+/// Two players on a flat test map, teams 0 and 1; the second has lost.
+fn two_player_world() -> s2_sim::World {
+    let n = 30 * 30;
+    let terrain = s2_sim::map::Terrain {
+        width: 30,
+        height: 30,
+        heights: vec![0; n],
+        height_floor: -100,
+        states: vec![s2_sim::map::state::FOR_BUILDING; n],
+        samples: Vec::new(),
+    };
+    let mut castle = s2_sim::BuildingType::new(9, s2_sim::BuildingSize::Large);
+    castle.territory_range = 4;
+    castle.warehouse = true;
+    castle.worker_limit = 0;
+    let rules = s2_sim::Rules {
+        building_types: vec![castle],
+        headquarters: Some(9),
+        ..s2_sim::Rules::empty()
+    };
+    let setup = s2_sim::GameSetup {
+        players: vec![(PlayerId(0), (8, 8)), (PlayerId(1), (22, 22))],
+        local_player: PlayerId(0),
+        teams: vec![(PlayerId(0), 0), (PlayerId(1), 1)],
+        ..Default::default()
+    };
+    s2_sim::World::new_game(1, terrain, rules, &setup)
+}
+
+// CAM-3.6a (T20a, E-cam-015): the end screen's rows from (140, 190), 25 px
+// apart: "Player #n:" at x 140 in its player's colour (E-trace-032), the
+// human's name at 230, Team n at 400, the
+// player's own result at 500; the result VICTORY or DEFEAT on (374, 110);
+// the title the map's name's text centred on (374, 74).
+// spec: CAM-3.6a (T20a), CAM-1.3c
+#[test]
+fn the_end_screens_rows_stand_in_four_columns() {
+    let world = two_player_world();
+    let texts = Texts::parse("!Team 1\tTeam 1\n!Team 2\tTeam 2\n!VICTORY\tVICTORY\n");
+    let panel = end_panel(
+        &texts,
+        SCREEN,
+        EndScreen::Victory(1),
+        &world,
+        "MP_2P_Storm_Coast",
+        "Ada",
+    );
+    let at = |text: &str| -> Vec<[f32; 2]> {
+        panel
+            .widgets
+            .iter()
+            .filter_map(|w| match w {
+                Widget::Text { text: t, at, .. } if t == text => Some(*at),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(at("Player #1:"), [[140.0, 190.0]]);
+    assert_eq!(at("Player #2:"), [[140.0, 215.0]]);
+    // E-trace-032: each label in its player's colour.
+    let colour = |text: &str| {
+        panel.widgets.iter().find_map(|w| match w {
+            Widget::Text {
+                text: t, colour, ..
+            } if t == text => Some(*colour),
+            _ => None,
+        })
+    };
+    assert_eq!(
+        colour("Player #1:"),
+        Some(label_colour(s2_sim::PlayerId(0)))
+    );
+    assert_ne!(colour("Player #1:"), colour("Player #2:"));
+    assert_eq!(at("Ada"), [[230.0, 190.0]]);
+    assert_eq!(at("Team 1"), [[400.0, 190.0]]);
+    assert_eq!(at("Team 2"), [[400.0, 215.0]]);
+    // Nobody has a result yet: no column at 500; the screen's own result.
+    assert!(shown(&panel).iter().any(|t| t == "VICTORY"));
+    assert!(shown(&panel).iter().any(|t| t == "MP_2P_STORM_COAST"));
+}
+
+// CAM-3.6a (T20b, Q-1057): the human in slot 1, computer players in slots
+// 2 and 4, slot 3 closed: three rows closed up at y 190, 215 and 240,
+// numbered #1, #2 and #4; the computer players named with `!AI`.
+// spec: CAM-3.6a (T20b)
+#[test]
+fn the_end_screen_names_computer_players_ai() {
+    let n = 40 * 40;
+    let terrain = s2_sim::map::Terrain {
+        width: 40,
+        height: 40,
+        heights: vec![0; n],
+        height_floor: -100,
+        states: vec![s2_sim::map::state::FOR_BUILDING; n],
+        samples: Vec::new(),
+    };
+    let mut castle = s2_sim::BuildingType::new(9, s2_sim::BuildingSize::Large);
+    castle.territory_range = 4;
+    castle.warehouse = true;
+    castle.worker_limit = 0;
+    let rules = s2_sim::Rules {
+        building_types: vec![castle],
+        headquarters: Some(9),
+        ..s2_sim::Rules::empty()
+    };
+    let setup = s2_sim::GameSetup {
+        players: vec![
+            (PlayerId(0), (8, 8)),
+            (PlayerId(1), (30, 8)),
+            (PlayerId(3), (30, 30)),
+        ],
+        local_player: PlayerId(0),
+        ..Default::default()
+    };
+    let world = s2_sim::World::new_game(1, terrain, rules, &setup);
+    let texts = Texts::parse("!AI\tKI\n");
+    let panel = end_panel(
+        &texts,
+        SCREEN,
+        EndScreen::Victory(1),
+        &world,
+        "MP_4P_Keyhole",
+        "Ada",
+    );
+    let at = |text: &str| -> Vec<[f32; 2]> {
+        panel
+            .widgets
+            .iter()
+            .filter_map(|w| match w {
+                Widget::Text { text: t, at, .. } if t == text => Some(*at),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(at("Player #1:"), [[140.0, 190.0]]);
+    assert_eq!(at("Player #2:"), [[140.0, 215.0]]);
+    assert_eq!(at("Player #3:"), Vec::<[f32; 2]>::new());
+    assert_eq!(at("Player #4:"), [[140.0, 240.0]]);
+    assert_eq!(at("Ada"), [[230.0, 190.0]]);
+    assert_eq!(at("KI"), [[230.0, 215.0], [230.0, 240.0]]);
+}
+
+// CAM-3.6c (T20a, E-cam-015): the defeat screen on the book: the book's
+// title, DEFEAT, the lost text in the text box at (150, 120), the lost
+// picture, only EXIT MAP at CONTINUE's place (190, 465); no page arrows,
+// page label or CONTINUE.
+// spec: CAM-3.6c (T20a), CAM-1.3c
+#[test]
+fn t20a_the_defeat_screen_is_the_book_with_exit_map_only() {
+    let texts = Texts::parse("!DEFEAT\tDEFEAT\n!You have lost the Map!\tYou have lost the Map!\n");
+    let book = Book {
+        picture: Some("ui_briefing_screen_lost".into()),
+        title: "campaign01".into(),
+        end: Some(EndScreen::Defeat),
+        ..Book::default()
+    };
+    let panel = book_panel(&texts, SCREEN, &book);
+    let texts_shown = shown(&panel);
+    assert!(
+        texts_shown.iter().any(|t| t == "CAMPAIGN01"),
+        "{texts_shown:?}"
+    );
+    assert!(texts_shown.iter().any(|t| t == "DEFEAT"));
+    assert!(panel.widgets.iter().any(|w| matches!(
+        w,
+        Widget::Paragraph { text, at, .. } if text == "You have lost the Map!" && *at == [150.0, 120.0]
+    )));
+    let bars: Vec<(&Action, [f32; 2])> = panel
+        .widgets
+        .iter()
+        .filter_map(|w| match w {
+            Widget::BarButton { action, at, .. } => Some((action, *at)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(bars, [(&Action::Menu(MenuAction::EndExit), [190.0, 465.0])]);
+    assert!(!panel.widgets.iter().any(|w| matches!(
+        w,
+        Widget::Button {
+            action: Action::Menu(MenuAction::BookPage(_)),
+            ..
+        }
+    )));
+}
+
+// CAM-1.3c (T19a, E-cam-013): a missing text key gives the key itself, so a
+// lesson without a key of its name shows its map name in capitals.
+// spec: CAM-1.3c (T19a)
+#[test]
+fn t19a_a_lesson_without_a_key_shows_its_map_name() {
+    let texts = Texts::parse("tutorial01\tTutorial 1\n");
+    assert_eq!(
+        book_title(&texts, "tutorial01").to_uppercase(),
+        "TUTORIAL 1"
+    );
+    for lesson in ["tutorial02", "tutorial03", "tutorial04"] {
+        assert_eq!(
+            book_title(&texts, lesson).to_uppercase(),
+            lesson.to_uppercase()
+        );
+    }
+}
+
+// CAM-5.3c (T19b, E-cam-014): the dialogs' steps take one control each: the
+// shipyard's switch (2), the building window's close (3), the harbour's
+// expedition tab (5), its start button (6), its close (7), the attack button
+// (0x18), the economy dialog's military tab (0x1a) and its close (0x1b); a
+// wrong click on a page-choice step (5, 0x1a) shows the street-icon error,
+// on the others the marked-button error.
+// spec: CAM-5.3c (T19b)
+#[test]
+fn t19b_each_dialog_step_takes_its_one_control() {
+    use crate::ui::widgets::Global;
+    let p = PlayerId(0);
+    let at = (10, 10);
+    let switch = Action::Command(Command::ProductionSwitch { player: p, at });
+    let start = Action::Command(Command::ExpeditionStart { player: p, at });
+    let cases: [(u8, Action, Action); 8] = [
+        (0x02, switch.clone(), Action::CloseContext),
+        (0x03, Action::CloseContext, Action::CloseGlobal),
+        (0x05, Action::BuildingTab(12), Action::BuildingTab(11)),
+        (0x06, start, Action::CloseContext),
+        (0x07, Action::CloseContext, Action::CloseGlobal),
+        (0x18, Action::AttackGo, Action::CloseContext),
+        (
+            0x1a,
+            Action::OpenGlobal(Global::Military),
+            Action::OpenGlobal(Global::Distribution(0)),
+        ),
+        (0x1b, Action::CloseGlobal, Action::CloseContext),
+    ];
+    for (step, right, wrong) in cases {
+        assert_eq!(expects(step, &right), Some(true), "step {step:#x}");
+        assert_eq!(expects(step, &wrong), Some(false), "step {step:#x}");
+    }
+    for step in [0x05, 0x1a, 0x15, 0x25, 0x48, 0x4b] {
+        assert_eq!(
+            wrong_click_error(step),
+            "T01_ERROR_SelectStreetIcon",
+            "{step:#x}"
+        );
+    }
+    for step in [0x02, 0x03, 0x06, 0x07, 0x18, 0x1b] {
+        assert_eq!(
+            wrong_click_error(step),
+            "T01_ERROR_SelectMarkedButton",
+            "{step:#x}"
+        );
+    }
 }

@@ -50,6 +50,16 @@ snap_struct!(crate::World {
     stone,
     goods,
     recipes @ 67 = std::collections::BTreeMap::new(),
+    recipe_sets @ 76 = std::collections::BTreeMap::new(),
+    chosen_recipes @ 76 = std::collections::BTreeMap::new(),
+    deepenings @ 77 = std::collections::BTreeMap::new(),
+    first_resources @ 77 = std::collections::BTreeMap::new(),
+    mine_deepenings @ 77 = std::collections::BTreeMap::new(),
+    recipe_groups @ 78 = std::collections::BTreeMap::new(),
+    recipe_keep @ 78 = std::collections::BTreeMap::new(),
+    paving_rule @ 79 = None,
+    pavings @ 79 = std::collections::BTreeMap::new(),
+    paved @ 79 = std::collections::BTreeSet::new(),
     roles,
     tribes,
     next_object,
@@ -168,7 +178,7 @@ snap_struct!(crate::combat::Duel {
     attacker,
     defender
 });
-snap_enum!(crate::command::Command { Noop { player }, PlaceFlag { player, at }, BuildRoad { player, from, to }, PlaceBuilding { player, building, at }, BuildWaterway { player, from, to }, StartRoute { player, at, waterway }, ExtendRoute { player, to }, CancelRoute { player }, RemoveBuilding { player, at }, UpgradeBuilding { player, at }, RemoveRoad { player, at }, RemoveFlag { player, at }, ExpeditionStart { player, at }, ExpeditionStop { player, ship }, ExpeditionBuildHarbor { player, ship }, ExpeditionGo { player, ship, direction }, DropWare { player, good, at, destination }, ProductionToggle { player, at }, ProductionSwitch { player, at }, ToolWeight { player, slot, per_mille }, ToolExclusive { player, slot }, ToolClearExclusive { player }, ToolReset { player }, WarehouseCycle { player, at, good }, WarehouseToggle { player, at, good, stop }, WarehouseSet { player, at, good, stop, on }, WarehouseAll { player, at, mode, settlers }, DistributionWeight { player, table, entry, thousandths }, DistributionReset { player, table }, PriorityMove { player, from, to }, PriorityReset { player }, MilitaryAllocation { player, class, thousandths }, MilitaryAttackStrength { player, thousandths }, MilitaryDefenders { player, thousandths }, MilitaryDefenseType { player, strong }, MilitaryReset { player }, ToggleCoinSupply { player, at }, ToggleMoveOut { player, at }, SetCastleSoldiers { player, at, rank, amount }, Attack { player, target, count, strong_first }, AddGoods { player, good, amount }, ClearGoods { player }, LockBuilding { player, building }, CreateBuilding { player, building, at, settler }, CreateStreet { player, from, to }, CreateShip { player, at }, NameShip { player, ship, name }, RemoveTrigger { name }, Cheat { player, cheat }, OrderGeologist { player, at }, OrderScout { player, at }, DebugSupplySite { player, at, wares, workers }, PlanRoad { player, from, to }, PlanBuilding { player, building, at, records }, TearDown { player, at } });
+snap_enum!(crate::command::Command { Noop { player }, PlaceFlag { player, at }, BuildRoad { player, from, to }, PlaceBuilding { player, building, at }, BuildWaterway { player, from, to }, StartRoute { player, at, waterway }, ExtendRoute { player, to }, CancelRoute { player }, RemoveBuilding { player, at }, UpgradeBuilding { player, at }, RemoveRoad { player, at }, RemoveFlag { player, at }, ExpeditionStart { player, at }, ExpeditionStop { player, ship }, ExpeditionBuildHarbor { player, ship }, ExpeditionGo { player, ship, direction }, DropWare { player, good, at, destination }, ProductionToggle { player, at }, ProductionSwitch { player, at }, ToolWeight { player, slot, per_mille }, ToolExclusive { player, slot }, ToolClearExclusive { player }, ToolReset { player }, WarehouseCycle { player, at, good }, WarehouseToggle { player, at, good, stop }, WarehouseSet { player, at, good, stop, on }, WarehouseAll { player, at, mode, settlers }, DistributionWeight { player, table, entry, thousandths }, DistributionReset { player, table }, PriorityMove { player, from, to }, PriorityReset { player }, MilitaryAllocation { player, class, thousandths }, MilitaryAttackStrength { player, thousandths }, MilitaryDefenders { player, thousandths }, MilitaryDefenseType { player, strong }, MilitaryReset { player }, ToggleCoinSupply { player, at }, ToggleMoveOut { player, at }, SetCastleSoldiers { player, at, rank, amount }, Attack { player, target, count, strong_first }, AddGoods { player, good, amount }, ClearGoods { player }, LockBuilding { player, building }, CreateBuilding { player, building, at, settler }, CreateStreet { player, from, to }, CreateShip { player, at }, NameShip { player, ship, name }, RemoveTrigger { name }, Cheat { player, cheat }, OrderGeologist { player, at }, OrderScout { player, at }, DebugSupplySite { player, at, wares, workers }, PlanRoad { player, from, to }, PlanBuilding { player, building, at, records }, TearDown { player, at }, ChooseRecipe { player, at, index }, DeepenMine { player, at }, PaveRoad { player, at } });
 snap_enum!(crate::command::Rejection {
     OutsideMap,
     NotOwned,
@@ -211,7 +221,11 @@ snap_enum!(crate::command::Rejection {
     NoSpaceToUpgrade,
     BuildingLocked,
     NoSuchTrigger,
-    PlannedRoadTooLong
+    PlannedRoadTooLong,
+    NotARecipe,
+    NotDeepenable,
+    NotPavable,
+    TooCloseToMilitary
 });
 snap_struct!(crate::command::CommandResult { command, outcome });
 snap_struct!(crate::conquest::Ruin {
@@ -565,7 +579,8 @@ snap_struct!(crate::requests::Message {
     at,
     text,
     until,
-    building
+    building,
+    ship @ 81 = None
 });
 snap_struct!(crate::rules::Settings {
     settler_speed,
@@ -598,8 +613,27 @@ snap_struct!(crate::rules::Rules {
     military,
     animals,
     specialists,
-    recipes @ 67 = std::collections::BTreeMap::new()
+    recipes @ 67 = std::collections::BTreeMap::new(),
+    recipe_sets @ 76 = std::collections::BTreeMap::new(),
+    deepenings @ 77 = std::collections::BTreeMap::new(),
+    recipe_groups @ 78 = std::collections::BTreeMap::new(),
+    recipe_keep @ 78 = std::collections::BTreeMap::new(),
+    paving @ 79 = None
 });
+snap_struct!(crate::paving::PavingRule {
+    good,
+    per_field,
+    speed_percent
+});
+snap_struct!(crate::paving::PavingWork { needed, sent, laid });
+snap_struct!(crate::deepening::Deepening {
+    share_per_mille,
+    most,
+    costs,
+    food
+});
+snap_struct!(crate::deepening::MineDeepening { done, under_way });
+snap_struct!(crate::rules::Recipe { product, inputs });
 snap_struct!(crate::rules::ShipRules {
     speed,
     stock_limit,

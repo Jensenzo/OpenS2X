@@ -8,6 +8,7 @@
 //! `docs/extending.md`.
 
 pub(crate) mod menu;
+pub(crate) mod messages;
 pub(crate) mod things;
 
 use bevy::prelude::{App, DetectChanges, Message, Res, ResMut, Resource, Vec3};
@@ -16,6 +17,7 @@ use std::sync::OnceLock;
 
 pub use crate::menus::settings::Settings;
 pub use menu::{MenuEntry, MenuPage, OnChange, OnClick, PageWidget};
+pub use messages::ProjectEvent;
 pub use things::{MapHit, MapThing, MapThings};
 
 /// A project's change to the app: systems, resources, plugins.
@@ -66,6 +68,10 @@ pub struct Extensions {
     /// pointer and where each is drawn, read only. Default false: the
     /// resource is not there and nothing of it is computed.
     pub map_things: bool,
+    /// Hook W18: particle effects a project plays at settlers at work (a
+    /// builder's dust, a woodcutter's chips; the original has neither,
+    /// GFX-OBJ-8.3b). Default none: nothing of it is computed.
+    pub effects: Vec<EffectRule>,
     /// The folder of the viewer's F12 screenshots (`<map>-<unix
     /// seconds>.png`). Default none: the `--screenshot-dir` option, else
     /// `screens` below the working folder.
@@ -80,6 +86,90 @@ pub struct Extensions {
     /// save of another mark does not load. Default none: s2-reborn, whose
     /// mark is empty without overlays.
     pub project_name: Option<String>,
+    /// Hook W24: the text of the message the player gets when a project's
+    /// rule finishes its work ([`ProjectEvent`]: a mine's deepening, a
+    /// road's pavement), as given (no language key), listed as the
+    /// original's misc messages (a jump to the place). Default none: no
+    /// message, as the game.
+    pub messages: Vec<(ProjectEvent, String)>,
+    /// The pictures of the hooks' buttons in a building's window (the
+    /// deepening's, W15, and the next recipe's, W20). Default: both drawn
+    /// with the boat-and-ship switch's picture, as before.
+    pub button_pictures: ButtonPictures,
+}
+
+/// The pictures of the hooks' buttons in a building's window
+/// ([`Extensions::button_pictures`]); each none: the boat-and-ship switch's
+/// picture (`uiElements5` (256, 88)).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ButtonPictures {
+    /// W15: the mine window's Deepen button.
+    pub deepen: Option<ButtonPicture>,
+    /// W20: the production window's Next recipe button.
+    pub recipe: Option<ButtonPicture>,
+}
+
+/// A button's picture: the 48 x 48 cell at `at` of the picture `file` (a
+/// `.dds` by its file name: one of the install's interface sheets, as
+/// `uiElements4.dds`, or one in a project's asset folder), and the cell
+/// shown while the pointer is over it (none: the same).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ButtonPicture {
+    pub file: String,
+    pub at: [u32; 2],
+    pub hover: Option<[u32; 2]>,
+}
+
+/// The hooks' buttons and their pictures, kept for the program's life.
+static BUTTONS: OnceLock<(ButtonPictures, Vec<&'static str>)> = OnceLock::new();
+
+/// Keep the buttons' pictures; the first call wins.
+pub(crate) fn install_buttons(pictures: ButtonPictures) {
+    let mut files: Vec<&'static str> = Vec::new();
+    for p in [&pictures.deepen, &pictures.recipe].into_iter().flatten() {
+        if !files.iter().any(|f| f.eq_ignore_ascii_case(&p.file)) {
+            files.push(Box::leak(p.file.clone().into_boxed_str()));
+        }
+    }
+    let _ = BUTTONS.set((pictures, files));
+}
+
+/// The pictures the buttons name, each loaded once as an interface atlas
+/// (`Atlas::Project(index)`).
+pub(crate) fn project_pictures() -> &'static [&'static str] {
+    BUTTONS.get().map_or(&[], |(_, f)| f.as_slice())
+}
+
+/// The file of project picture `index`.
+pub(crate) fn project_picture(index: u8) -> &'static str {
+    project_pictures()
+        .get(usize::from(index))
+        .copied()
+        .unwrap_or("")
+}
+
+/// The buttons' pictures (none until [`install_buttons`]).
+pub(crate) fn button_pictures() -> Option<&'static ButtonPictures> {
+    BUTTONS.get().map(|(p, _)| p)
+}
+
+/// A hook button's atlas, cell and hover cell: the project's picture when
+/// it names one (`files` the loaded pictures), else the boat-and-ship
+/// switch's.
+pub(crate) fn button_cell(
+    picture: Option<&ButtonPicture>,
+    files: &[&str],
+) -> (crate::ui::widgets::Atlas, [u32; 2], Option<[u32; 2]>) {
+    picture
+        .and_then(|p| {
+            let i = files.iter().position(|f| f.eq_ignore_ascii_case(&p.file))?;
+            Some((
+                crate::ui::widgets::Atlas::Project(u8::try_from(i).ok()?),
+                p.at,
+                p.hover,
+            ))
+        })
+        .unwrap_or((crate::ui::widgets::Atlas::Elements5, [256, 88], None))
 }
 
 /// Called with the player's settings after a change
@@ -204,6 +294,39 @@ pub struct Captions {
     pub main_menu_footer: Option<String>,
 }
 
+/// Hook W18: a particle effect (a `.pfx` script, GFX-OBJ-8.3a) a project
+/// plays at a settler of a profession while his work loop runs: started
+/// when the loop begins, at his feet as drawn, played on the animation
+/// clock (game time) and gone when the loop ends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectRule {
+    /// The effect's path in the game data (`data/scripts/effects/<name>.pfx`,
+    /// of an asset folder or the install).
+    pub effect: String,
+    /// The settler's profession by its script name (`good_constructor` the
+    /// builder, `good_woodcutter`; LUA-PROP-1.6).
+    pub profession: String,
+    /// The work loop it plays during (`WorkLoop<n>`, GFX-ANIM-3.8: 0 the
+    /// builder's hammering and the woodcutter's chopping); `None` any.
+    pub work_loop: Option<u8>,
+}
+
+impl EffectRule {
+    /// Whether the rule plays at a settler of profession `profession`
+    /// (resolved from the rule's script name) whose logic asks for
+    /// `request` this tick.
+    pub fn plays(
+        &self,
+        profession: Option<u32>,
+        settler: u32,
+        request: Option<s2_sim::trace::Action>,
+    ) -> bool {
+        profession == Some(settler)
+            && matches!(request, Some(s2_sim::trace::Action::WorkLoop(n))
+                if self.work_loop.is_none_or(|w| w == n))
+    }
+}
+
 /// Render options. The defaults are the game's (GFX-VIEW-2.5,
 /// docs/shadows.md); a project may draw better than the original.
 #[derive(Debug, Clone, PartialEq)]
@@ -218,7 +341,77 @@ pub struct RenderOptions {
     pub anisotropy: u16,
     /// The colour behind everything (sRGB, default the game's dark blue).
     pub clear_color: [f32; 3],
+    /// Hook W17: the map camera's shadow filter (default the game's 2 x 2
+    /// percentage-closer filter, GFX-VIEW-2.5c).
+    pub shadow_filter: ShadowFilter,
+    /// Hook W17: the profile's shadow map size (`SHADOW QUALITY`, GFX-VIEW-2.5 d)
+    /// times this factor, at most [`MAX_SHADOW_MAP`]; the Shadows switch,
+    /// quality 0 and shader detail 1 still turn shadows off (SET-4b).
+    /// `shadow_map_size` wins when both are set. Default `None` (the
+    /// profile's size).
+    pub shadow_map_scale: Option<u32>,
+    /// Hook W18: foam on the water along the shores. Default `None` (the
+    /// original has none): the water shader's foam step is not taken.
+    pub shore_foam: Option<ShoreFoam>,
+    /// Hook W21: the look of a paved road (W19, `World::is_paved`). Default
+    /// `None` (the original has no paving): the street pass draws as ever.
+    pub paved_road: Option<StreetLook>,
 }
+
+/// Hook W21 (S2N-030): the textures a paved road is drawn with, in place
+/// of the original's street textures (GFX-OBJ-6.2; the crossings at its
+/// flags stay the original's). Each is a `.dds` file name as the install's
+/// textures are named (`street.dds`), found in a project's asset folder
+/// (`data/textures/...`) or the install; the normal map is read as the
+/// original's `street_n.dds` (tangent space, the strip's u across).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreetLook {
+    /// The colour texture, its alpha the blend (as `street.dds`).
+    pub texture: String,
+    /// The normal map (as `street_n.dds`).
+    pub normal: String,
+}
+
+/// Hook W18 (S2N-005): foam the water shader adds where the ground lies
+/// less than `reach` below the water level (raw map height units of the
+/// water's depth term, GFX-WATER-4.4: about 2 900 from the waterline to the
+/// deepest the term tells apart), fading out towards `reach`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShoreFoam {
+    /// How deep below the waterline the foam reaches (raw height units; 300
+    /// is a narrow band along a flat beach).
+    pub reach: f32,
+    /// The foam's colour (sRGB, 0 to 1).
+    pub colour: [f32; 3],
+    /// Its strength at the waterline, 0 to 1 (the share of the foam colour
+    /// in the water's colour, and the least alpha there).
+    pub strength: f32,
+}
+
+/// Hook W17: the shadow map's filter on the map camera.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ShadowFilter {
+    /// Bevy's 2 x 2 hardware percentage-closer filter: the game's
+    /// (GFX-VIEW-2.5c).
+    #[default]
+    Hardware2x2,
+    /// Bevy's wider Gaussian filter: soft edges over several texels.
+    Gaussian,
+}
+
+impl ShadowFilter {
+    /// The camera component that selects the filter.
+    pub fn method(self) -> bevy::light::ShadowFilteringMethod {
+        match self {
+            Self::Hardware2x2 => bevy::light::ShadowFilteringMethod::Hardware2x2,
+            Self::Gaussian => bevy::light::ShadowFilteringMethod::Gaussian,
+        }
+    }
+}
+
+/// Hook W17: the largest shadow map a [`RenderOptions::shadow_map_scale`]
+/// makes (texels per side; the profile's largest is 2048).
+pub const MAX_SHADOW_MAP: usize = 8192;
 
 impl Default for RenderOptions {
     fn default() -> Self {
@@ -227,6 +420,10 @@ impl Default for RenderOptions {
             shadow_cascades: 2,
             anisotropy: 8,
             clear_color: [0.02, 0.03, 0.06],
+            shadow_filter: ShadowFilter::Hardware2x2,
+            shadow_map_scale: None,
+            shore_foam: None,
+            paved_road: None,
         }
     }
 }
@@ -353,6 +550,26 @@ pub(crate) fn render() -> RenderOptions {
 mod tests {
     use super::*;
 
+    // spec: none (the hooks' button pictures: a project's cell, else the boat-and-ship switch's, as before)
+    #[test]
+    fn a_hook_button_takes_the_projects_picture() {
+        use crate::ui::widgets::Atlas;
+        let default = (Atlas::Elements5, [256, 88], None);
+        assert_eq!(button_cell(None, &[]), default);
+        let pick = ButtonPicture {
+            file: "frontier_buttons.dds".into(),
+            at: [48, 0],
+            hover: Some([48, 48]),
+        };
+        let files = ["uiElements4.dds", "Frontier_Buttons.dds"];
+        assert_eq!(
+            button_cell(Some(&pick), &files),
+            (Atlas::Project(1), [48, 0], Some([48, 48]))
+        );
+        // A picture that was not loaded falls back to the switch's.
+        assert_eq!(button_cell(Some(&pick), &files[..1]), default);
+    }
+
     // spec: none (the window title hook: a project's title, else the game's)
     #[test]
     fn a_project_names_the_window() {
@@ -405,6 +622,29 @@ mod tests {
         );
     }
 
+    // spec: none (hook W18: an effect plays only at its profession's work loop)
+    #[test]
+    fn an_effect_rule_plays_at_its_professions_work_loop() {
+        use s2_sim::trace::Action;
+        let dust = EffectRule {
+            effect: "data/scripts/effects/StoneDust.pfx".into(),
+            profession: "good_constructor".into(),
+            work_loop: Some(0),
+        };
+        let builder = Some(11);
+        assert!(dust.plays(builder, 11, Some(Action::WorkLoop(0))));
+        assert!(!dust.plays(builder, 11, Some(Action::WorkLoop(1))));
+        assert!(!dust.plays(builder, 11, Some(Action::Walk)));
+        assert!(!dust.plays(builder, 11, None));
+        assert!(!dust.plays(builder, 13, Some(Action::WorkLoop(0))));
+        assert!(!dust.plays(None, 11, Some(Action::WorkLoop(0))));
+        let any = EffectRule {
+            work_loop: None,
+            ..dust
+        };
+        assert!(any.plays(builder, 11, Some(Action::WorkLoop(2))));
+    }
+
     // spec: GFX-VIEW-2.5 (the defaults are the game's)
     #[test]
     fn the_defaults_change_nothing() {
@@ -412,6 +652,14 @@ mod tests {
         assert_eq!(render.shadow_map_size, None);
         assert_eq!(render.shadow_cascades, 2);
         assert_eq!(render.anisotropy, 8);
+        // W17: the game's filter and the profile's map size.
+        assert_eq!(render.shadow_filter, ShadowFilter::Hardware2x2);
+        assert_eq!(
+            render.shadow_filter.method(),
+            bevy::light::ShadowFilteringMethod::Hardware2x2
+        );
+        assert_eq!(render.shadow_map_scale, None);
+        assert_eq!(render.shore_foam, None);
         let e = Extensions::default();
         assert!(e.rules_overlays.is_empty() && e.asset_folders.is_empty() && e.plugins.is_empty());
         assert!(e.menu.is_empty());
@@ -429,6 +677,7 @@ mod tests {
         );
         assert!(e.on_settings_change.is_none());
         assert!(!e.map_things);
+        assert!(e.effects.is_empty());
         assert_eq!(e.screenshot_dir, None);
         assert_eq!(e.save_dir, None);
         assert_eq!(e.project_name, None);

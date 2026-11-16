@@ -77,7 +77,8 @@ offsets, graphics).
     it, captions `dark_system`: n 0 `!Start resources:` (`!Low`, `!Medium`,
     `!High` = 0, 1, 2; Medium preselected), n 1 `!Victory condition:`
     (`!Endless` 0, `!Destroy all enemies` 1, `!Conquer 3/4 of the Map` 2,
-    `!produce 100 coins` 3; Endless preselected), n 2 `!FOW` (shown as "Fog
+    `!produce 100 coins` 3; Endless preselected; shown in English as "None (Endless)", "Destroy all
+    enemies", "Conquer 3/4 of the map", "Collect 100 gold coins", E-trace-031), n 2 `!FOW` (shown as "Fog
     of war:"; `!On` 0, `!Off` 1; On preselected), n 3 `!Allow Downloads:`
     (`!ALLOW_DOWNLOAD` 1, `!DENY_DOWNLOAD` 0; the network page's row).
   - Slots: six, slot i at P = (180 + 275 (i mod 2), 405 + 80 floor(i / 2)),

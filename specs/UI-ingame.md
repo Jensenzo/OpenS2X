@@ -141,7 +141,13 @@ atlas rectangles, the tooltip keys and the command each control sends.
   (screenHeight - h) / 2. Confidence: high (E-ui-004). **Seen (2026-11-15 night, part 2, E-trace-029, 2560
   x 1440):** build menus clicked at (1480, 250) and (2450, 236) opened at y 0 and at x 1960 (= W - 600);
   a flag menu clicked at (1640, 1318) opened with its top at about 1224 (= 0.85 H), lifted above the
-  main bar; a producer window clicked at (1440, 200) opened at (960, 0).
+  main bar; a producer window clicked at (1440, 200) opened at (960, 0). **Seen again (2026-11-15 day,
+  E-trace-030, 2560 x 1440):** build menus clicked at (575, 960) and (1655, 1075) show their frame's
+  outer edge ending 18 px left of and 20 px above the click both times (the dialog art's transparent
+  margin; the dialog's own corner is on the click); a headquarters window clicked at (1250, 450) was
+  pushed to y 0. In the Seafaring tutorial the harbour and ship windows opened at the top left
+  (frame edge at about (20, 20)); after the last lesson's end box was closed with Play, the windows
+  opened at the click again. Confidence: high.
 - **UI-GAME-1.10 Smart cursor.** While the `SMART CURSOR` option (SET-2
   field 9, default on) is on, opening a context dialog moves the mouse
   pointer onto the centre of the dialog's first button (its default action:
@@ -274,6 +280,17 @@ atlas rectangles, the tooltip keys and the command each control sends.
 
   Confidence: high for sprites, positions and tooltips, and for the actions of 4 and 6 (E-ui-015,
   2026-11-04); medium for the actions of 3 and 8 (named from the tooltip and the dialogs that exist).
+  **Seen (2026-11-15 day, E-trace-030, 2560 x 1440, pointer on each button):** the English texts
+  shown are, for 1 to 9: "View Mission Objective and Status", "Toggle Game Speed", "Toggle
+  Construction View on/off", "Open Statistics", "Toggle Minimap on/off", "Open Global Economy
+  Settings", "Toggle Reports on/off", "Start Chat", "Open Game Menu"; the hovered button turns
+  red-orange. The tooltip of a control (these buttons, the build menu's cells and tabs, a window's
+  buttons) is a dark box with a thin light frame, one line of white text, 32 px high, its top left
+  corner at the pointer + (25, -45) (so its bottom 13 px above the pointer), its width fitted to the
+  text; near the right edge it is moved left so that it ends at the screen's edge (the minimap's
+  close button). Measured on 13 controls, +- 1 px. The map's hover tooltips are placed by 9.3, not by
+  this. Confidence: high for the texts and the box at this screen size; medium for how the offset
+  scales with other screen sizes (one size seen).
 - **UI-GAME-2.3 Messages window.** (Superseded in detail by UI-GAME-11:
   seven visible rows.) Eight message row slots (a round slot with the
   message icon, a tooltip and a label) with three buttons: scroll up, scroll
@@ -286,7 +303,12 @@ atlas rectangles, the tooltip keys and the command each control sends.
   1440, opened with T):** a small scroll left of the main bar; the two lines are **right-aligned** on
   x 184 (ending at screen x 1030) and centred on y 31 and 50 (screen 1396 and 1415), dark text:
   `Reach the portal.` and, once the target is met, `(VICTORY)` on the second line. T also reopens
-  the mission's book (CAM-1.3). Confidence: high for the places (picture).
+  the mission's book (CAM-1.3). Confidence: high for the places (picture). **Target 3, produce
+  coins (2026-11-16 day, Q-1063; E-cam-017, code reading):** the first line is
+  `!MissionTarget: Produce coins` (English "Collect gold coins.") and the second `(<n>/100)`, where
+  n is the **local player's own** coins-produced figure (`CAM-campaign-missions.md` CAM-3.3), not
+  his team's sum, so in a team the line can read below 100 when the team has won; the lines are
+  refreshed every half second. Confidence: high for the figure and the format.
 - **UI-GAME-2.5 Minimap dialog.** Frame `uiGame` (688, 320, 168 x 320) at
   x = screenWidth - 326, y = 10; title `!Map` at (128, 21) of the frame; the
   map image 265 x 265 at (-30, +36) of the frame: the texture `regions` (the
@@ -303,7 +325,19 @@ atlas rectangles, the tooltip keys and the command each control sends.
   holding the map (about 265 px, from about x 2265, y 48) and the round borders button at its bottom
   right (about (2530, 290)); so the map image lies about 30 px to the right of the frame's left edge
   (the "-30" above reads as +30), and the frame is wider than the 168 px of the `uiGame` piece named
-  above. Confidence: medium (one picture, edges read by eye +- 5 px).
+  above. Confidence: medium (one picture, edges read by eye +- 5 px). **Measured (2026-11-15 day,
+  E-trace-030, M after the Seafaring lesson's end, 2560 x 1440, pixel rows read):** the frame's light
+  outer line runs at x 2240 .. 2242 on the left (w - 320) and x 2556 .. 2558 on the right (w - 4), y 18
+  .. 21 at the top and y 319 .. 322 at the bottom; the header bar fills y 22 .. 42 with MAP centred; the
+  black map area inside spans x 2243 .. 2555, y 43 .. 318; a laurel ornament sits on the bottom left
+  corner. The darker pixels from x 2234 and y 10 outside that line fit the frame placed at (w - 326, 10)
+  with a 6 px transparent margin in its art. The close cross sits at the header's right end, its centre
+  at about (w - 17, 31), tooltip "Close this window"; the round button with a house is centred at
+  about (w - 28, 292), tooltip "Show/hide buildings and borders". The map area has no tooltip. A left
+  click on the map moves the camera there (seen). During a tutorial lesson M and the bar's minimap
+  button did nothing; after the lesson's end (Play) M opened it. Confidence: high for these places at
+  this screen size (pixels); the two button places above (2.5's (w - 50, frame.y + 225) and (w - 27,
+  frame.y - 23)) do not match what is seen and are superseded by these.
 - **UI-GAME-2.6 Debug controls.** A column of 16 x 16 buttons under the bar
   (debug session, hide UI, camera mode, game speed, grabbing mode) and four
   debug panels (AI, harbour, flag, military) exist but are disabled in the
@@ -335,6 +369,14 @@ atlas rectangles, the tooltip keys and the command each control sends.
   | 96 | `!Destroy the flag.` (Destroy flag) | white flag with a red arrow | sends `remove-flag` for the flag and its roads; disabled for the headquarters' flag |
   | 144 | `!Call a scholar!` (Send out geologist) | old man with a book | sends `send-geologist` |
   | 192 | `!Call the explorer!` (Send out scout) | dark-haired man | sends `send-scout` |
+
+  **Every exit of the flag menu puts the pointer back on the flag (2026-11-16 day, Q-207 h; E-ui-041,
+  code reading, high).** Whatever closes it, the menu closes and the pointer is warped onto the
+  flag's field (1.10a): each of the five buttons, a close request (a click outside, the right button),
+  and the flag gone while it is open. With the destroy button the warp comes first and then the
+  confirmation dialog opens (when the game asks for one). The geologist and scout buttons first ask
+  the game whether the order can be given; when it cannot, `uiCancel` plays, no order is sent, and
+  the menu still closes with the warp (what that check tests was not read).
 
   Confidence: high (E-ui-004, atlas `uiElements3.dds`).
 - **UI-GAME-3.2 Build menu** (`!Build Building or Flag`, help `dialog0_0`),
@@ -381,9 +423,32 @@ atlas rectangles, the tooltip keys and the command each control sends.
   the type's name as tooltip (the name and the costs while hovered). A type
   the map forbids is disabled with `!Building not allowed`; a military type
   too close to another military building is disabled with `!Too close to
-  other military buildings.`. Clicking a type sends
+  other military buildings.`. **Which cells and why (2026-11-16 day, E-eco-047, code reading,
+  high):** the military cells are the types with a territory range (barracks, guard house,
+  watchtower, stronghold; the lookout tower is not one). Each is tested on the menu's field by
+  `ECO-building-placement.md` ECO-PLACE-6.2: it is greyed when a building or construction site
+  of **any player** whose type has a territory range (the headquarters included) stands on a
+  field within distance 4 (rings 0 to 4). The test runs when the page is built (opening the
+  menu, a tab click) and comes before the `!Building not allowed` test. The non-military cells
+  of the same page are not affected, and the tabs are not either (ECO-PLACE-4). The
+  `place-building` command refuses the same types by the same test (ECO-PLACE-6.3), so a
+  greyed cell is never placed by another way. Test: ECO-PLACE T18, T19. **Seen (2026-11-16 night, E-trace-031):** the disabled cell's tooltip
+  box carries that text, "Too close to other military buildings", in place of the name (the cells near
+  the headquarters); near the border the same cells were enabled with "Barracks (0)". Clicking a type sends
   `place-building`(field, type) and closes the menu (the pointer returns
-  to the field). Confidence: high (E-ui-006).
+  to the field). Confidence: high (E-ui-006). **Seen (2026-11-15 day, E-trace-030, Seafaring map after
+  the lesson's end and a free game on Coastal Storm as Africans and as Chinese, 2560 x 1440, a large
+  site):** title "BUILDING SELECTION MENU"; the three tabs' tooltips are "Small buildings", "Medium
+  buildings", "Large buildings"; the flag cell's tooltip is "Erect flag"; a building cell's tooltip is
+  the type's name followed by a number in brackets, e.g. "Woodcutter's Hut (0)", "Forester's Hut
+  (0)", "Quarry (0)", "Fisherman's Hut (0)", "Hunter's Hut (0)", "Lookout Tower (0)", "Well (0)",
+  "Barracks (0)", "Guard House (0)" (a player owning none of these; that the number counts the
+  player's buildings of the type is taken, not seen with a non-zero count: medium); no costs show
+  anywhere in the menu while a cell is hovered. The hovered cell gets a bright teal frame. The small
+  page lists the flag and the nine types of the table above in that order (4 + 4 + 2 cells); the
+  African and Chinese menus have the same tabs, cells, order and counts per page (small 9, medium
+  14, large 4 after the flag), each cell with the tribe's own building picture, and **the flag cell
+  is the same eagle with SPQR for all three tribes** (Q-209 a seen). Confidence: high (pictures).
 - **UI-GAME-3.3 Road menu** (`!Street Menu`, English text "Road Menu", help
   `dialog11_0`), opened at the click (1.9) by a click on a road **or on a
   free own field whose site kind is "flag only"** (ECO building placement
@@ -427,7 +492,13 @@ atlas rectangles, the tooltip keys and the command each control sends.
      (TRN-ROAD-8.2), possibly by many fields at once; the route is drawn as
      a normal road while it grows (TRN-ROAD-8.4). A click with no route to
      F changes nothing. A click on a field that is already part of the route
-     cuts the route back to that field (TRN-ROAD-8.2).
+     cuts the route back to that field (TRN-ROAD-8.2). **The clicked field is tested first
+     (2026-11-16 day, Q-203 b; E-ui-040, code reading, high):** the interface sends
+     `extend-road` for every such click with no test of its own, and the logic runs TRN-ROAD-7.4's
+     target test on F before any search; a field that fails it (a land field next to a flag,
+     Border, a doodad field, too far for a waterway) extends nothing, also when it lies between
+     the route's end and a field that would pass. The click sound plays all the same, and road
+     building goes on. The neighbour shortcut of TRN-ROAD-2.5 comes after this test.
   3. When the route's end is a flag, or a field of another road where a
      flag fits, the road is built at once (TRN-ROAD-8.3) and the mode ends
      (the pointer is not moved). A click on an existing flag therefore ends
@@ -440,7 +511,12 @@ atlas rectangles, the tooltip keys and the command each control sends.
      closes (1.10a).
   5. A click on the route's first field (the start flag), or the right
      mouse button while the route cannot be finished, cancels: `uiCancel`
-     plays, `cancel-road` is sent and the mode ends. Escape
+     plays, `cancel-road` is sent and the mode ends. **"Cannot be finished" (Q-203 c; E-ui-040,
+     code reading, high)** means the route is not complete in TRN-ROAD-8.3's sense. A complete
+     route is built at once after the extension that completes it, so it stays complete only
+     from a flag placed on its end (step 4's `!Create Flag.`) until the next tick builds it. In
+     practice every right click in the mode cancels; in that short window the right click does
+     nothing (no sound, the mode stays until the road is built). Escape
      does not cancel (it opens the game menu, 12.1); while the mode is on,
      a route that the logic has dropped (its start flag destroyed, a field
      blocked) ends the mode with `cancel-road`.
@@ -635,6 +711,12 @@ Headings use the heading font (1.7). The window is placed next to the bar.
   was already open and kept its place while the key switched it to the next depot (medium: one
   case). So with the pointer at (p, q) the window opens at (min(p - 376, W - 600), q - 464), then
   clamped. Confidence: high for the placement (code), medium for the reuse of an open window.
+  **Other tribes (2026-11-15 day, E-trace-030, free games on Coastal Storm as Africans and as
+  Chinese):** the headquarters window is the same for every tribe: title "HEADQUARTERS", the same three
+  tabs, the same 31 goods icons in the same order on the goods page, the same job icons (the soldier
+  ranks included) on the settlers page and the same five rank rows (Private .. General) on the
+  military page, compared with a Roman headquarters (E-trace-028). Only the 3D buildings differ. So
+  no window of this group takes anything from the owner's tribe. Confidence: high (pictures).
 - **UI-GAME-4.5 Ship** (`!Ship`, help `dialog32_0`; E-sim-002: the window's
   build, update, cargo, expedition, port button,
   fleet arrows and view). The
@@ -655,8 +737,14 @@ Headings use the heading font (1.7). The window is placed next to the bar.
   target or home harbour is set), otherwise disabled with the tooltip `!Ship
   has no target port.`; a click moves the camera to the port's field.
   `!Jump to ship.` `uiElements5` (352, 40, 48 x 48), highlighted (352, 136),
-  at (304, 392): the camera moves to the ship. Two separators `uiElements4`
-  (0, 432, 350 x 8) at (2, 232) and (2, 376).
+  at (304, 392): the camera moves to the ship. Two separators `uiElements3`
+  (0, 432, 350 x 8) at (2, 232) and (2, 376): the same separator line as the
+  other windows', cut 350 wide (its rows 3 and 4 are the two visible lines,
+  colours (1, 45, 45) and (50, 96, 91); the rest is transparent). Corrected
+  2026-11-16 night (Q-1059, E-ui-039, code reading and a picture): the code
+  names `uiElements3`, not `uiElements4`; in E-trace-030's ship window the
+  two lines lie at content y 235 / 236 and 379 / 380 from x 3 to 351, pixel
+  equal to that art.
   (c) **Name.** Label `!Name of the ship` at (104, 392) in
   `small_no_alias_white`, colour (126, 183, 174); a text input (UI-MENU-5.3,
   style 2) at (104, 400) showing the ship's name, refilled whenever the
@@ -668,8 +756,12 @@ Headings use the heading font (1.7). The window is placed next to the bar.
   `African` or `Chinese` and `k` the owner's ship-name counter at the ship's
   creation: the counter starts at 0, rises by 1 per ship created and goes
   back to 0 after 20 (so 21 keys per tribe), and is saved in the `Player
-  ShipNames` chunk (FMT-SAV-3.3). The shipped data files hold no text for
-  these keys (medium: the key is then shown as it is). **A typed name is
+  ShipNames` chunk (FMT-SAV-3.3). **Corrected 2026-11-15 day (E-trace-030, picture and data):** the
+  English language file `controls.txt` has a text for every one of the 63 keys (`RomanShipName0` ..
+  `20`, `AfricanShipName0` .. `20`, `ChineseShipName0` .. `20`), e.g. `RomanShipName0` "Aurora" and
+  `RomanShipName1` "Bellona"; the Seafaring tutorial's first two ships showed exactly these two names
+  in their windows and in their messages ("Ship is awaiting orders (Aurora)"). (The earlier note
+  that the data holds no text for these keys was wrong.) **A typed name is
   never kept (2026-11-05, Q-258 c; E-ui-018):** the
   name shown is always made at display time from the owner's tribe and the
   ship's creation number, nothing stores a ship name, and the window never
@@ -692,8 +784,11 @@ Headings use the heading font (1.7). The window is placed next to the bar.
   (+24, +53), centred on that x (UI-MENU-1.8 flag 8), in `light_system`. The slot buttons have no click action.
   (f) **Expedition.** In expedition mode: `!Cancel expedition mode.`
   `uiElements5` (448, 40, 48 x 48), highlighted (448, 136), at (8, 176)
-  (`cancel-expedition`), and, when a harbour can be built where the ship
-  waits, `!Construct harbor.` `uiElements5` (352, 88, 48 x 48), highlighted
+  (`cancel-expedition`), and, exactly while a harbour can be founded where
+  the ship waits (`SHIP-ships-expeditions.md` SHIP-7.1, checked at every
+  refresh; a ship a mission's script made is no exception, it has a last
+  port position from its creation, SHIP-2.7; 2026-11-16 night, Q-1060),
+  `!Construct harbor.` `uiElements5` (352, 88, 48 x 48), highlighted
   (352, 184), at (305, 176) (`found-harbour`). While the ship
   waits for orders (its expedition course value is negative) six compass
   buttons of 40 x 40 from `uiElements5`, each with its tooltip and enabled
@@ -707,7 +802,20 @@ Headings use the heading font (1.7). The window is placed next to the bar.
   in this order). Confidence: high for the layout, the arrows, the port and
   ship buttons and the view's content; medium for the camera distance (the
   form of the field-of-view value), the cargo label's position and the
-  direction indexes.
+  direction indexes. **Seen (2026-11-15 day, E-trace-030, the Seafaring tutorial, a ship in
+  expedition mode carrying 4 planks, 1 builder, 6 stones, 2560 x 1440):** title "SHIP"; the porthole
+  with the ship's model sits top centre with six orange compass spikes around it (two above, one at
+  each side, two below), each with its English direction as tooltip ("East", "Southwest", ...); left
+  of the porthole the round "Cancel expedition" button (a red no-entry sign over a ship); "Goods on
+  board" over two rows of six square slots, the used ones with the good's or settler's icon and the
+  count under it (planks 4, builder 1, stones 6, in that order); at the bottom the "Ship has no
+  destination" button on the left (an anchor with an arrow, disabled), the label "Name of ship" over
+  the name between the two arrows, and "Jump to ship" on the right. A click on the Southwest spike
+  sent the ship off at once. At a landing place the window, opened with the right arrow from the
+  first ship, showed the second ship with a "Build harbour" button right of the porthole (tooltip
+  "Build harbour"); its click turned the site into a levelled, paved harbour building site with the
+  builder standing at its flag, and new border buoys on the water around it. Confidence: high
+  (pictures).
 
 ### UI-GAME-5 Attack dialog
 
@@ -721,7 +829,14 @@ Headings use the heading font (1.7). The window is placed next to the bar.
   `!High number of soldiers.` at (344, 117), (64, 344) `!Highest number of
   soldiers.` at (400, 117); `!ATTACK` text button at (140, 180) sends
   `attack-building`(building, count, strong-first). Separators at (37, 103)
-  and (37, 170). Confidence: high.
+  and (37, 170). Confidence: high. **Seen with no attackers (2026-11-16 night, E-trace-031, a
+  computer player's guard tower clicked by a player with no soldiers in reach, 2560 x 1440):** title
+  "ATTACK MENU"; the weak / strong pair on top (a shield-and-sword icon, crossed swords), "Soldiers"
+  under them, the four count buttons in two pairs at the sides (one, two, three and four shields), and
+  in the middle the line "Cannot attack this building!" (MIL-ATK-1.3); **no slider, no number and no
+  ATTACK button** are shown while A = 0. Confidence: high (picture).
+  **Measured (Q-1064):** the line is centred on x 243 of the dialog, its glyphs from y 154 to 166 (the
+  number label's row, (245, 160)), white, about 13 px high.
 
 ### UI-GAME-6 Global dialogs
 
@@ -876,7 +991,12 @@ are these four pages).
   filled: while the harbour prepares an expedition it shows `!Exploration is running!` (the English text
   is "Preparing expedition!"; white, left edge x 45, on y 400); the four slots read `1/1`, `6/6`, `4/4`,
   `0/1` there (builder, stones and planks set aside, no ship yet). Confidence: high for the text while
-  preparing (picture); the text in the other states not read.
+  preparing (picture); the text in the other states not read. **Seen before and after the start
+  (2026-11-15 day, E-trace-030, Seafaring tutorial):** before a preparation the label is empty and
+  all four slots read `-/-`; the left button's tooltip is "Jump to next expedition ship", the right
+  one's "Prepare expedition"; right after the click the right button is greyed out, "Preparing
+  expedition!" shows at the lower left and the slots still read `-/-` (nothing set aside yet in that
+  frame). Confidence: high (pictures).
   Confidence: high for the slots, the texts, the enabling and the actions;
   medium for "disabled tooltip" (the call that sets it differs from the
   normal tooltip) and for whether the harbour window closes when the ship
@@ -998,6 +1118,35 @@ are these four pages).
   (`FMT-savegame.md` FMT-SAV-3.11, restored as saved); after a load the sampling counter starts
   at 0 again, so the first five ticks after a load take the five samples and the 601st ends the
   cycle, whatever the game's tick.
+  **How four of the series are counted (2026-11-16 day, Q-198 d; E-ui-042, code reading, high
+  unless noted):**
+  - **0 land:** the player's owned fields that lie on a land continent (fields of a water body do
+    not count), times 100, divided by the map's count of land fields, in **whole percent**
+    (integer division, truncated); not hundredths. **Which fields are land (2026-11-16 day b,
+    Q-1066 b):** a field counts in the numerator only when its continent index (`FMT-s2m-map.md`
+    FMT-S2M-4.8) is not -1 and that continent is not water; a field of index -1 (mountain or
+    other ground no continent holds) never counts. The denominator is the same set over the whole
+    map: the number of fields on land continents, which the map file stores as the u32 after the
+    continent objects (FMT-S2M-4.8's "meaning unknown" value: on all 34 shipped maps it equals the
+    summed field counts of the land continents, e.g. MP_4P_Fight 2548 of 6400 fields, 206 of index
+    -1). Confidence: high for the numerator (code); medium-high for the denominator being that
+    stored count (the code divides by the loaded continent layer's count; the equality is data,
+    34 of 34 maps);
+  - **1 buildings:** every building object of the player, **construction sites included**;
+  - **3 goods:** the sum of the amounts in the stores of the player's **warehouses** (headquarters,
+    storehouses, harbours) only; the inputs held by workshops and the material on sites do not
+    count;
+  - **6 productivity:** each productivity entry whose building still exists gives its value times
+    100, rounded to a whole number, to its owner; the series is the sum divided by the number of
+    such entries (integer division). **Which buildings have an entry (corrected 2026-11-16 day b,
+    Q-1066 a; it said "made at its first finished work cycle"):** the entries are those of
+    `ECO-outdoor-workers.md` ECO-OUT-3.11: made at 0.5 **when the site is placed** for every type
+    with a product, so a **construction site counts** (at 50, the fall skips sites) and a finished
+    building that never produced counts at its current entry (50 less 5 per fall); the forester's
+    hut counts only from its first planting; a building without an entry (no product type) is
+    not counted at all (not as 0). The loop makes no finished test and no worker test: only the
+    building's existence (an entry whose building is gone is skipped until the next fall drops it).
+  Series 2 (inhabitants) and 4 (military) were not re-read.
   The "Player statistics" page plots these series per player; the exact page layout is open
   (Q-096). Confidence: high for the series' meanings 0 to 4 and 6, medium for the sampling
   order (E-cmd-001).
@@ -1319,7 +1468,36 @@ are these four pages).
   29 px apart, the four filter buttons in a row above them, the three scroll buttons in a column at the
   left; some rows' icons carry a **green tick** over their lower right part (taken to be the read
   mark of the click above; medium: which messages were clicked in that save is not known), the others
-  none. Confidence: high for the look, medium for the tick's meaning.
+  none. Confidence: high for the look, medium for the tick's meaning. **Confirmed (2026-11-15 day,
+  E-trace-030, Seafaring tutorial):** a left click on a row's text did nothing; a left click on the
+  row's **icon** marked it: the icon got a green (teal) frame with a green tick over its lower right
+  corner, the row's text turned grey, and the camera jumped to the message's ship. The other row
+  kept its plain icon and white text. Confidence: high for the tick's meaning (seen before and
+  after one click); the click target being the icon, not the whole row, is seen once (medium).
+  **Seen, the kinds in a free game (2026-11-16 night, E-trace-031, 2560 x 1440):**
+  - misc: "Building completed (Forester's Hut)", "Building completed (Barracks)", with the red square
+    "!" icon;
+  - military: "Military building manned! (Barracks)", with the crossed swords icon;
+  - a chat line: "Look (All): GiveMeSomeMore" (the sender's name, "(All)", then the text), with an
+    orange speech-bubble icon, one row per line sent (the chat line opens with RETURN at the top left,
+    under the message rows);
+  - a click on the military row's icon moved the camera to the barracks and marked the icon, as above.
+  The sounds are not in pictures (11.4's `uiMessage1` / `uiMessage0` from the code stand).
+  **Seen, three more kinds (2026-11-16 day, E-trace-032, free game on Keyhole, 2560 x 1440):**
+  - geologist: "Iron ore found! (Geologist)" (`!Found Iron Ore!` with the name "Geologist"), with
+    the magnifier icon, a short while after a geologist was sent to a mountain flag;
+  - economic: "No resources found (Fisherman's Hut)" (`!No resources found.`, English without the
+    full stop), with the orange-red house icon, for a fisherman's hut with no water within its
+    radius, some game minutes after the hut was completed (not at its first search; consistent with
+    `ECO-outdoor-workers.md` ECO-OUT-3.11's entry starting at 0.5);
+  - military: "Territory lost to enemy!" (`!Lost Territory.`) with the crossed swords icon, **one
+    row per lost place**: six rows within about a minute while a stronger neighbour's new military
+    buildings took our border fields (the duplicate rule of 11.1 keeps one per place, not one per
+    event).
+  Still not seen: "You are under attack!" (no computer player attacked our buildings in about 30
+  real minutes at speed 20; the Hard players' attack test (`AI-military.md` AI-MIL-5.4) never
+  passed against our cheat-raised soldier strength, and the Medium neighbour never met the
+  ring condition of `MIL-attack-combat.md` MIL-ATK-1.2) (Q-095).
 
 ### UI-GAME-10 Tutorial marks
 
@@ -1581,13 +1759,22 @@ are these four pages).
 | E-sim-002 | code reading | | UI-GAME-8.5, 8.5a |
 | E-ui-019 | code reading | (= E-gfx-039, session 2026-11-06) | UI-GAME-8.5f |
 | E-ui-021 | code reading | (= E-gfx-055, session 2026-11-11 eve): the build menu's flag button names its icon sheet directly, the building cells by the tribe's sheet name | UI-GAME-3.2 (Q-209 a) |
+| E-eco-047 | code reading | the build menu's military cells use the placement's military clearance (`ECO-building-placement.md` ECO-PLACE-6) | UI-GAME-3.2 |
+| E-cam-017 | code reading | the briefing panel's coin line reads the result record of the local player | UI-GAME-2.4 |
+| E-ui-040 | code reading | the road-building click and right click; the route search's target test before the search | UI-GAME-3.4 steps 2 and 5 (Q-203 b, c) |
+| E-ui-041 | code reading | the flag menu's update: every exit closes and warps the pointer onto the flag | UI-GAME-3.1 (Q-207 h) |
+| E-ui-042 | code reading | the statistics samples: land percent, buildings, goods in warehouses, productivity mean | UI-GAME-8.5a (Q-198 d) |
 | E-ui-032 | code reading | (session 2026-11-14 b) | UI-GAME-11.3a (F62): the messages window shown by its constructor and at every game start, the N / button 7 toggle; `SET-settings.md` SET-2 field 17 and SET-5.6: the `!Infowindow` drop-down's values and what reads them |
 | E-ui-033 | code reading | (session 2026-11-14 b) | UI-GAME-1.7, 1.8 (F59): the text line's alignment flag (8 centred, 4 plain) read as a size before; the title's line top y 14; the frame pictures of the production, site and military windows; 4.1a the captions' alignment and the two status lines' texts and conditions; 4.3 the headings' alignment and the coin number |
 | E-ui-036 | code reading | (session 2026-11-15 night) | UI-GAME-6: the economy dialogs' frame picture `uiDepot_long` (8, 8, 368 x 503); the transport page's background |
 | E-ui-037 | code reading and data | (session 2026-11-15 day) | 6.5 (Q-1054): the slider's kinds and their bar, fill and knob pictures, the fill's width and row by value, the disabled tint, the knob's place; the three fill rows of `uiElements2` compared pixel for pixel |
 | E-ui-038 | code reading, pictures | (session 2026-11-15 day) | 4.4: the `,` key's window placed at the pointer (the context windows' placement: the pointer minus the window's size, x at most W - 600, then clamped); E-trace-029's pointer positions |
+| E-ui-039 | code reading, a picture | (session 2026-11-16 night) | 4.5 (b): the ship window's two separators are `uiElements3` (0, 432, 350 x 8); E-trace-030's ship window pixel equal |
+| E-trace-031 | pictures of the original | (session 2026-11-16 night) | the interface catalogue part 4: message kinds (misc, military, chat), the build menu's disabled tooltip, the attack menu with no attackers, the campaign map with a mission won, the forester's dust |
+| E-trace-032 | pictures of the original | (session 2026-11-16 day) | 11.4: the geologist, economic and lost-territory message rows; the headquarters window's three pages; the barracks window; the road-building cursor marks |
 | E-trace-028 | pictures of the original | (session 2026-11-15 night) | the interface catalogue part 1: the windows and dialogs seen in UI-GAME-2.4, 2.5, 4.1a (f), 4.2, 4.4, 6, 8.1a |
 | E-trace-029 | pictures of the original | (session 2026-11-15 night, part 2) | the interface catalogue part 2: the military page's sliders moved, coal mine, bakery, shipyard, catapult and storehouse windows, build / flag / road / deploy-flag menus and their placement: UI-GAME-1.9, 3.3, 3.6, 4.1a (g), 4.4, 8.1 |
+| E-trace-030 | pictures of the original, data | (session 2026-11-15 day; pictures kept outside the repository) the interface catalogue part 3: the Seafaring tutorial (harbour expedition page, ship window, expedition landing, messages, main bar tooltips, minimap, build menu tooltips) and free games as Africans and Chinese (headquarters window, build menu); the ship-name texts of the language file | UI-GAME-1.9, 2.2, 2.5, 3.2, 4.4, 4.5 (c), 4.5, 8.1, 11.4 |
 | E-trace-026 | pictures of the running original | Jens's 2023 save loaded, 2560 x 1440 (session 2026-11-14 b; pictures kept outside the repository) | UI-GAME-1.8 title, 4.1a (e) woodcutter's hut, 4.3 barracks, 4.4 headquarters, 8.5 the six statistics pages, 11.3a the messages window shown after a load |
 | E-trace-020, E-trace-021 | looks | runs of the original 2026-11-08 c (E-trace-020, E-trace-021: the runs' logs and pictures): the statistics page at its first opening, the chat line by button 8 and by RETURN | UI-GAME-8.5f, 12.1 |
 

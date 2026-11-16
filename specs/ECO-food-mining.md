@@ -636,7 +636,10 @@ in `ECO-production-chains.md` (ECO-PROD); building data in
 - **ECO-FOOD-7.4b Ship complete.** At the end of a work step (the tick the
   countdown is 0), if both frame and main work are 0, the player gets the
   message **"Ship constructed"** (message type 4, placed at the ship's water
-  field). **The ship itself is finished earlier**: in the tick a decrement takes
+  field). **It does not name the ship** (2026-11-16 day, Q-1065; E-ship-009, code reading,
+  high): the row is the text alone. Of all messages, only "Ship waiting for Orders" (SHIP-2.3,
+  SHIP-6) is made with the ship's name; the game's other uses of the ship's name are its
+  windows (the ship window, the fleet page). **The ship itself is finished earlier**: in the tick a decrement takes
   the main work to 0, partway through the last trip, and its state machine starts
   then (`SHIP-ships-expeditions.md` SHIP-2.1), while the shipwright's step goes
   on to its 56th decrement (added 2026-11-02 night, T60). The work parts are
@@ -752,6 +755,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-eco-009 | code reading | the worker's creation | which step objects a worker has |
 | E-eco-013 | code reading | | ship check: existing unlinked ship, site flood and goal, ship creation, link |
 | E-eco-013 | code reading | | ship trip states, work step, decrement, unlink, "Ship constructed" |
+| E-ship-009 | code reading | (session 2026-11-16 day) | 7.4b: the "Ship constructed" message is made without the ship's name; the name is added only by "Ship waiting for Orders" (Q-1065) |
 | E-eco-013 | code reading | | deposit lifetime count, removal counter, deletion at 20 |
 | E-eco-013 | code reading | | hunter: separate worker counter, unreserved animal, switch check, animal update states |
 | E-eco-013 | code reading | building creation | mine counter starts at 0 at creation |

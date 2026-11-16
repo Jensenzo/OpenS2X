@@ -929,18 +929,33 @@ impl World {
                         // T33: on his approach walk he walks it to its end,
                         // out and back to the flag's point, from T on.
                         Some(left) => {
-                            let (step, timer) = if left.clock < left.out_ticks {
-                                (
-                                    LeavingStep::Out { from: left.from },
-                                    left.out_ticks - left.clock,
-                                )
-                            } else {
+                            let back_leg = left.clock >= left.out_ticks;
+                            let (step, timer) = if back_leg {
                                 (
                                     LeavingStep::Finish,
                                     left.out_ticks + left.back_ticks - left.clock,
                                 )
+                            } else {
+                                (
+                                    LeavingStep::Out { from: left.from },
+                                    left.out_ticks - left.clock,
+                                )
                             };
                             if let SettlerJob::Leaving { at, health, .. } = s.job {
+                                // T47 (TRN-FREE-6.4b, the back leg): that
+                                // walk already ends on the flag's point, so
+                                // going home has nothing left to walk: he
+                                // stands in his arrival tick A and in A + 1
+                                // (the step after A, as 6.4a's (b) after an
+                                // empty (a)), and walks home in A + 2.
+                                // The walk's end step is held back until
+                                // the tick after the timer's last count,
+                                // one tick later than after the out leg.
+                                let at = if back_leg {
+                                    (self.tick + u64::from(timer)).saturating_sub(1)
+                                } else {
+                                    at
+                                };
                                 s.job = SettlerJob::Leaving {
                                     step,
                                     at,
@@ -978,6 +993,13 @@ impl World {
                     self.start_leaving(&mut settler);
                     if let SettlerJob::Leaving { at, .. } = &mut settler.job {
                         *at += 1;
+                    }
+                    // TRN-CARRY-7.2a (Q-230 a, b): sent home, he loses the
+                    // ware in his hands at once (a worker's product from its
+                    // pickup on): into no warehouse, not put down.
+                    if let Some(good) = settler.carrying.take() {
+                        self.used(good, 1);
+                        self.drop_held_join(settler.number);
                     }
                     self.settlers[id] = Some(settler);
                 }
@@ -1273,18 +1295,19 @@ impl World {
                 }
                 // TRN-FREE-6.3 (Q-272): the walk is not retried; it counts
                 // as done where the settler stands, and the job checks the
-                // place below.
-                SettlerJob::ToSite { .. } | SettlerJob::ToMilitary { .. } => {
+                // place below (a worker's routine too, corrected 2026-11-15:
+                // he goes home unless he stands on his building's field).
+                SettlerJob::ToSite { .. }
+                | SettlerJob::ToMilitary { .. }
+                | SettlerJob::ToBuilding { .. } => {
                     let walker = &mut settler.walker;
                     walker.path.clear();
                     walker.pauses.clear();
                     walker.held = false;
                     walker.road_to = None;
                 }
-                // A worker counts as arrived and its routine starts where
-                // it stands (6.3); what the routines do from a far flag is
-                // not traced. Stand-in (Q-272): it waits on the flag and
-                // searches again each tick.
+                // Any other walker (a specialist): stand-in (Q-272), it
+                // waits on the flag and searches again each tick.
                 _ => {
                     let to = settler.walker.road_to.expect("a road walk");
                     let route = self.road_walk(settler.player, settler.walker.at, to);
@@ -1349,6 +1372,19 @@ impl World {
                     return true;
                 }
                 if self.target_building(target).is_none() {
+                    self.plan_home(settler);
+                    return true;
+                }
+                // TRN-FREE-6.3 (corrected 2026-11-15, Q-272): every work
+                // routine checks, when the walk to its building has ended,
+                // that the worker stands on the building's field (entered,
+                // its door field included); otherwise he goes home at once
+                // from where he stands (6.4). 6.3a Worker (Q-1056): the
+                // building keeps him as its worker on the way until his
+                // object goes, then its 101-tick timer asks again.
+                let at = settler.walker.at;
+                if at != target.at && at != self.door_field(target.at) {
+                    self.linked_home.insert(settler.number, target);
                     self.plan_home(settler);
                     return true;
                 }

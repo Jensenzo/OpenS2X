@@ -253,6 +253,16 @@ AI-construction (AI-CON-1.8).
   the cell: value = (threat of p's buildings under construction + 2 x p's
   score - threat balance) / (C + 1 + A). The highest value above -100 becomes
   the target: that cell, player p, radius 12. Confidence: high.
+  **Which cells are looked at, and in which order (corrected 2026-11-16 day b; E-ai-003 addendum,
+  code reading, and the fight game measured, high).** "Where some player has threat" is narrower
+  than it reads: a cell is looked at only when **one of its eight neighbouring cells** (the cells
+  at x - 1 .. x + 1, y - 1 .. y + 1 **without the cell itself**; cells off the grid count nothing)
+  holds a nonzero threat (AI-MIL-1.1) **of the attacking player itself**, in its own military map.
+  So a computer player only aims at cells next to its own military presence; the enemy's threat
+  inside the target cell plays no part in this gate. The cells are visited **column by column**
+  (x from 0, and for each x every y from 0), and for each cell the players 0 to 7 in order (alive,
+  an enemy, and score in the cell not 0); a value replaces the best only when strictly greater, so
+  of equal values the first visited stays. Test T31.
 - **AI-MIL-5.3 Candidates.** Enemy buildings of p within distance 12 of the
   cell's top-left field that can be attacked (headquarters, or soldier limit
   above 0 and occupied) and are either in the player's explored map or have
@@ -261,6 +271,15 @@ AI-construction (AI-CON-1.8).
   **highest first**; a candidate whose sum equals that of an earlier one is
   dropped (the ordered set keeps one building per value). Confidence: high
   (Q-079).
+  **The enemy distance test is a signed "at most 12" (2026-11-16 day b; E-ai-003 addendum, code
+  reading and the R6 heap, high).** A building whose enemy distance is still -1 passes it. The
+  enemy **headquarters** always holds -1 (MIL-SOL-3.1 never updates it; read in the original's heap
+  at counters 1000, 8000 and 8500 for player 3's headquarters on Keyhole), so an enemy headquarters
+  within distance 12 of the cell's top-left field is **always a candidate, explored or not**; the
+  same holds for a military building made since the last enemy-distance update. **Build it together
+  with 5.2's neighbour gate:** this rule alone (with ours' old gate) moved the fight game's first
+  difference from 8884 back to 2451, because ours then took player 3's headquarters cell from its
+  first attack run; with the gate as well the difference moves forward to 9311 (T31).
 - **AI-MIL-5.4 Decision per candidate b.** def = 10 for a warehouse-type
   target, else the soldiers present; r = min(5, strength(owner) / max(1,
   strength(us))); want = trunc(r x def x (owner's defend-outside setting x
@@ -278,6 +297,18 @@ AI-construction (AI-CON-1.8).
   expansion request) an expansion target of kind 1 at the last candidate's
   position. Then the target is cleared and a new one chosen next run.
   Confidence: high.
+  **Precisions (2026-11-16 day b; E-ai-003 addendum, code reading, high):**
+  - **C and A are whole numbers** (unsigned counters of the cell's territory record), and
+    "halved" drops the remainder: 3 becomes 1, 1 becomes 0. They enter 5.2's value and 5.4's
+    need as those whole numbers. (Keeping them as fractions, 1.5 after 3, changes the target
+    choice and the need from the first halving of an odd value.)
+  - **"The last candidate"** is the last candidate in 5.3's order that reached the need test
+    of 5.4 and was not attacked. In mode Safe a candidate skipped because want is above the
+    soldiers in stock is **not** a last candidate (it does not move the position); in modes
+    Normal and Aggressive every candidate reaches the test. When no candidate reached it
+    (no candidates at all, or every one skipped by Safe), **no expansion target** is set; A
+    still rises by 1 in both cases.
+  Test T30.
 
 ### AI-MIL-6 Soldiers, weapons, coins, catapults
 
@@ -429,6 +460,8 @@ AI-construction (AI-CON-1.8).
 | T27 | AI-MIL-6.2 (readiness: a production only from the placement): E-trace-013 (R3, the Hard game), player 1's smithy 90597 on (136, 53), finished, worker in, productivity below 0.1 (below at the pass of 23972 already, and 0 in our build at 24603); its needs iron 90599 (production 92841), coal 90600, and the iron need 93243 made by the weapon pass of counter 23972 (the smithy's store had no iron) | the weapon pass of counter 24603 | no new need (the objects table: the smithy's next iron need is 93509 at counter 25234, the pass after). Heap dump 24500: need 93243 has cell 92155 and no production (-1); its smeltery 93384 is placed at counter 24776 (production 93385). Our build had linked 93243 to the production record of a smeltery only ordered in that cell, counted the smithy ready and made a new iron need at 24603: object numbers one ahead from there (the R3 settlers' first difference at 24720 stays, its cause is elsewhere); counting only placed productions (experiment build) keeps the numbers equal through 24711 |
 | T28 | AI-MIL-4.4 (the level anew): E-trace-019 (R6), player 1 (Hard); the fortress order of trace tick 3726 for the crowded cell (3, 3) (target (48, 48), level 4: no enemy building known, the 'distance 24' case, + 2 underground + 1 stone); no site at 4022, no material at 4245 (attempt 2, a tower), then the tower taken at 4494 | the failure at 4495 | the level at the cell's origin is worked out again: player 2's guard house (57, 29) now counts at distance 19, so -2 + 2 + 1 = 1, result 1 - 3 < 0: no further order (no guard house at (57, 61) at 4675); the record keeps attempts 3 and no building; the next crowded target (48, 64) gets its fortress order from the run of 4970 (the heap dump of 5000: attempts 1 after no material at 4995); player 1's next military building is the guard house (56, 57) of trace tick 7530 |
 | T29 | AI-MIL-2.2 (countdown): a computer player whose allocation grows at run r (medium m to 0.3 f), soldiers in stock above S / 128 at every later run | the runs that change the allocation | r, r + 50, r + 100, ... (each change 50 runs after the one before; the countdown 50 after a change, 49 after the next run, ..., 0 at run r + 50, which tests and changes); R6 player 1: medium 0.586 -> 0.733 at the run of counter 7997, its fortress (56, 50) then wanting 7 and asking at 8000 and 8021. With 51 runs apart the fourth change would come three runs (159 ticks) later |
+| T30 | AI-MIL-5.5 precisions: (a) a cell with C = 3, A = 5 whose target is taken; (b) mode Safe, candidates in order g1 (want 6), g2 (want 2), g3 (want 7), 4 soldiers in stock, avail 1 against each, C = 0, no pending expansion; (c) the same in mode Normal; (d) a run whose target cell has no candidate | the cell's counters; the expansion target | (a) C = 1, A = 2; (b) g1 and g3 skipped, g2 tested and not attacked (need 2 > 1): A + 1, expansion target at g2 (not g3); (c) all three tested, none attacked: expansion at g3; (d) A + 1, no expansion target |
+| T31 | AI-MIL-5.2 (the neighbour gate, column order), 5.3 (the headquarters' enemy distance -1), 5.5: E-trace-019 (R6, Keyhole `MP_4P_Fight`, players 1 to 3 Hard), player 2 (headquarters (52, 24)) | its attack runs (every 641 ticks) and its expansion target | no cell passes the gate at the runs of counters 630 .. 7681 (no target, no expansion); at the run of counter 8322 (trace 8323) the best cell is (4, 2) of player 3 with value -10; its only candidate is player 3's headquarters (26, 24) (enemy distance -1, not explored), not attacked (need far above the soldiers available), so A + 1 and the expansion target "towards a position" (26, 24) (the original's heap at counters 8500 and 9000: current kind 1 (26, 24) since game time 832.14 s, the attack source); the guard house (12e67603) then placed on (42, 23) at counter 8573 as in the original. Experiment: the fight game's first generator difference 8884 -> 9311; the MP_2P_Storm_Coast pairs unchanged |
 
 ## Evidence
 

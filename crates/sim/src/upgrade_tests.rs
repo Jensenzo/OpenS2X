@@ -426,3 +426,17 @@ fn t8_the_type_changes_after_the_builders_release() {
     }
     assert_eq!(world.upgrade_target(P0, other), Ok(GUARD));
 }
+
+// ECO-PLACE T20: an upgrade does not run the military clearance: a barracks
+// five fields from the headquarters (its own field at distance 0) is
+// upgraded.
+// spec: ECO-PLACE-6.3 (T20)
+#[test]
+fn t20_an_upgrade_skips_the_military_clearance() {
+    let mut world = upgrade_game();
+    let at = (25, 20);
+    occupied(&mut world, P0, BARRACKS, at);
+    assert!(world.military_near(at));
+    assert_eq!(upgrade(&mut world, at), Ok(()));
+    assert_eq!(world.upgrading(at), Some(GUARD));
+}

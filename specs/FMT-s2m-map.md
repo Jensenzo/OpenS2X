@@ -255,7 +255,10 @@ order (row by row, `x` fastest).
 - **FMT-S2M-4.8** **Continents.** Marker `Map Continents`, `bool` (1), width,
   height, then width * height x `i32` continent index per field (-1 = none),
   then `u32` count and that many continent objects, then one `u32` (2482 ..
-  22157 observed; meaning unknown, possibly a counter).
+  22157 observed): the number of fields on land continents (on all 34 shipped
+  maps it equals the summed field counts of the continents that are not water;
+  2026-11-16 day b, Q-1066 b, data). The player statistics' land series divides
+  by it (`UI-ingame.md` UI-GAME-8.5a).
 - **FMT-S2M-4.9** Continent object: marker `Map Continent`, `u32` number of
   fields, `bool` is-water, `u32` index (equals its position in the list), 4 x
   `i32` bounding box (min x, min y, max x, max y), `u32` count + that many field

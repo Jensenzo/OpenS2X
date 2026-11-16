@@ -346,6 +346,202 @@ pub fn status_icons(
     }
 }
 
+/// Hook W18: a project's effect rules (`Extensions::effects`) and the
+/// effects playing now, by settler and rule.
+#[derive(Resource, Default)]
+pub struct ProjectEffects {
+    rules: Vec<crate::extend::EffectRule>,
+    loads: u64,
+    effects: std::collections::HashMap<String, Option<s2_assets::pfx::Effect>>,
+    shown: std::collections::HashMap<(s2_sim::view::SettlerRef, usize), ShownEffect>,
+}
+
+/// Hook W18: one effect playing at a settler.
+struct ShownEffect {
+    started: f32,
+    quads: Vec<(Entity, Handle<StandardMaterial>)>,
+}
+
+/// Marks a project effect's particle.
+#[derive(Component)]
+pub struct ProjectEffect3d;
+
+/// Hook W18: the app gets the effects' system only when a project gives
+/// rules; without any nothing of it runs.
+pub(crate) fn add_effects(app: &mut App, rules: Vec<crate::extend::EffectRule>) {
+    if rules.is_empty() {
+        return;
+    }
+    app.insert_resource(ProjectEffects {
+        rules,
+        ..ProjectEffects::default()
+    })
+    .add_systems(
+        Update,
+        project_effects
+            .after(crate::render::view3d::sync_movers)
+            .run_if(in_state(crate::tools::model::ViewMode::Map)),
+    );
+}
+
+/// Hook W18: each rule's effect at every settler of its profession whose
+/// work loop runs (`SettlerView::request`), started at his feet as drawn
+/// when the loop begins and played on the animation clock (game time) as
+/// GFX-OBJ-8.3a's effects are; gone when the loop ends or he is not drawn.
+#[allow(clippy::too_many_arguments, clippy::map_entry)]
+pub fn project_effects(
+    mut commands: Commands,
+    viewer: Res<crate::game::Viewer>,
+    view: Res<View3d>,
+    movers: Res<crate::render::view3d::Movers>,
+    mut state: ResMut<ProjectEffects>,
+    mut icons: ResMut<StatusIcons>,
+    mut library: ResMut<crate::render::models3d::ModelLibrary>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    camera: Single<&Transform, (With<MapCamera3d>, Without<ProjectEffect3d>)>,
+    mut transforms: Query<&mut Transform, (With<ProjectEffect3d>, Without<MapCamera3d>)>,
+    feet: Query<&Transform, (Without<ProjectEffect3d>, Without<MapCamera3d>)>,
+    clock: Res<crate::game::GameClock>,
+) {
+    use crate::world::scene3d::MoverId;
+    use s2_sim::view::SettlerRef;
+    let Some(world) = viewer.world.as_ref().filter(|_| view.active) else {
+        return;
+    };
+    let state = &mut *state;
+    if state.loads != viewer.loads {
+        for (_, shown) in state.shown.drain() {
+            for (entity, material) in shown.quads {
+                commands.entity(entity).despawn();
+                materials.remove(&material);
+            }
+        }
+        state.loads = viewer.loads;
+    }
+    let names = viewer.rules.as_ref().map(|r| &r.names);
+    let professions: Vec<Option<u32>> = state
+        .rules
+        .iter()
+        .map(|r| names.and_then(|n| n.get(&r.profession).copied()))
+        .collect();
+    let now = clock.seconds;
+    let mut wanted: std::collections::HashMap<(SettlerRef, usize), Vec3> =
+        std::collections::HashMap::new();
+    for v in world.settler_views() {
+        let mover = match v.id {
+            SettlerRef::Settler(n) => MoverId::Settler(n),
+            SettlerRef::Carrier(n) => MoverId::Carrier(n),
+            SettlerRef::Builder(p) => MoverId::Builder(p),
+            SettlerRef::Leveller(p) => MoverId::Leveller(p),
+        };
+        for (i, rule) in state.rules.iter().enumerate() {
+            if !rule.plays(professions[i], v.profession, v.request) {
+                continue;
+            }
+            let at = movers
+                .states
+                .get(&mover)
+                .and_then(|s| feet.get(s.entity).ok())
+                .map(|t| t.translation);
+            if let Some(at) = at {
+                wanted.insert((v.id, i), at);
+            }
+        }
+    }
+    let gone: Vec<_> = state
+        .shown
+        .keys()
+        .filter(|k| !wanted.contains_key(k))
+        .copied()
+        .collect();
+    for key in gone {
+        if let Some(shown) = state.shown.remove(&key) {
+            for (entity, material) in shown.quads {
+                commands.entity(entity).despawn();
+                materials.remove(&material);
+            }
+        }
+    }
+    for (key, at) in wanted {
+        let path = state.rules[key.1].effect.clone();
+        let effect = state
+            .effects
+            .entry(path.clone())
+            .or_insert_with(|| library.read_pfx(&path))
+            .clone();
+        let Some(effect) = effect else { continue };
+        if !state.shown.contains_key(&key) {
+            if icons.texture.is_none() {
+                icons.texture = Some(particles_texture(&mut library, &mut images));
+            }
+            let Some(Some(texture)) = icons.texture.clone() else {
+                continue;
+            };
+            let quad = meshes.add(particle_quad(effect.rect));
+            let quads = (0..effect.count.max(0))
+                .map(|_| {
+                    let material = materials.add(StandardMaterial {
+                        base_color_texture: Some(texture.clone()),
+                        unlit: true,
+                        alpha_mode: AlphaMode::Blend,
+                        cull_mode: None,
+                        ..default()
+                    });
+                    let entity = commands
+                        .spawn((
+                            ProjectEffect3d,
+                            Mesh3d(quad.clone()),
+                            MeshMaterial3d(material.clone()),
+                            Transform::from_scale(Vec3::ZERO),
+                            RenderLayers::layer(MAP_LAYER),
+                            bevy::light::NotShadowCaster,
+                        ))
+                        .id();
+                    (entity, material)
+                })
+                .collect();
+            state.shown.insert(
+                key,
+                ShownEffect {
+                    started: now,
+                    quads,
+                },
+            );
+        }
+        let Some(shown) = state.shown.get(&key) else {
+            continue;
+        };
+        let start = world3d::from_bevy(at.to_array());
+        let seed = match key.0 {
+            SettlerRef::Settler(n) | SettlerRef::Carrier(n) => n as u64,
+            SettlerRef::Builder(p) | SettlerRef::Leveller(p) => {
+                u64::from(p.0) << 16 | u64::from(p.1)
+            }
+        } << 8
+            | key.1 as u64;
+        let pool = crate::world::decor::particles(&effect, seed, now - shown.started);
+        for ((entity, material), particle) in shown.quads.iter().zip(pool) {
+            let transform = match particle {
+                Some(p) => {
+                    let at = [0, 1, 2].map(|k| start[k] + p.at[k]);
+                    if let Some(mut m) = materials.get_mut(material) {
+                        m.base_color = Color::srgba(1.0, 1.0, 1.0, p.alpha);
+                    }
+                    Transform::from_translation(Vec3::from(world3d::to_bevy(at)))
+                        .with_rotation(camera.rotation)
+                        .with_scale(Vec3::splat(p.size))
+                }
+                None => Transform::from_scale(Vec3::ZERO),
+            };
+            if let Ok(mut t) = transforms.get_mut(*entity) {
+                *t = transform;
+            }
+        }
+    }
+}
+
 /// GFX-OBJ-8.3a: `particles_texture.tga`, sampled as stored (the map
 /// camera's values).
 fn particles_texture(
@@ -533,6 +729,245 @@ pub fn collapse_dust(
     for i in done.into_iter().rev() {
         let (_, _, _, pool) = dust.shown.remove(i);
         for (entity, material) in pool {
+            commands.entity(entity).despawn();
+            materials.remove(&material);
+        }
+    }
+}
+
+/// Marks a settler clip's particle (GFX-OBJ-8.3c).
+#[derive(Component)]
+pub struct ClipParticle3d;
+
+/// GFX-OBJ-8.3c: one clip's effect on screen.
+struct ClipEffect {
+    mover: crate::world::scene3d::MoverId,
+    /// The play that started it: the effect emits while the mover shows it.
+    play: crate::animation::anim::PoseKey,
+    effect: String,
+    seed: u64,
+    /// When it started and when its emission ended (game seconds,
+    /// TOOL-1.2).
+    started: f32,
+    ended: Option<f32>,
+    /// Its place (game frame): the settler's feet while it emits, kept
+    /// after.
+    at: [f32; 3],
+    quads: Vec<(Entity, Handle<StandardMaterial>)>,
+}
+
+/// GFX-OBJ-8.3b, 8.3c: the settler clips' particle effects: the clip
+/// clock each mover's play was last seen at, the effects read, and the
+/// effects on screen.
+#[derive(Resource, Default)]
+pub struct ClipParticles {
+    loads: u64,
+    plays: std::collections::HashMap<
+        crate::world::scene3d::MoverId,
+        (crate::animation::anim::PoseKey, f32),
+    >,
+    effects: std::collections::HashMap<String, Option<s2_assets::pfx::Effect>>,
+    shown: Vec<ClipEffect>,
+}
+
+/// GFX-OBJ-8.3c: a seed of a clip's effect from its mover and play, the
+/// same in every run (the original's random source is not game state).
+fn clip_seed(
+    mover: &crate::world::scene3d::MoverId,
+    play: &crate::animation::anim::PoseKey,
+) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    mover.hash(&mut h);
+    play.clip.hash(&mut h);
+    play.instance.hash(&mut h);
+    play.run.hash(&mut h);
+    h.finish()
+}
+
+/// GFX-OBJ-8.3c: the start of a settler clip's `Particle` entry within one
+/// play: once, when the clip's own time goes from `last` past `start`
+/// (`start` at 0 counts at the play's first frame); a loop of the same play
+/// does not start it again (the clock runs on through the loops).
+pub(crate) fn clip_particle_starts(start: f32, last: f32, now: f32) -> bool {
+    last < start && start <= now
+}
+
+/// GFX-OBJ-8.3b, 8.3c: a settler's work clip that names a `Particle`
+/// (the leveller's shovel, the forester's planting: `StoneDust`) starts
+/// its effect once per play of the clip, when the clip's time reaches the
+/// entry's start, at the settler's feet (the model's origin, followed every
+/// frame). It emits until the play ends (the model shows another clip or
+/// the settler is not drawn); the particles made live out their life where
+/// it stood, and the effect goes when the last has died. Drawn as the
+/// collapse dust (8.7 (3)): camera-facing quads of the effect's rectangle
+/// of `particles_texture.tga`, on the animation clock.
+#[allow(clippy::too_many_arguments)]
+pub fn clip_particles(
+    mut commands: Commands,
+    viewer: Res<crate::game::Viewer>,
+    view: Res<View3d>,
+    movers: Res<crate::render::view3d::Movers>,
+    animator: Res<crate::animation::animate3d::Animator>,
+    mut state: ResMut<ClipParticles>,
+    mut dust: ResMut<CollapseDust>,
+    mut library: ResMut<crate::render::models3d::ModelLibrary>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    camera: Single<&Transform, (With<MapCamera3d>, Without<ClipParticle3d>)>,
+    mut quads: Query<&mut Transform, (With<ClipParticle3d>, Without<MapCamera3d>)>,
+    feet: Query<&Transform, (Without<ClipParticle3d>, Without<MapCamera3d>)>,
+    clock: Res<crate::game::GameClock>,
+) {
+    if viewer.world.is_none() || !view.active {
+        return;
+    }
+    let state = &mut *state;
+    if state.loads != viewer.loads {
+        for shown in state.shown.drain(..) {
+            for (entity, material) in shown.quads {
+                commands.entity(entity).despawn();
+                materials.remove(&material);
+            }
+        }
+        state.plays.clear();
+        state.loads = viewer.loads;
+    }
+    if library.entry_particles.is_empty() {
+        return;
+    }
+    let now = clock.seconds;
+    // The plays that start an effect this frame.
+    let mut starts = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (mover, m) in &movers.states {
+        let (Some(pose), Some(entry), None) = (&m.pose, m.visual.entry.as_deref(), &m.idle) else {
+            continue;
+        };
+        if !matches!(m.anim, crate::world::scene3d::MoverAnim::Settler { .. }) {
+            continue;
+        }
+        let events = library.particles_of_entry(entry);
+        if events.is_empty() {
+            continue;
+        }
+        let Some(clip_now) = animator.pool.elapsed(pose) else {
+            continue;
+        };
+        seen.insert(*mover);
+        let last = match state.plays.get(mover) {
+            Some((p, t)) if p == pose => *t,
+            _ => clip_now - 1e-4,
+        };
+        for (effect, start) in events {
+            if clip_particle_starts(*start, last, clip_now) {
+                starts.push((*mover, pose.clone(), effect.clone()));
+            }
+        }
+        state.plays.insert(*mover, (pose.clone(), clip_now));
+    }
+    state.plays.retain(|m, _| seen.contains(m));
+    let texture = dust
+        .texture
+        .get_or_insert_with(|| particles_texture(&mut library, &mut images))
+        .clone();
+    for (mover, play, name) in starts {
+        let effect = state
+            .effects
+            .entry(name.clone())
+            .or_insert_with(|| library.read_pfx(&format!("data/scripts/effects/{name}.pfx")))
+            .clone();
+        let (Some(effect), Some(texture)) = (effect, texture.clone()) else {
+            continue;
+        };
+        let quad = meshes.add(particle_quad(effect.rect));
+        let pool = (0..effect.count.max(0))
+            .map(|_| {
+                let material = materials.add(StandardMaterial {
+                    base_color_texture: Some(texture.clone()),
+                    unlit: true,
+                    alpha_mode: AlphaMode::Blend,
+                    cull_mode: None,
+                    ..default()
+                });
+                let entity = commands
+                    .spawn((
+                        ClipParticle3d,
+                        Mesh3d(quad.clone()),
+                        MeshMaterial3d(material.clone()),
+                        Transform::from_scale(Vec3::ZERO),
+                        RenderLayers::layer(MAP_LAYER),
+                        bevy::light::NotShadowCaster,
+                    ))
+                    .id();
+                (entity, material)
+            })
+            .collect();
+        state.shown.push(ClipEffect {
+            mover,
+            seed: clip_seed(&mover, &play),
+            play,
+            effect: name,
+            started: now,
+            ended: None,
+            at: [0.0; 3],
+            quads: pool,
+        });
+    }
+    let mut done = Vec::new();
+    for (i, shown) in state.shown.iter_mut().enumerate() {
+        // While the play goes on, at the settler's feet; its end stops the
+        // emission.
+        if shown.ended.is_none() {
+            let playing = movers
+                .states
+                .get(&shown.mover)
+                .filter(|m| m.pose.as_ref() == Some(&shown.play));
+            match playing.and_then(|m| feet.get(m.entity).ok()) {
+                Some(t) => shown.at = world3d::from_bevy(t.translation.to_array()),
+                None => shown.ended = Some(now),
+            }
+        }
+        let Some(Some(effect)) = state.effects.get(&shown.effect) else {
+            done.push(i);
+            continue;
+        };
+        let elapsed = now - shown.started;
+        let pool = crate::world::decor::particles_until(
+            effect,
+            shown.seed,
+            elapsed,
+            shown.ended.map(|e| e - shown.started),
+        );
+        if shown.ended.is_some() && pool.iter().all(Option::is_none) {
+            done.push(i);
+            continue;
+        }
+        for ((entity, material), particle) in shown.quads.iter().zip(pool) {
+            let transform = match particle {
+                Some(p) => {
+                    let at = [0, 1, 2].map(|k| shown.at[k] + p.at[k]);
+                    if let Some(mut m) = materials.get_mut(material) {
+                        // As the collapse dust: the particle's colour as
+                        // it is (GFX-VIEW-2.6 c1).
+                        m.base_color =
+                            Color::linear_rgba(p.colour[0], p.colour[1], p.colour[2], p.alpha);
+                    }
+                    Transform::from_translation(Vec3::from(world3d::to_bevy(at)))
+                        .with_rotation(camera.rotation)
+                        .with_scale(Vec3::splat(p.size))
+                }
+                None => Transform::from_scale(Vec3::ZERO),
+            };
+            if let Ok(mut t) = quads.get_mut(*entity) {
+                *t = transform;
+            }
+        }
+    }
+    for i in done.into_iter().rev() {
+        let shown = state.shown.remove(i);
+        for (entity, material) in shown.quads {
             commands.entity(entity).despawn();
             materials.remove(&material);
         }

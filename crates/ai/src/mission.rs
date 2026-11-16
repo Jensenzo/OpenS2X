@@ -468,6 +468,10 @@ impl TerritoryPlayer {
             .filter(|f| !self.tried.contains(f))
             .filter(|&f| own.iter().all(|b| grid::distance(b.at, f) >= MIN_SPACING))
             .filter(|&f| world.check_building(player, f, self.size).is_ok())
+            // ECO-PLACE-6.3: the build menu greys a military cell within 4
+            // fields of any military building or site; a player picks
+            // another field.
+            .filter(|&f| !(world.counts_as_military(self.building) && world.military_near(f)))
             // With no way over land (a coast between), the straight line.
             .map(|f| {
                 let straight = NO_WAY_OVER_LAND + grid::distance(f, self.goal);

@@ -195,6 +195,19 @@ fn unit(seed: u64, particle: u64, life: u64, n: u64) -> f32 {
 /// drawn once per particle (GFX-OBJ-8.7 (3): the dust's 5 +- 3 s; an
 /// effect of one round, as the dust, has one life per particle).
 pub fn particles(e: &s2_assets::pfx::Effect, seed: u64, elapsed: f32) -> Vec<Option<Particle>> {
+    particles_until(e, seed, elapsed, None)
+}
+
+/// [`particles`] of an effect that stops emitting `end` seconds after it
+/// started (GFX-OBJ-8.3c: a clip's effect when the clip's play ends): a
+/// life that would begin at or after `end` is not born; the particles
+/// already made live out their own life.
+pub fn particles_until(
+    e: &s2_assets::pfx::Effect,
+    seed: u64,
+    elapsed: f32,
+    end: Option<f32>,
+) -> Vec<Option<Particle>> {
     let count = usize::try_from(e.count).unwrap_or(0);
     let spread = |base: f32, var: f32, r: f32| base + var * (2.0 * r - 1.0);
     (0..count)
@@ -215,6 +228,10 @@ pub fn particles(e: &s2_assets::pfx::Effect, seed: u64, elapsed: f32) -> Vec<Opt
                 return None;
             }
             let age = since - life * ttl;
+            // GFX-OBJ-8.3c: no life begins once the emission has ended.
+            if end.is_some_and(|end| elapsed - age >= end) {
+                return None;
+            }
             let life = life as u64 + 1;
             let t = (age / ttl).clamp(0.0, 1.0);
             let vel = [0, 1, 2].map(|k| spread(e.vel[k], e.vel_var[k], r(life, 1 + k as u64)));
@@ -369,6 +386,66 @@ mod tests {
         assert!(at_6 > 0 && at_6 < 50, "{at_6}");
         assert!(particles(&e, 9, 8.2).iter().all(Option::is_none));
         assert!(particles(&e, 9, 30.0).iter().all(Option::is_none));
+    }
+
+    // GFX-OBJ-8.3c: a clip's effect without an end of its own (maxLoops 0)
+    // keeps its particles reborn while it emits; once its emission ends no
+    // life begins, the lives begun before live out their ttl, and then the
+    // pool is empty.
+    // spec: GFX-OBJ-8.3c, GFX-OBJ-8.3a
+    #[test]
+    fn a_clip_effect_stops_emitting_at_its_end() {
+        use s2_assets::pfx::{Curve, Effect};
+        let e = Effect {
+            version: "0002".into(),
+            emitter: "Default".into(),
+            max_loops: 0,
+            pos: [0.0; 3],
+            pos_var: [1.0, 0.0, 1.0],
+            vel: [0.0, 1.0, 0.0],
+            vel_var: [0.5, 0.2, 0.5],
+            size: 2.0,
+            size_var: 0.5,
+            ttl: 3.0,
+            ttl_var: 1.0,
+            spawn: 0.2,
+            spawn_var: 0.0,
+            color: [0.7, 0.7, 0.7, 0.5],
+            color_var: [0.0; 4],
+            particle: "Decal".into(),
+            rect: [0.0, 0.0, 0.25, 0.25],
+            count: 10,
+            curve_set: "Default".into(),
+            curves: [
+                Curve::Constant(1.0),
+                Curve::Constant(1.0),
+                Curve::Constant(1.0),
+                Curve::Constant(1.0),
+            ],
+        };
+        let live = |elapsed, end| {
+            particles_until(&e, 5, elapsed, end)
+                .iter()
+                .flatten()
+                .count()
+        };
+        // Still emitting: every particle is reborn, long after its first life.
+        assert_eq!(live(30.0, None), 10);
+        assert_eq!(live(30.0, Some(31.0)), 10);
+        // Ended at 30 s: nothing begins after, so fewer at 31 s, none once
+        // the longest life (4 s) has run out.
+        let after = live(31.0, Some(30.0));
+        assert!(after < 10, "{after}");
+        assert_eq!(live(34.1, Some(30.0)), 0);
+        // What lives after the end lives as it would have.
+        for (a, b) in particles_until(&e, 5, 31.0, Some(30.0))
+            .into_iter()
+            .zip(particles(&e, 5, 31.0))
+        {
+            if let Some(a) = a {
+                assert_eq!(Some(a), b);
+            }
+        }
     }
 
     // GFX-OBJ T17: the Roman guard house on field (11, 11) at raw height

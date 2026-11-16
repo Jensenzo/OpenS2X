@@ -646,6 +646,40 @@ fn interrupted_felling_removes_the_tree() {
     );
 }
 
+// TRN-CARRY-7.2a (Q-230 a, b): a woodcutter carrying his log home when his
+// hut is removed is sent home and loses the log at once: it goes into no
+// warehouse and is not put down; a settler sent home never holds a ware.
+// spec: TRN-CARRY-7.2a, TRN-FREE-6.4
+#[test]
+fn a_released_worker_loses_the_ware_in_his_hands_at_once() {
+    let trees = [(13, 8)];
+    let (mut world, id) = hut_with(&trees);
+    let mut carrying = false;
+    for _ in 0..3000 {
+        world.step();
+        if world.settlers[id]
+            .as_ref()
+            .is_some_and(|s| s.carrying.is_some())
+        {
+            carrying = true;
+            break;
+        }
+    }
+    assert!(carrying, "the woodcutter never carried his log");
+    world.submit(crate::Command::RemoveBuilding {
+        player: P0,
+        at: (10, 10),
+    });
+    world.step();
+    let s = world.settlers[id].as_ref().expect("the woodcutter");
+    assert!(
+        matches!(s.job, crate::SettlerJob::Leaving { .. }),
+        "{:?}",
+        s.job
+    );
+    assert_eq!(s.carrying, None, "the log is gone at once");
+}
+
 // ECO-OUT-5.4, 3.10, play-test: the woodcutter's door to door, from the
 // door closing behind him (he steps in) to it opening again (he walks out):
 // step in 1 + rest 223 + target check 51 = 275 ticks = 27.5 s of game time
@@ -1697,4 +1731,93 @@ fn a_project_building_type_works_by_its_own_recipe() {
     assert_eq!(world.inputs(at), &[(WOOD, 2)]);
     // The coal it made lies at its flag.
     assert!(world.wares().any(|(_, w)| w.good == COAL));
+}
+
+/// Hook W20 (`docs/extending.md`, "Recipes a player chooses"): a type with
+/// two recipes (`Rules::recipe_sets`) works its first until the player
+/// chooses another (`Command::ChooseRecipe`): it orders and consumes the
+/// chosen recipe's inputs and makes its product; the choice withdraws the
+/// open orders of goods the new recipe does not take, is refused for an
+/// index the set does not have, and is kept in the snapshot. The original's
+/// game has neither sets nor choices, and its state's `Debug` form (the
+/// state hash) has no trace of them.
+// spec: none (hook W20: a recipe chosen per building; the cycle is ECO-WORK-3's, the orders ECO-PROD-6.1's)
+#[test]
+fn a_type_with_a_recipe_set_works_the_chosen_recipe() {
+    use crate::rules::Recipe;
+    use crate::{Command, Rejection};
+    const COAL: u32 = 7;
+    const POST: u32 = 207;
+    let plain = open_world(30, 30);
+    let plain_debug = format!("{plain:?}");
+    assert!(!plain_debug.contains("recipe_sets") && !plain_debug.contains("chosen_recipes"));
+    assert_eq!(plain.recipe_set(SAWMILL), None);
+    let mut rules = rules();
+    let mut post = BuildingType::new(POST, BuildingSize::Small);
+    post.worker = Some(CARPENTER);
+    post.product = Some(COAL);
+    post.production_ticks = 333;
+    post.cycle = WorkCycle::Workshop;
+    post.stock_limit = Some(6);
+    rules.building_types.push(post);
+    let set = vec![
+        Recipe {
+            product: COAL,
+            inputs: vec![(WOOD, 2)],
+        },
+        Recipe {
+            product: PLANK,
+            inputs: vec![(STONE, 1)],
+        },
+    ];
+    rules.recipe_sets.insert(POST, set.clone());
+    let mut world = World::with_map(5, flat(30, 30), rules, P0);
+    assert_eq!(world.recipe_set(POST), Some(&set[..]));
+    let at = (10, 10);
+    finished(&mut world, POST, at);
+    assert_eq!(world.chosen_recipe(at), Some(0));
+    let id = worker(&mut world, at, CARPENTER);
+    // The first recipe: wood ordered up to the stock limit, nothing else.
+    assert_eq!(world.open_orders(at, WOOD), 6);
+    assert_eq!(world.open_orders(at, STONE), 0);
+    world.inputs.insert(at, vec![(WOOD, 2)]);
+    let changes = trace(&mut world, id, 400);
+    assert_eq!(
+        when(&changes, |w| *w == Work::Take { second: false }).len(),
+        1
+    );
+    assert!(world.wares().any(|(_, w)| w.good == COAL));
+    // A recipe the set does not have is refused; another player's too.
+    let choose = |index| Command::ChooseRecipe {
+        player: P0,
+        at,
+        index,
+    };
+    assert_eq!(apply(&mut world, choose(2)), Err(Rejection::NotARecipe));
+    let other = Command::ChooseRecipe {
+        player: PlayerId(1),
+        at,
+        index: 1,
+    };
+    assert!(apply(&mut world, other).is_err());
+    // The second: the wood orders are withdrawn, stone is ordered.
+    assert_eq!(apply(&mut world, choose(1)), Ok(()));
+    assert_eq!(world.chosen_recipe(at), Some(1));
+    assert_eq!(world.open_orders(at, WOOD), 0);
+    assert_eq!(world.open_orders(at, STONE), 6);
+    assert!(format!("{world:?}").contains("chosen_recipes"));
+    // The snapshot keeps the choice.
+    let copy = World::from_snapshot(&world.snapshot()).unwrap();
+    assert_eq!(copy.chosen_recipe(at), Some(1));
+    assert!(copy == world);
+    // It makes planks from stone now.
+    world.inputs.insert(at, vec![(WOOD, 0), (STONE, 1)]);
+    let changes = trace(&mut world, id, 800);
+    assert!(!when(&changes, |w| *w == Work::Take { second: false }).is_empty());
+    assert!(world.wares().any(|(_, w)| w.good == PLANK));
+    // Back to the first: its own wood orders again.
+    assert_eq!(apply(&mut world, choose(0)), Ok(()));
+    assert_eq!(world.chosen_recipe(at), Some(0));
+    assert_eq!(world.open_orders(at, STONE), 0);
+    assert_eq!(world.open_orders(at, WOOD), 6);
 }

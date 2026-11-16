@@ -78,11 +78,36 @@ which claims land at once.
   it tries in its next update. Confidence: high.
 - **SHIP-2.5 To harbour.** The ship sails to the docking place's water field.
   When it has stopped: if it still has its harbour link it is docked there
-  (the harbour records it at that docking place), the ship remembers that
-  field as its last port position, state **docked**; if the link is gone,
-  **Idle**. Confidence: high.
+  (the harbour records it at that docking place), its last port position
+  becomes the **harbour's own field** (the building's land field, not the
+  docking place's water field; corrected 2026-11-16 night, Q-1060, SHIP-2.7),
+  state **docked**; if the link is gone, **Idle**. Confidence: high.
 - **SHIP-2.6 Docked** lasts one update: Idle again if it still has its
   harbour link, else search. Confidence: high.
+- **SHIP-2.7 Last port position (added 2026-11-16 night, Q-1060; E-ship-005,
+  code reading).** Every ship keeps one field, its last port position, or
+  none. It is used only by SHIP-6.1 (which spots count as its own harbour)
+  and SHIP-7.1 (where a harbour can be founded). It changes at exactly these
+  moments:
+  - **a ship the shipyard builds** gets, at its creation, the coast field the
+    shipwright works from (ECO-FOOD-7);
+  - **a ship a mission's script makes** (`createShip`, `CAM-campaign-missions.md`
+    CAM-1.2) gets, at its creation, its **first land neighbour** (below);
+  - **every route start** clears it: a ship that starts sailing to a docking
+    place (SHIP-2.3 case 3, SHIP-2.4), to a landing field (SHIP-6.3) or to
+    make room (SHIP-3.3) has none until it stops; a route whose target is
+    the ship's own field also clears it;
+  - **docking** (SHIP-2.5) sets the harbour building's own field;
+  - **an expedition's arrival** (SHIP-6.4) sets the first land neighbour of
+    the field it stopped on.
+  **The first land neighbour** of a field F: the six neighbours of F are
+  tested in the order of directions 4, 5, 0, 1, 2, 3 (start at the neighbour
+  in direction 4, then step once in each of the directions 0 to 4; ring 1 of
+  `MAP-grid-geometry.md` MAP-GRID-3 with its start field tested **first**);
+  the first one that lies inside the map, is not Water and belongs to a land
+  continent is the result. Nothing farther than ring 1 is looked at: when
+  none of the six qualifies the ship has no last port position. Confidence:
+  high.
 
 ### SHIP-3 Movement on water
 
@@ -127,8 +152,44 @@ ticks** (counter 0..100), after the expedition step (SHIP-5) which runs every
 tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
 
 - **SHIP-4.1 Needs.** A harbour keeps a list of goods its island needs from
-  overseas. How entries get there is not traced (Q-063); the list is fed from
-  the distribution of the harbour's land network.
+  overseas. **How entries get there (2026-11-16 night, Q-063 partly answered;
+  E-ship-006, code reading):** an open request is attached to one harbour when
+  the land cannot serve it.
+  - A building's **ware order** that finds no warehouse of its player holding
+    the good and reachable over the roads (the distribution's warehouse search,
+    `ECO-requests-dispatch.md`) is attached, if it is not attached yet.
+  - A **settler request** that finds no warehouse able to send the settler (and
+    none that can make one from a helper and a tool) is attached the same way.
+  - **The harbour chosen** is among the player's finished harbours that are
+    reachable over the roads from the requester's flag, accept the good (its
+    stock settings, `ECO-warehouse-construction.md`), and have a docking place
+    on a sea where the player has a finished ship. The one with the lowest
+    road route cost from the requester's flag wins; on equal cost, the first in
+    the world's harbour list. With no such harbour the request stays
+    unattached and is tried again at its next turn.
+  - **Attaching** adds the requester to the harbour's need entry for that good
+    (the entry is made on its first requester). The need is the number of
+    requesters attached. A settler request that later finds a warehouse over
+    land is detached before it is served, which lowers the need.
+  - Then SHIP-4.2 asks another harbour for the good.
+  Confidence: medium (the attach paths and the choice read in the code; the
+  exact turn at which a waiting request is tried again, and whether a ware
+  order is detached the same way when its good turns up on land, were not
+  followed). Test T19.
+  **Retry and detach (2026-11-16 day, rest of Q-063; E-ship-007, code reading).**
+  - **When:** the attach is a step of the ware order matching itself (`ECO-requests-dispatch.md`
+    ECO-REQ-5.3, the pass every 11 ticks): an order the pass cannot serve from a warehouse over
+    land is attached in that pass, and an unattached one is tried again at the next pass. A
+    settler request is attached at its own turn in the settler queue (ECO-REQ-2.2) (high).
+  - **An attached ware order is checked again at every pass** in which no warehouse over land
+    can serve it: it stays attached while its harbour still accepts the good (its stock settings)
+    and is still reachable over the roads from the requester's flag; otherwise it is **detached**
+    in that pass, which lowers that harbour's need, and is free to be attached again (to the same
+    or another harbour) at a later pass (high).
+  - **A ware order served over land:** the branch that finds a warehouse with the good does not
+    detach the order there; its harbour link ends with the order itself when the ware is
+    assigned and the order is used up (medium: the order's end was not followed, so the harbour's
+    need may count it until then).
 - **SHIP-4.2 Asking another harbour.** For each needed good with no supplier
   yet: among the player's other **finished** harbours, in harbour list
   order, the first one that (a) has not already been asked for this good by
@@ -220,7 +281,9 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
   - candidates are the harbour spots of every **land** continent
     (SHIP-1.1);
   - a spot is skipped when it lies on the continent of the ship's last port
-    position and within distance 3 of the ship (its own harbour);
+    position (SHIP-2.7) and within distance 3 of the ship (its own harbour).
+    A ship without a last port position skips none here (medium: the
+    original then reads a value from outside its continent table);
   - the spot must be a site where a harbour could be built **by nobody**
     (unowned land) **or by the ship's player** (enemy land is excluded);
   - its direction is the bearing class from the ship to the spot (the same
@@ -248,11 +311,12 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
   sailing to it (**sailing**). If expedition mode has been switched off
   (SHIP-6.5), **returning**. Confidence: high.
 - **SHIP-6.4 Arrival.** When the ship has stopped at the target: its last
-  port position is set to the land field nearest to it, the target is
+  port position is set to the first land neighbour of its field (SHIP-2.7;
+  ring 1 only, so none when no neighbour is land; corrected 2026-11-16
+  night from "the land field nearest to it"), the target is
   cleared, the options are recomputed (SHIP-6.1), radius 6 is explored
   (SHIP-3.4) and the player gets "Ship
-  waiting for Orders" again (waiting). Confidence: high for the order;
-  medium for "nearest land field".
+  waiting for Orders" again (waiting). Confidence: high.
 - **SHIP-6.5 Cancel (`cancel-expedition`).** On a ship in expedition mode: expedition
   mode off, target and all six options cleared. Waiting or sailing ships go
   **returning**: when stopped, they search (SHIP-2.4, at once) and, docked,
@@ -262,10 +326,17 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
 ### SHIP-7 Founding a harbour
 
 - **SHIP-7.1 Possible.** The "Construct harbor" button works when the ship
-  is not moving, is in expedition mode, has a last port position, the spot
-  nearest to that position on its continent is a harbour site for nobody or
-  for the player, and the ship is **closer than 5** fields to that spot.
-  Confidence: high.
+  is not moving, is in expedition mode, has a last port position
+  (SHIP-2.7), the spot is a harbour site for nobody or for the player, and
+  the ship is **closer than 5** fields to that spot. **The spot** is taken
+  from the harbour spots of the land continent of the last port position:
+  the one nearest to the **ship's own field** (strictly smaller distance
+  wins, so the first in the continent's list on equal distance); a
+  continent without spots gives none. The ship window shows the button
+  exactly while this holds (`UI-ingame.md` UI-GAME-4.5 f); a ship a
+  mission's script made is no exception, since it has a last port position
+  from its creation (SHIP-2.7). Confidence: high (wording of the spot
+  sharpened 2026-11-16 night, E-ship-005).
 - **SHIP-7.2 Command (`found-harbour`).** A harbour **construction site** of the
   player is created at the spot; it claims **range 4** and explores **radius
   6** around it at once (`TER-territory.md` TER-2.4). A builder walks out of
@@ -275,6 +346,20 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
   mode is switched off and the options cleared; the empty ship then searches
   for a harbour (it may wait until the new harbour is finished).
   Confidence: high for the steps; medium for the builder's walk.
+  **The builder and the load, in order (2026-11-16 day, Q-157; E-ship-008, code reading, high).**
+  1. The site is made on the spot (with its claim and exploring, as above).
+  2. One builder is taken off the ship's load, and **a new builder is made standing on the site's
+     own field** and linked to the site as its builder. He does not walk out of the ship: he
+     appears on the site in the same tick, and his work starts by the construction rules.
+  3. **The rest of the load goes into the site's store, all of it**, good by good, with no test of
+     what the site needs (only the store's limit, which a site does not set). The expedition's load
+     is always exactly the harbour's cost (4 planks, 6 stones; SHIP-6.1), so nothing is left aboard
+     and nothing is too much.
+  4. Every open material order of the new site is cancelled, so no carrier brings anything more.
+  5. The expedition is switched off and its options cleared.
+  So ours' "delivers the material up to what the site still needs" gives the same result for the
+  shipped load; a load that differs (a script's `createShip`, SHIP-2.7) would go into the store
+  whole.
 - **SHIP-7.3** The new harbour is built by the normal construction rules
   (`ECO-warehouse-construction.md`) and, when finished, makes its docking
   places (SHIP-1.2). Confidence: high.
@@ -323,6 +408,10 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
 | T13 | SHIP-3.1 (the route and its draws), 2.4, `ECO-food-mining.md` ECO-FOOD-7.4b (T60): E-trace-018 (R5, the Weak game), player 1's ship 94308 on (146, 46), its main work 0 in counter 50011 (8.75e-07 in 50010); E-trace-013 (R3, the Hard game), ship 94738, work 0 in 45867 | the generator's draws at the first search try | the search counter counts 1 in the tick the work reaches 0 and 101 a hundred ticks later; the try is in the next tick (R5 50112, R3 45968): a docking place of the harbour 90366 is reserved and the ship sails, its route's read-out drawing: R5 3 draws in counter 50112 (none else that tick), R3 12 in 45968 (9 for three animals, then 3 for the ship) (`generator.csv`, recorded). Counting whole trips (the ship started after the shipwright's step) and a route search without draws (a plain flood): the Weak 150 000 pair's generator first differs at 50113, the Hard pair's at 45969. With both rules (experiment build): every draw of those ticks equal; the Weak 150 000 generator 50113 -> 50934, the Hard 150 000 generator 45969 -> 46754 (settlers 46100 -> 46600); every other pair unchanged |
 | T14 | SHIP-5.2 (served orders count): E-trace-018 (R5, the Weak game), player 1's harbour 90351 (144, 47) gathering 4 planks and 6 stones; its orders filed at counter 50765; the castle sends planks at the matchings of 50820 and 50853 (helpers 96100, 96112; 96101 lies at (140, 50) from 50873) | the harbour's next pass (101 ticks after the filing one, before the matching of 50864) and what the castle sends | no new plank orders: 2 open + 2 served = 4 missing; the castle's sends: planks at 50886 and 50952, then stones from 50985 (recorded, objects table). Counting only the open orders and the wares already lying or carried (not those in a helper's hands) files 2 more plank orders at the pass: a fifth plank at 50985 (experiment build), and in the Hard game (E-trace-013, harbour 90366) two more stones at 46739 and 46750, the storehouse (130, 33) then busy at the take-out of 46753. With the rule (experiment build, with `ECO-distribution.md` T24): the Weak game's take-out draws of 51297 as recorded, the Hard game against R3 settlers 46751 -> 48154; the Weak 150 000 generator 51472 -> 51724 and the Hard 150 000 pair 46600 / 47000 / 46754 -> 48200 / 48200 / 48043 (settlers / buildings / generator) for T24 and this rule together; every other pair unchanged |
 | T15 | SHIP-6.1 landing field: `tutorial04.s2m`, the harbour spot (129, 34) of land continent 36, the ship on sea continent 0 | the landing field search | the spot and ring 1 are land; ring 2 from its start (128, 36) visits (129, 36), (130, 36), (130, 35), (131, 34), (130, 33), (130, 32), (129, 32), (128, 32), (127, 33), then (127, 34), the first Water field: the landing field is (127, 34). (127, 35), lesson 4's marked field, is land; (127, 36), where lesson 4's script puts its second ship, is Water but comes after (127, 34) in ring order |
+| T16 | SHIP-2.7, 7.1 (Q-1060): `tutorial04.s2m`, lesson 4's script runs `createShip(player0, 101, 63)` and `createShip(player0, 127, 36)` | the ships' last port positions; the second ship's window; `found-harbour` for it | second ship (127, 36): its neighbours in test order are (126, 37) Water, (127, 37) Water, (128, 36) land of continent 36, so its last port position is **(128, 36)**; continent 36's only spot is (129, 34), 3 fields from the ship and free, so `!Construct harbor.` is shown and the command is accepted: a harbour site of player 0 on (129, 34). First ship (101, 63): neighbours (101, 64), (102, 64), (102, 63) Water, (102, 62) land of continent 66, so its last port position is **(102, 62)**; in its landing options (SHIP-6.1) every spot of continent 66 within 3 fields of (101, 63) is skipped, among them (103, 60) at distance 3. After "go 2" the first ship has no last port position until it stops |
+| T17 | SHIP-2.5, 2.7: a ship docks at a harbour on (40, 40) at a docking place 3 fields away; then it is loaded for an expedition (SHIP-5.5) | last port position after docking; options | (40, 40) (the harbour's field, land), not the docking place; the expedition's options skip the spots of the harbour's continent within 3 fields of the ship |
+| T18 | SHIP-2.7, 6.4: an expedition ship stops on a Water field F whose neighbours in directions 4 and 5 are Water and in direction 0 land | arrival | its last port position is F's neighbour in direction 0. A ship stopping on a field with six Water neighbours has none, and `!Construct harbor.` is not shown there |
+| T19 | SHIP-4.1 (Q-063): player 1 has island A (headquarters, harbour H1, a finished ship on the sea) and island B (harbour H2, a site needing 2 planks, no warehouse with planks on B), both harbours finished and accepting planks | the site's plank orders' turn | each order finds no warehouse with planks over B's roads and is attached to H2 (reachable from the site's flag, a ship on its sea); H2's plank need is 2; SHIP-4.2 then asks H1. With the ship removed (none on the sea) no order is attached and H2 has no plank need |
 
 ## Evidence
 
@@ -342,6 +431,10 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ship-002 | code reading and recordings | recording E-trace-018 `ships.csv.gz`, `generator.csv` (counters 50000 .. 50120), E-trace-013 the same (45800 .. 45995) | SHIP-3.1, T13 |
 | E-ship-003 | code reading and recordings | recording E-trace-018 `objects.csv.gz` (helpers 96100 .. 96167, counters 50800 .. 51300) | SHIP-5.2, T14 |
 | E-ship-004 | code reading | `tutorial04.s2m` continents and state layer (2026-11-05) | SHIP-6.1, 6.1a, T15 |
+| E-ship-006 | code reading | (2026-11-16 night) | SHIP-4.1, T19 |
+| E-ship-007 | code reading | (2026-11-16 day) | SHIP-4.1 retry and detach: the attach inside the 11-tick ware order pass; an attached order re-checked each pass (harbour accepts the good and is road-reachable, else detached) |
+| E-ship-008 | code reading | (2026-11-16 day) | SHIP-7.2: the order of the harbour founding: site, builder made on its field, the load into its store, its orders cancelled (Q-157) |
+| E-ship-005 | code reading and map data | `tutorial04.s2m` continents and state layer (2026-11-16) | SHIP-2.5, 2.7, 6.4, 7.1, T16 to T18 |
 | data | script | `ship.lua`, `buildings.lua` (harbor, shipYard), `dialogs.txt` dialog3_3 / dialog32_0, `tutorial.txt` T04_* | values and the player's view |
 
 ## Open questions

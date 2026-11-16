@@ -632,6 +632,13 @@ impl World {
             } else {
                 site.builder_on_way = false;
             }
+        } else {
+            // 6.3a Worker (Q-1056): the production building counts him no
+            // more; its timer's next firing asks for a worker (ECO-REQ-1.4).
+            let index = self.terrain.index(target.at);
+            if let Some(b) = self.buildings[index].as_mut() {
+                b.workers = b.workers.saturating_sub(1);
+            }
         }
     }
 

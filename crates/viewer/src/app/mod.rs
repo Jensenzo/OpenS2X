@@ -3,6 +3,7 @@
 
 mod options;
 pub(crate) use options::*;
+mod version;
 
 use crate::game::{
     advance_world, building_list, building_names, cycle_maps, find_maps, good_names, load_map,
@@ -122,14 +123,24 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         settings,
         on_settings_change,
         map_things,
+        effects,
         screenshot_dir: project_shots,
         save_dir: project_saves,
         project_name,
+        messages: project_messages,
+        button_pictures,
     } = extensions;
+    crate::extend::messages::install(project_messages);
+    crate::extend::install_buttons(button_pictures);
     crate::extend::install_program(window_title, settings, on_settings_change);
     let (entries, pages) = crate::extend::menu::split(menu_entries);
     let options = match parse_args(game) {
         Ok(mut options) => {
+            if options.version {
+                version::use_parent_console();
+                println!("{}", version::line(crate::extend::window_title()));
+                return std::process::ExitCode::SUCCESS;
+            }
             // `--profile-dir` before anything reads the settings: the first
             // run's look for the game folder (and the folder question's
             // answer) uses that folder's settings, not the player's.
@@ -137,6 +148,16 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
                 crate::menus::settings::keep_files_in(dir.clone());
             }
             if game {
+                // The game's log, beside its settings, starts with the
+                // version line (as the console's output does).
+                let line = version::line(crate::extend::window_title());
+                eprintln!("{line}");
+                let log = crate::menus::settings::path().and_then(|p| version::log_path(&p));
+                if let Some(path) = log {
+                    if let Err(e) = version::start_log(&path, &line) {
+                        eprintln!("no log file {}: {e}", path.display());
+                    }
+                }
                 if options.map.is_none() && options.map_name.is_none() && options.save.is_none() {
                     options.intro = !options.menu && options.menu_screen.is_none();
                     options.menu = true;
@@ -328,7 +349,6 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         setup_terrain: None,
         no_fog: options.no_fog,
         start_fog_off: false,
-        fog_off: false,
         pause_layer: options.pause_layer,
         program_game: game,
         patterns: HashMap::new(),
@@ -352,6 +372,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         jump_request: None,
         setup: None,
         tutorial_step: options.tutorial_step,
+        end_screen: options.end_screen,
         run: options.run,
         maps: maps.clone(),
         current,
@@ -429,6 +450,13 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
             crate::tools::play::drive.run_if(in_state(ViewMode::Map)),
         );
     }
+    // `--still`: the window passes the pointer through (below), but the
+    // pointer's last place over it still came in; the interface forgets it
+    // every frame, so no hover or tooltip depends on where the desktop's
+    // pointer happens to be (the golden pictures' building windows did).
+    if options.still {
+        app.add_systems(First, crate::tools::shots::forget_pointer);
+    }
     if let Some(report) = options.colour_probe.clone() {
         app.insert_resource(crate::tools::colour_probe::ColourProbe::new(report))
             .add_systems(
@@ -438,6 +466,11 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
     }
     app.add_plugins(
         DefaultPlugins
+            // The game's log file gets the console's messages too.
+            .set(bevy::log::LogPlugin {
+                custom_layer: version::file_layer,
+                ..default()
+            })
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: if game {
@@ -603,7 +636,12 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
             )
                 .chain(),
             edit_world,
-            (advance_world, crate::game::save::autosave).chain(),
+            (
+                advance_world,
+                crate::game::save::autosave,
+                crate::extend::messages::post_project_messages,
+            )
+                .chain(),
             crate::render::view3d::update_scene,
             crate::render::view3d::sync_objects,
             (
@@ -624,6 +662,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
                 crate::render::view3d::draw_marks,
                 crate::render::view3d::status_icons,
                 crate::render::view3d::collapse_dust,
+                crate::render::view3d::clip_particles,
                 crate::render::view3d::cursor_sprites,
                 crate::menus::campaign::pointer_sprite,
             ),
@@ -749,6 +788,8 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
     }
     // The things on the map for a project, while it asks for them.
     crate::extend::things::add(&mut app, map_things);
+    // A project's particle effects at settlers at work (hook W18).
+    crate::render::view3d::add_effects(&mut app, effects);
     // A project's own systems and plugins (`docs/extending.md`).
     for plugin in plugins {
         plugin(&mut app);

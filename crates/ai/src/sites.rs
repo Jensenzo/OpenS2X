@@ -165,7 +165,8 @@ impl SiteEnv<'_> {
             Some(g) => {
                 // H6: a type with a project's recipe makes its product from
                 // that, not from the map: rated by its inputs' suppliers.
-                let own = cfg.sim.recipes.contains_key(&t.id);
+                let own =
+                    cfg.sim.recipes.contains_key(&t.id) || cfg.sim.recipe_sets.contains_key(&t.id);
                 if !own && cfg.deposits_goods.contains(&g) && !mine {
                     v = self.deposits_of(at, t.working_radius, g) as f32;
                 } else if !own && cfg.fields_goods.contains(&g) {
@@ -325,20 +326,15 @@ impl SiteEnv<'_> {
 
 /// AI-CON-5.4a: the distance within which a building with a territory
 /// range keeps a new military site away.
-pub const MILITARY_CLEARANCE: u32 = 4;
+pub const MILITARY_CLEARANCE: u32 = s2_sim::MILITARY_CLEARANCE;
 
 /// AI-CON-5.4a, the military clause of the size test: a building or
 /// construction site of any player whose type has a territory range (the
 /// headquarters included) stands within distance 4 of `at` (rings 0 to 4,
-/// each building counted on its own field).
+/// each building counted on its own field); the placement's own test,
+/// ECO-PLACE-6.2.
 pub fn military_near(world: &World, at: Point) -> bool {
-    area(world, at, MILITARY_CLEARANCE).into_iter().any(|f| {
-        world.building_at(f).is_some_and(|b| {
-            world
-                .building_type(b.building_type)
-                .is_some_and(|t| t.territory_range > 0)
-        })
-    })
+    world.military_near(at)
 }
 
 /// AI-CON-5.4a: what makes a field unfit for the flag test.

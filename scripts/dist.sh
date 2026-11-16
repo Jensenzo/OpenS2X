@@ -17,6 +17,19 @@ grep -q "^version = \"$version\"" Cargo.toml || { echo "Cargo.toml is not at $ve
 
 cargo build --profile dist --target x86_64-pc-windows-gnu -p s2-viewer --bin OpenS2X
 
+# The program says which version it is in its Windows file properties
+# (crates/viewer/build.rs; docs/releasing.md, "The version").
+python3 - target/x86_64-pc-windows-gnu/dist/OpenS2X.exe "$version" <<'EOF'
+import sys
+data = open(sys.argv[1], "rb").read()
+key = "ProductVersion\0".encode("utf-16-le")
+at = data.find(key)
+value = (sys.argv[2] + "\0").encode("utf-16-le")
+if at < 0 or data.find(value, at + len(key), at + len(key) + 4 + len(value)) < 0:
+    sys.exit(f"OpenS2X.exe has no version resource saying {sys.argv[2]} (is MinGW's windres installed?)")
+print(f"OpenS2X.exe: ProductVersion {sys.argv[2]}")
+EOF
+
 name="OpenS2X-$version-windows-x64"
 out="target/dist/$name"
 rm -rf "$out" "target/dist/$name.zip"

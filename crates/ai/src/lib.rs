@@ -21,6 +21,7 @@ mod needs;
 pub mod plan;
 mod planters;
 pub mod player;
+pub mod project;
 pub mod resources;
 mod roads;
 pub mod run;

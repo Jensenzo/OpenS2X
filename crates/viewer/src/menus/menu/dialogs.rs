@@ -136,9 +136,11 @@ fn settings_drop_list(
 /// UI-MENU-4.0, 4.2: a settings slider at (168, y), 152 px wide (its bar art
 /// is 152 x 24, medium).
 fn settings_slider(p: &mut Panel, o: [f32; 2], y: f32, value: f32, kind: SliderKind) {
+    // UI-MENU-4.0, UI-GAME-6.5 (b): the settings slider, 152 x 24, its
+    // top-left at the row's (168, y).
     p.widgets.push(Widget::Slider {
-        at: [o[0] + 168.0, o[1] + y + 6.0],
-        width: 152.0,
+        at: [o[0] + 168.0, o[1] + y],
+        width: crate::ui::widgets::SETTINGS_SLIDER,
         value,
         kind,
         enabled: true,
@@ -418,14 +420,57 @@ fn settings_tabs(p: &mut Panel, texts: &Texts, o: [f32; 2], open: u8) {
 /// have their page switch (420).
 pub const PAGE_BOTTOM: f32 = 424.0;
 
+/// Hook W22: the y of a long page's switch, between the rows and BACK.
+pub const PAGE_SWITCH_Y: f32 = 436.0;
+
+/// The rows a row of a project's page takes (a choice one per line of
+/// three options).
+fn row_lines(row: &crate::extend::menu::Row) -> usize {
+    match row {
+        crate::extend::menu::Row::Choice { options, .. } => options.len().div_ceil(3).max(1),
+        _ => 1,
+    }
+}
+
+/// Hook W22: a project's page in parts, each the indices of its rows: a
+/// `PageBreak` starts the next part, and so does a row that would reach
+/// past [`PAGE_BOTTOM`]. A page that fits is one part (as before W22).
+pub fn page_parts(rows: &[crate::extend::menu::Row]) -> Vec<Vec<usize>> {
+    let mut parts: Vec<Vec<usize>> = vec![Vec::new()];
+    let mut y = 72.0;
+    for (i, row) in rows.iter().enumerate() {
+        if matches!(row, crate::extend::menu::Row::PageBreak) {
+            if !parts.last().is_some_and(Vec::is_empty) {
+                parts.push(Vec::new());
+            }
+            y = 72.0;
+            continue;
+        }
+        let height = 32.0 * row_lines(row) as f32;
+        if y + height > PAGE_BOTTOM && !parts.last().is_some_and(Vec::is_empty) {
+            parts.push(Vec::new());
+            y = 72.0;
+        }
+        parts.last_mut().expect("a part").push(i);
+        y += height;
+    }
+    if parts.len() > 1 && parts.last().is_some_and(Vec::is_empty) {
+        parts.pop();
+    }
+    parts
+}
+
 /// A project's page (`docs/extending.md`): the menu dialog titled with its
 /// entry's label, its rows laid out as the game settings (UI-MENU-4.1):
 /// from (168, 72) stepping 32, a label 144 px left of its row in the
 /// headings' font and colour, a toggle's Off and On and a choice's options
 /// as text buttons (three to a line 100 px apart, lines 24 px apart, a row
 /// of 32 px per line), the chosen one yellow; a button is the 152 x 22 bar
-/// at the row. Rows past [`PAGE_BOTTOM`] are left out. BACK at (50, 480)
-/// as on the settings pages.
+/// at the row. BACK at (50, 480) as on the settings pages. Hook W22: a page
+/// longer than [`PAGE_BOTTOM`], or with a `PageBreak`, is shown a part at a
+/// time ([`page_parts`]), with the switch `<`, `n/m`, `>` at
+/// [`PAGE_SWITCH_Y`] (the body font's text buttons at x 168, 218 and 268;
+/// the original's settings pages have no such switch: a project's look).
 pub fn extension_page(menu: &MenuState, texts: &Texts, screen: [f32; 2], n: usize) -> Panel {
     use crate::extend::menu::{PageInput, Row};
     let title = menu.entries.get(n).map_or("", String::as_str);
@@ -441,25 +486,22 @@ pub fn extension_page(menu: &MenuState, texts: &Texts, screen: [f32; 2], n: usiz
             enabled: true,
         });
     };
+    let parts = page_parts(&menu.page);
+    let part = menu.page_part.min(parts.len().saturating_sub(1));
     let mut y = 72.0;
-    for (i, row) in menu.page.iter().enumerate() {
-        let lines = match row {
-            Row::Choice { options, .. } => options.len().div_ceil(3).max(1),
-            _ => 1,
-        };
-        if y + 32.0 * lines as f32 > PAGE_BOTTOM {
-            break;
-        }
+    for &i in &parts[part] {
+        let row = &menu.page[i];
+        let lines = row_lines(row);
         let label = match row {
             Row::Caption(text) => Some(text),
             Row::Toggle { label, .. } | Row::Choice { label, .. } => Some(label),
-            Row::Button(_) => None,
+            Row::Button(_) | Row::PageBreak => None,
         };
         if let Some(label) = label {
             p.text(label, Font::Heading, at(168.0 - 144.0, y), HEADING);
         }
         match row {
-            Row::Caption(_) => {}
+            Row::Caption(_) | Row::PageBreak => {}
             Row::Toggle { value, .. } => {
                 for (x, on) in [(168.0, false), (268.0, true)] {
                     let key = if on { "!On" } else { "!Off" };
@@ -490,6 +532,28 @@ pub fn extension_page(menu: &MenuState, texts: &Texts, screen: [f32; 2], n: usiz
             ),
         }
         y += 32.0 * lines as f32;
+    }
+    if parts.len() > 1 {
+        let y = PAGE_SWITCH_Y;
+        for (x, text, to) in [
+            (168.0, "<", part.checked_sub(1)),
+            (268.0, ">", Some(part + 1).filter(|&k| k < parts.len())),
+        ] {
+            p.widgets.push(Widget::TextButton {
+                text: text.to_owned(),
+                font: Font::Body,
+                at: at(x, y),
+                colour: WHITE,
+                action: to.map_or(Action::None, |k| Action::Menu(MenuAction::PagePart(k))),
+                enabled: to.is_some(),
+            });
+        }
+        p.text(
+            format!("{}/{}", part + 1, parts.len()),
+            Font::Body,
+            at(218.0, y),
+            WHITE,
+        );
     }
     dialog_button(
         &mut p,

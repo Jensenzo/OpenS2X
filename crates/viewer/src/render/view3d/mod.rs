@@ -90,6 +90,7 @@ impl Plugin for View3dPlugin {
             .init_resource::<BuildingAnims>()
             .init_resource::<StatusIcons>()
             .init_resource::<CollapseDust>()
+            .init_resource::<ClipParticles>()
             .init_resource::<Wares3d>()
             .init_resource::<Daylight>()
             .init_resource::<DayClock>();

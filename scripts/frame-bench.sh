@@ -17,10 +17,15 @@
 # tests/golden, since it is not game behaviour, though like the golden pictures
 # it is this PC's own). Needs S2_GAME_DIR and a desktop; leave
 # the PC alone while it runs (another program's load shows in the times).
+# The viewer keeps its settings and profile in target/frame-bench/profile
+# (empty at the start: the first start's settings, SET-3), never the
+# player's; the run fails when the player's files changed their modified
+# time during it (scripts/player-files-guard.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/recording-guard.sh
 refuse_while_recording
+source scripts/player-files-guard.sh
 : "${S2_GAME_DIR:?set S2_GAME_DIR to the game install}"
 bless=""
 [[ "${1:-}" == "--bless" ]] && bless=1
@@ -34,10 +39,16 @@ source scripts/windows-copy.sh
 windows_copy target/x86_64-pc-windows-gnu/release/s2-viewer.exe
 report="$out/report.txt"
 rm -f "$report"
+rm -rf "$out/profile"
+mkdir -p "$out/profile"
+player_files_note
 "$copy" --game-dir "$(wslpath -w "$S2_GAME_DIR")" --map-name MP_2P_Storm_Coast \
   --ai 0=2 --ai 1=2 --start-resources 1 --run 100000 --3d --size 1280x900 \
+  --profile-dir "$(wslpath -w "$PWD/$out/profile")" \
+  --save-dir "$(wslpath -w "$PWD/$out/profile/saves")" \
   --bench 600 --bench-report "$(wslpath -w "$PWD/$report")" \
   </dev/null >"$out/viewer.log" 2>&1 || true
+player_files_check || exit 1
 [[ -f "$report" ]] || { echo "no report (log: $out/viewer.log)" >&2; exit 1; }
 tr -d '\r' <"$report"
 # The median: the mean moves by a quarter between two runs of the same

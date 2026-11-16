@@ -159,10 +159,45 @@ following hold, in this order:
   the castles; medium for the halfway rule (two cases). One more decoration,
   (136, 207), also goes at counter 0, away from both castles; not explained.
 
+### ECO-PLACE-6 Military clearance (2026-11-16 day, E-eco-047)
+
+- **ECO-PLACE-6.1 What counts as military.** A building type is military here when its
+  territory range is above 0: the headquarters (9), the barracks (8), the guard house (9), the
+  watchtower (10) and the stronghold (11). The lookout tower, the catapult, the storehouse, the
+  harbour and every workshop have no territory range and never count, on either side of the test.
+  Confidence: high (code reading and the building properties).
+- **ECO-PLACE-6.2 The test.** A military type may be placed on `B` only when no building of a
+  military type stands on any field within distance 4 of `B` (MAP-GRID-2.1; `B` itself
+  included, 61 fields when none is outside the map). It counts:
+  - buildings of **every player**, the player's own and the enemies' alike;
+  - **construction sites** as well as finished buildings (a barracks site counts as soon as it
+    is placed);
+  - each building on **its own field** only (the field it was placed on; a large building's
+    other footprint fields do not count).
+
+  Fields outside the map are skipped (the map does not wrap, MAP-GRID-1.4), so a site near the
+  edge is not refused because of the edge. Confidence: high (code reading).
+- **ECO-PLACE-6.3 Where it applies.**
+  - The `place-building` command of a player checks 6.2 **first**, before ECO-PLACE-3: a
+    military type that fails it is refused (no site, nothing else happens).
+  - The build menu (`UI-ingame.md` UI-GAME-3.2) runs the same test on the menu's field for each
+    military cell and disables a failing cell with the tooltip `!Too close to other military
+    buildings.` ("Too close to other military buildings"). This test comes before the
+    `!Building not allowed` test, so a military type that is both too close and locked shows
+    "Too close".
+  - The computer player's site search uses the same clause (`AI-construction.md` AI-CON-5.4a).
+  - A **military upgrade** (`MIL-building-upgrade.md`) does not run it: the building's own
+    field is at distance 0 and would always fail, so the upgrade's own fit test leaves the
+    clearance out.
+  - The building class of a field (ECO-PLACE-4) does not include it: the menu's tabs and the
+    build-help marks are the same near a military building; only the military cells are greyed.
+  Confidence: high (code reading).
+
 ## Constants
 
 | Name | Value | Unit | Confidence | Evidence ref |
 |---|---|---|---|---|
+| military clearance (ECO-PLACE-6.2) | no building or site with a territory range within 4 (distance 0..4, every player) | fields | high | E-eco-047 |
 | flag offset from building | direction 1 (south-east) | | high | E-eco-005, E-eco-004 |
 | no-building radius (Blocked check) | 1 | fields | high | E-eco-005 |
 | large / harbour footprint | B + W + NW + NE | | high | E-eco-005 |
@@ -203,6 +238,10 @@ rules with the investigation's placement script.
 | T16 | 5.3: E-trace-014 (R4), player 1's farm site 90538 on (136, 58) (placed 3729, levelled from 4329) and site 90785 on (131, 59) (placed by 5901, no levelling) | the map's decorations around them | gone by 3801: fine (544, 234), (540, 234), (541, 235), (543, 236); by 5901: (527, 236), (525, 237), (529, 232), (528, 232), (529, 233); kept: (549, 233), (548, 237), (539, 237), (525, 232), (523, 235); the look comparison's farm picture of 6000 shows the farm site bare (`look-compare-auto/2026-10-30` weakfogoff-006000-farm) |
 | T17 | 5.3 (start castles, Q-295): MP_2P_Storm_Coast, the default start, E-trace-006 (`specs/traces/original-dense-6000-objects.csv.gz`) | the map's decorations on and around the two castles at counters -1 and 0 | gone at counter 0: (114, 208), (115, 208) (field (29, 52), player 0's castle (29, 51)), (561, 200) (flag field (140, 50)), (561, 208) (field (140, 52), player 1's castle (139, 51)); kept: (562, 208) (halfway, so field (141, 52)) until 864. A build that removes none for the start castles keeps four decorations drawn under the castles |
 
+| T18 | ECO-PLACE-6: any map with player 0 owning every field used; player 0's headquarters on (20, 20), nothing else | open the build menu (or send `place-building`) on (24, 20) (distance 4), (25, 20) (distance 5), (20, 24) (distance 4), (20, 25) (distance 5), each a field where the size fits | (24, 20) and (20, 24): the barracks, guard house, watchtower and stronghold cells are greyed with "Too close to other military buildings" and `place-building` of any of them is refused; every workshop, the lookout tower, the storehouse and the catapult stay enabled and are accepted. (25, 20) and (20, 25): all enabled, a barracks is accepted |
+| T19 | ECO-PLACE-6: as T18, then player 1's guard house **site** on (40, 20) (on player 1's land, just placed; player 0 owns (35, 20) and (36, 20)), and a lookout tower of player 0 on (60, 20) | the military cells on (36, 20), (35, 20) and (62, 20) | (36, 20) (distance 4 from the enemy's site): greyed, "Too close to other military buildings"; (35, 20): enabled; (62, 20) (distance 2 from the lookout tower, no military building within 4): enabled, a guard house is accepted |
+| T20 | ECO-PLACE-6.3: as T18, player 0's finished barracks on (25, 20) | upgrade the barracks | not refused by the clearance (the upgrade does not run it, though the barracks itself stands at distance 0 and the headquarters at 5) |
+
 T12, headquarters at (27,57), (52,56), (52,24), (26,24) of Fight; odd rows are
 drawn half a field to the right:
 
@@ -237,6 +276,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-eco-005 | code reading | | Border |
 | E-eco-005 | code reading | | object bits; building placement |
 | E-eco-005 | code reading | | whole-map recalculation only from a debug action |
+| E-eco-047 | code reading and the building properties | `S2DNG.exe`; the scripts' territory ranges | ECO-PLACE-6: the build menu's military cells, the player's place command and the upgrade's exemption share one test of rings 0 to 4 |
 | E-map-009 | data survey | the investigation's placement script over the 34 maps | T1, T13; Water = height < -100 on all 565,100 fields; ForBuilding never with ForMining; ForHarbor always with ForBuilding |
 
 ## Open questions

@@ -8,6 +8,206 @@ the working name s2-reborn. The public repository starts with its first
 public release; the sections before it describe releases made in the
 maintainer's working repository, which have no tag or download there.
 
+## OpenS2X 0.11.2 (2026-11-16)
+
+Military buildings keep their distance as in the original; the coins
+victory counts the coins your mints make; a leveller's and a forester's work
+raises dust; the hooks a project asked for to finish its mods.
+
+### What is new
+
+- **The build menu** greys the barracks, guard house, watchtower and
+  fortress where they would stand within four fields of another military
+  building or construction site (yours or an enemy's, the headquarters
+  included), with the tooltip "Too close to other military buildings", as in
+  the original; the game refuses them there too. The lookout tower,
+  workshops and storehouses are not affected. A building a mission forbids is
+  greyed with "Building not allowed".
+- **Collect 100 gold coins** (a free game's victory condition) counts the
+  coins your team's mints have made since the start, as in the original:
+  coins in the headquarters, from the start or from the cheat do not count,
+  and coins you spend still count. The panel under the main bar shows your
+  own count, "(n/100)".
+- **Dust** rises around a leveller's shovel and a forester planting a tree,
+  as in the original: once each time he starts that work, at his feet,
+  fading a few seconds after he stops.
+- **A ship waiting for orders** says which ship it is in its message: "Ship is
+  awaiting orders (Aurora)".
+- **Carriers and settlers when a building goes**, as in the original: a carrier
+  carrying a ware into a building that is torn down meanwhile brings it back
+  out and puts it down at the flag, where it is sent on (it was lost); a
+  worker whose building is torn down while he carries his product loses it at
+  once; a builder whose site goes while he walks back to its flag starts home
+  a moment later.
+- **Geologists and scouts** never pick the same spot as another one at work;
+  one with no spot left goes home at once.
+- **Statistics**: the goods curve counts what lies in your warehouses only
+  (no longer the workshops' supplies).
+- **Settlers stepping aside**: one walking past a standing settler steps aside
+  alone; two meeting step aside to opposite sides, as in the original.
+- **Your profile**: a first start uses `default01.cfg`, the original's own
+  profile file, whatever other files the profiles folder holds; a profile an
+  earlier version of OpenS2X chose stays.
+- Nothing of the game's own checks writes your settings, profile or saves any
+  more (our picture checks used to rewrite the profile with the same
+  contents).
+
+### For projects built on OpenS2X: breaking changes
+
+- `s2_sim::Rejection` has a new variant `TooCloseToMilitary` (ECO-PLACE-6);
+  `World::counts_as_military`, `World::military_near` and
+  `s2_sim::MILITARY_CLEARANCE` are new. A project's player who placed
+  military sites that close is now refused.
+- `s2_sim::Message` has a new field `ship` (the ship a message names); a
+  struct literal needs it.
+- `s2-app profile-seed FILE` (new) writes the profile the golden pictures
+  start every scene with; `--still` forgets the pointer, so no hover depends
+  on where the desktop's pointer lies. The world snapshot version is 81; saves of 0.6.0
+  on load. The golden state hashes changed in their world and players parts
+  only (every message carries the field); no game plays differently.
+- The coins victory reads `World::coins_produced`, not the warehouses' stock.
+- New hooks, each off by default (docs/extending.md): **W22** a project's
+  menu page longer than eleven rows, or with the new `PageWidget::PageBreak`,
+  shown a part at a time with a switch at its foot (a `match` on
+  `PageWidget` needs an arm for it); **W23** the production window lists a
+  type's recipes when it has three or more; **W24** `Extensions::messages`
+  (`ProjectEvent`): a message in the project's words when a mine's deepening
+  is done or a road is paved; **W25** `reborn.ai_setDeepen`,
+  `reborn.ai_setPaving`, `reborn.ai_setRecipeRule`: the computer players use
+  the project's deepening, paving and recipes (`RuleSet::ai_project`,
+  `AiConfig::project_rules`); and `Extensions::button_pictures`: pictures of
+  the project's own for the Deepen and Next recipe buttons. A struct literal
+  of `Extensions`, `RuleSet` or `AiConfig` needs the new fields or
+  `..Default::default()`.
+
+## OpenS2X 0.11.1 (2026-11-16)
+
+The program says which version it is; lesson 4's second ship founds its
+harbour; the end screen names the computer players; fog of war Off works as
+in the original.
+
+### What is new
+
+- **Which version you have**: right-click `OpenS2X.exe`, Properties,
+  Details (Product version); or the first line of the game's new log file,
+  `%APPDATA%\s2-reborn\log.txt`; or `OpenS2X.exe --version` in a command
+  prompt. The log keeps the program's messages and, when it stops with an
+  error, where it stopped: attach it to a bug report (PLAYING.md, "Which
+  version you have").
+- **Tutorial lesson 4**: the second ship's **Construct harbor** founds the
+  harbour on the island, as in the original (before, the button showed but
+  nothing was built).
+- **Ships** remember their last port as the original does: a ship made by a
+  mission starts with the land beside it, a docked ship its harbour, and a
+  ship under way none. On an expedition, **Construct harbor** shows exactly
+  where a harbour can be founded, for every ship.
+- **The ship window** draws its two separator lines; a finished ship's
+  message reads "Ship constructed", at the ship.
+- **The attack menu** opens only on an enemy's headquarters or an enemy
+  military building with soldiers in it, as in the original (a lookout
+  tower, a harbour, a storehouse, a workshop or an empty military building
+  opens nothing). With none of your soldiers in reach it says "Cannot attack
+  this building!" where the number stands, without the slider and ATTACK.
+- **The end screen** of a free game names the computer players "AI", as the
+  original does.
+- **Fog of war Off** on the free game setup uncovers the whole map for every
+  player at the start, the computer players included, as in the original:
+  they see the whole map too, which changes how they play (before, only the
+  drawing left the fog out).
+
+### For projects built on OpenS2X: breaking changes
+
+- New hook W21, off by default (docs/extending.md, "The look of a paved
+  road"): a project's street textures for paved roads,
+  `RenderOptions::paved_road` (`StreetLook { texture, normal }`); a struct
+  literal of `RenderOptions` needs it or `..Default::default()`.
+- `s2_sim::GameSetup` has a new field `fog_of_war_off` (default `false`); a
+  struct literal needs it or `..Default::default()`. Set, the new game
+  explores the whole map for every player as it makes them. The viewer's
+  own fog-off drawing switch is gone.
+- A ship's last port position (`Vessel::port`) follows SHIP-2.7: set at its
+  creation, at docking (the harbour's own field, before the docking
+  place's water field) and at an expedition's arrival, cleared at every
+  route start. A save of ours keeps the port it holds until the ship's next
+  route.
+- The world snapshot format is unchanged (79); the state hashes and the
+  fidelity measure are as 0.11.0's. The pictures change only by the ship
+  window's separators and the end screens' names.
+
+## OpenS2X 0.11.0 (2026-11-15)
+
+Six new hooks for projects built on OpenS2X (W15 to W20), the player's demolish as the
+original's, the sliders and end screens as the original draws them.
+
+### What is new
+
+- **Demolishing a building gives material back**, as in the original: part
+  of what it cost lands on its flag for the carriers, and a finished
+  building leaves a burning ruin for about half a minute. The flag and its
+  roads stay.
+- **The sliders** of the tools, military and distribution dialogs, the
+  headquarters' military page, the attack dialog and the settings pages
+  are the original's pictures: a dark bar, the cyan fill up to the knob and
+  the orange knob.
+- **The end of a free game** shows the original's end screen: the map's
+  name, victory or defeat with its reason, a row per player with their
+  team and result, and Statistics, Exit map and Continue (no Continue
+  after a defeat). A lost campaign mission shows the original's defeat
+  page, with Exit map only.
+- **The tutorial's dialog steps** take only the control they mark (lesson
+  4's close buttons, the economy dialog's military tab and close).
+- The minimap dialog sits at the screen's right edge as in the original,
+  its buttons where the original has them; during a tutorial lesson the
+  minimap stays closed until the lesson ends. The `,` key opens the next
+  storehouse's window at the mouse pointer.
+- **Tooltips** of buttons and controls are the original's framed box, above
+  and to the right of the pointer; a build menu cell's tooltip names the
+  building and how many of it the player has ("Woodcutter's Hut (0)").
+- **The ship window** as the original lays it out: twelve cargo places in
+  two rows, Jump to port greyed while the ship has no port to go to, and on
+  an expedition Build harbour only where a harbour can be founded, with the
+  six direction buttons around the picture while the ship waits. The
+  harbour's expedition page reads -/- until a preparation starts.
+- **Messages**: a left click on a message's icon marks it read (the tick
+  over it, the text grey) and jumps to its place; a right click deletes it.
+
+### Fixed
+
+- A worker whose way to his building was cut no longer waits on a flag
+  for good: he goes home, and his building sends for another once he is
+  back (as the original).
+
+### For projects built on OpenS2X: breaking changes
+
+- New hooks, each off by default (docs/extending.md): recipes a player
+  chooses per building (`reborn.bp_addRecipe`, `bp_addRecipeInput`,
+  `Command::ChooseRecipe`) and a good's distribution table taking a
+  project's type (`reborn.dist_addConsumer`, W20); a group good in a recipe
+  and a kept stock (`reborn.cfg_setRecipeKeep`, W16); deepening an
+  exhausted mine (`reborn.bp_setDeepening` and companions,
+  `Command::DeepenMine`, W15); paved roads (`reborn.cfg_setPaving`,
+  `Command::PaveRoad`, W19); a softer shadow filter, a factor on the
+  profile's shadow map and shore foam (`RenderOptions::shadow_filter`,
+  `shadow_map_scale`, `shore_foam`, W17, W18); particle effects at
+  settlers at work (`Extensions::effects`, W18).
+- `s2_sim::Command` has the variants `ChooseRecipe`, `DeepenMine` and
+  `PaveRoad`, `s2_sim::Rejection` `NotARecipe`, `NotDeepenable` and
+  `NotPavable`: a `match` on either needs arms for them.
+- `s2_sim::Rules` has the fields `recipe_sets`, `deepenings`,
+  `recipe_groups`, `recipe_keep` and `paving`, `s2_rules::model::Building`
+  `recipes` and `deepening`, `s2_rules::RuleSet` `recipe_keep`, `paving`
+  and `dist_consumers`, `s2_viewer::RenderOptions` `shadow_filter`,
+  `shadow_map_scale` and `shore_foam`, `s2_viewer::Extensions` `effects`:
+  a struct literal needs them or `..Default::default()` / `..Rules::empty()`.
+- `Command::RemoveBuilding` now removes with remains (material on the flag,
+  a ruin), as `TearDown` does: a project's game in which a player demolishes
+  plays differently from that command on.
+- The world snapshot is format 79 (76 to 79 for the four hooks with game
+  state); every save of 0.6.0 and later loads. The original's rules have
+  none of the hooks: the state hashes and the fidelity measure are as
+  0.10.x's; the view's pictures change only by the sliders, the minimap's
+  place and buttons, the tooltips' box, the ship window and the end screens.
+
 ## OpenS2X 0.10.1 (2026-11-15)
 
 The first public release. The game plays as 0.10.0, the last release made

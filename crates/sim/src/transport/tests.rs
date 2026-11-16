@@ -1326,6 +1326,76 @@ fn a_carrier_stands_two_ticks_in_the_building_it_delivers_to() {
     assert!(c(&world).walker.progress() > 0.0);
 }
 
+// TRN-CARRY-3.3 (TRN-CARRY T60, Q-230 c): the building removed while the
+// carrier walks a ware into it. The walk in goes on to its field; in the
+// hand-over tick nothing is delivered and the ware stays in his hands (the
+// road counts the trip); he walks back out to the flag, puts the ware down
+// there like any ware (drop and pickup actions, from his arrival tick),
+// where it lies without a destination; he is not sent home, nothing is lost.
+// spec: TRN-CARRY-3.3 (TRN-CARRY T60), ECO-REQ-5.5
+#[test]
+fn t60_a_ware_for_a_building_removed_meanwhile_comes_back_out() {
+    let (mut world, a, _, b) = two_step_road();
+    let at = world.terrain.neighbour(b, 4).unwrap();
+    assert_eq!(building(&mut world, crate::test_support::SMALL, at), Ok(()));
+    let target = world.target_of(at).unwrap();
+    let ware = world.new_ware_at(PLANK, a, Some(b), Some(target));
+    let mut steps = 0;
+    while !(matches!(
+        world.carriers[0].task,
+        CarrierTask::Deliver { back: false, .. }
+    ) && world.carriers[0].walker.is_walking())
+    {
+        world.step();
+        steps += 1;
+        assert!(steps < 400, "never walked in");
+    }
+    let road = world.carriers[0].road;
+    let trips = world.roads[road].as_ref().unwrap().traffic.transport_count;
+    world.submit(Command::RemoveBuilding { player: P0, at });
+    world.step();
+    assert!(world.building_at(at).is_none(), "removed");
+    // The walk in goes on to the building's field.
+    while world.carriers[0].walker.at != at {
+        world.step();
+        assert!(world.wares[ware].is_some());
+        steps += 1;
+        assert!(steps < 600, "never reached the field");
+    }
+    // A, A + 1 standing with it; A + 2 no delivery: the ware stays his, the
+    // trip counted, the walk out ordered at progress 0.
+    world.step();
+    world.step();
+    let c = world.carriers[0].clone();
+    assert_eq!(c.ware, Some(ware));
+    assert_eq!(world.ware(ware).unwrap().location, WareLocation::Carried(0));
+    assert_eq!(world.ware(ware).unwrap().target, None);
+    assert_eq!(
+        world.roads[road].as_ref().unwrap().traffic.transport_count,
+        trips + 1
+    );
+    assert_eq!((c.walker.at, c.walker.progress()), (at, 0.0));
+    // Back on the flag: the put-down, then the ware lies there, no
+    // destination; the carrier keeps his road.
+    while world.carriers[0].walker.at != b || world.carriers[0].walker.is_walking() {
+        world.step();
+        steps += 1;
+        assert!(steps < 900, "never back on the flag");
+    }
+    assert!(matches!(
+        world.carriers[0].task,
+        CarrierTask::PutDown { second: false, .. }
+    ));
+    while world.ware(ware).unwrap().location != WareLocation::Flag(b) {
+        world.step();
+        steps += 1;
+        assert!(steps < 1000, "never put down");
+    }
+    assert_eq!(world.ware(ware).unwrap().destination, None);
+    assert_eq!(world.carriers[0].road, road);
+    assert!(!matches!(world.carriers[0].task, CarrierTask::Retired));
+}
+
 /// Flags A, B and a road A-M-B, plus Z beyond A and C beyond B, each on a
 /// road whose carrier never works (wares for them stay where they are).
 fn exchange_world() -> (World, Point, Point, Point, Point) {

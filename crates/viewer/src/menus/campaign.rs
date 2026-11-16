@@ -361,12 +361,29 @@ pub fn book_panel(texts: &Texts, screen: [f32; 2], book: &Book) -> Panel {
             );
         }
         Some(EndScreen::Defeat) => {
+            // CAM-3.6c (T20a): the book's own title, the `!DEFEAT` label at
+            // (260, 90) in `light_system_outlined` (centred on it, as the
+            // title is; the spec gives the point only), and the lost text
+            // in the book's text box.
             centred(
                 &mut p,
-                texts.get("!You have lost the Map!").to_owned(),
+                book_title(texts, &book.title).to_uppercase(),
+                Font::Big,
+                [264.0, 74.0],
+                TITLE,
+            );
+            centred(
+                &mut p,
+                texts.get("!DEFEAT").to_owned(),
                 Font::Outlined,
                 [260.0, 90.0],
                 WHITE,
+            );
+            p.paragraph(
+                texts.get("!You have lost the Map!").to_owned(),
+                Font::Dark,
+                [150.0, 120.0],
+                230.0,
             );
         }
         None => centred(
@@ -418,10 +435,13 @@ pub fn book_panel(texts: &Texts, screen: [f32; 2], book: &Book) -> Panel {
         );
     }
     if book.end.is_some() {
+        // CAM-3.6c: on the defeat screen EXIT MAP is moved to CONTINUE's
+        // place (190, 465); the victory book keeps it at (190, 487).
+        let y = if defeat { 465.0 } else { 487.0 };
         dialog_button(
             &mut p,
             texts.get("!EXIT MAP").to_owned(),
-            [190.0, 487.0],
+            [190.0, y],
             MenuAction::EndExit,
             true,
         );
@@ -439,81 +459,150 @@ fn target_text(value: u8) -> &'static str {
     }
 }
 
-/// CAM-3.6: the end screen: VICTORY or DEFEAT, the target's text, each
-/// player's result, EXIT MAP, Statistics (not there yet) and CONTINUE.
-/// The art and places are stand-ins (Q-187).
-pub fn end_panel(texts: &Texts, screen: [f32; 2], end: EndScreen, world: &World) -> Panel {
-    let size = [506.0, 540.0];
+/// CAM-3.6a (E-cam-012, E-cam-015, T20a): the end screen of a free game:
+/// the book's frame `uiBriefing` (0, 0, 728 x 568), centred; the book's
+/// title (the map's name's text, 1.3c) centred on (374, 74) (the standard
+/// place moved by (+10, +60)); the result `!VICTORY` or `!DEFEAT` on (374,
+/// 110) in `light_system_outlined` and 25 px lower its reason in
+/// `dark_system`; one row per player from (140, 190), 25 px apart: `Player
+/// #n` at x 140 and `!Team n` at 400 (`light_system_outlined`), the name at
+/// 230 (`dark_system`), the player's own result at 500 in (255, 255, 155)
+/// while in the game and (190, 190, 90) once defeated; `!Statistics` (300,
+/// 445), `!EXIT MAP` (300, 467) and `!CONTINUE` (300, 489), CONTINUE
+/// disabled on a defeat (and after a portal victory, CAM-3.5). Centring the
+/// result lines on their points is ours (the spec gives the points only).
+/// The name column (Q-1057, T20b): the human's profile name, every computer
+/// player's the interface text `!AI`; only the game's players have a row
+/// (a closed slot made none), the rows close up and keep their slot's
+/// number.
+/// CAM-3.6a (E-trace-032): an end screen row's label colour, the player's
+/// colour (GFX-OBJ-2.11) as a text colour.
+pub fn label_colour(player: s2_sim::PlayerId) -> [u8; 3] {
+    crate::render::models3d::player_colour(player)
+        .map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8)
+}
+
+pub fn end_panel(
+    texts: &Texts,
+    screen: [f32; 2],
+    end: EndScreen,
+    world: &World,
+    title: &str,
+    player_name: &str,
+) -> Panel {
+    const SIZE: [f32; 2] = [728.0, 568.0];
+    const TITLE: [u8; 3] = [254, 239, 124];
+    const IN_GAME: [u8; 3] = [255, 255, 155];
+    const DEFEATED: [u8; 3] = [190, 190, 90];
     let o = [
-        ((screen[0] - size[0]) / 2.0).floor(),
-        ((screen[1] - size[1]) / 2.0).floor(),
+        ((screen[0] - SIZE[0]) / 2.0).floor(),
+        ((screen[1] - SIZE[1]) / 2.0).floor(),
     ];
     let mut p = Panel::new(PanelId::Book, o);
-    p.widgets.push(Widget::Fill {
-        at: [-o[0], -o[1]],
-        size: screen,
-        rgba: [0.0, 0.0, 0.0, 0.45],
-    });
-    p.sized(Atlas::XxlDialog, [8, 4, 506, 540], [0.0, 0.0], size);
-    let (title, line, picture) = match end {
-        EndScreen::Victory(value) => (
-            "!VICTORY",
-            match value {
-                1 => "!You have destroyed all enemies!",
-                2 => "!You have conquered the map!",
-                3 => "!You have enough Coins in your depots!",
-                _ => "!You have reached the magic gate!",
-            },
-            "ui_briefing_screen_won",
-        ),
+    p.sprite(Atlas::Book, [0, 0, 728, 568], [0.0, 0.0]);
+    let centred = |p: &mut Panel, text: String, font: Font, at: [f32; 2], colour: [u8; 3]| {
+        let line = match font {
+            Font::Heading => 12.0,
+            _ => 16.0,
+        };
+        p.centred_text(text, font, [at[0], at[1] - line / 2.0], colour);
+    };
+    centred(
+        &mut p,
+        book_title(texts, title).to_uppercase(),
+        Font::Big,
+        [374.0, 74.0],
+        TITLE,
+    );
+    let local = world.local_player();
+    let (result, reason) = match end {
+        EndScreen::Victory(value) => ("!VICTORY", target_text(value)),
         EndScreen::Defeat => (
             "!DEFEAT",
-            "!You have lost the Map!",
-            "ui_briefing_screen_lost",
+            match world.outcome(local) {
+                Some(s2_sim::Outcome::Lost {
+                    reason: LossReason::MissionNotCompleted,
+                    ..
+                }) => "!Mission not completed",
+                _ => "!Castle destroyed!",
+            },
         ),
     };
-    p.text(texts.get(title), Font::Big, [200.0, 9.0], WHITE);
-    if let Some(atlas) = widgets::picture(picture) {
-        p.sized(atlas, [0, 0, 512, 512], [125.0, 40.0], [256.0, 256.0]);
-    }
-    p.paragraph(texts.get(line), Font::Outlined, [40.0, 310.0], 426.0);
-    let mut y = 350.0;
-    for (i, outcome) in (0..8u8).filter_map(|i| Some((i, world.outcome(PlayerId(i))?))) {
-        let result = match outcome {
-            s2_sim::Outcome::Won { .. } => "!VICTORY",
-            s2_sim::Outcome::Lost { .. } => "!DEFEAT",
-        };
+    centred(
+        &mut p,
+        texts.get(result).to_owned(),
+        Font::Outlined,
+        [374.0, 110.0],
+        WHITE,
+    );
+    centred(
+        &mut p,
+        texts.get(reason).to_owned(),
+        Font::Dark,
+        [374.0, 135.0],
+        [0, 0, 0],
+    );
+    for (k, &player) in world.players().iter().take(8).enumerate() {
+        let y = 190.0 + 25.0 * k as f32;
+        // E-trace-032 (seen): "Player #n:", with a colon, in the player's
+        // colour.
         p.text(
-            format!("Player {}: {}", i + 1, texts.get(result)),
-            Font::Body,
-            [60.0, y],
-            WHITE,
+            format!("Player #{}:", player.0 + 1),
+            Font::Outlined,
+            [140.0, y],
+            label_colour(player),
         );
-        y += 18.0;
+        let name = if player == local {
+            player_name
+        } else {
+            texts.get("!AI")
+        };
+        p.text(name.to_owned(), Font::Dark, [230.0, y], [0, 0, 0]);
+        if let Some(team) = world.team_of(player) {
+            p.text(
+                texts
+                    .get(&format!("!Team {}", i32::from(team) + 1))
+                    .to_owned(),
+                Font::Outlined,
+                [400.0, y],
+                WHITE,
+            );
+        }
+        let (own, colour) = match world.outcome(player) {
+            Some(s2_sim::Outcome::Won { .. }) => (Some("!VICTORY"), IN_GAME),
+            Some(s2_sim::Outcome::Lost { .. }) => (Some("!DEFEAT"), DEFEATED),
+            None => (None, IN_GAME),
+        };
+        if let Some(own) = own {
+            p.text(
+                texts.get(own).to_owned(),
+                Font::Outlined,
+                [500.0, y],
+                colour,
+            );
+        }
     }
-    // Three 208 px bars do not fit side by side on the 506 px panel: a column
-    // under the players' rows (stand-in, Q-187 f).
-    let x = ((size[0] - crate::ui::widgets::MENU_BAR.size[0]) / 2.0).floor();
-    text_button(
+    dialog_button(
         &mut p,
         texts.get("!EXIT MAP").to_owned(),
-        [x, 420.0],
+        [300.0, 467.0],
         MenuAction::EndExit,
         true,
     );
-    text_button(
+    // No statistics screen of a finished game yet: shown, not usable.
+    dialog_button(
         &mut p,
         texts.get("!Statistics").to_owned(),
-        [x, 456.0],
+        [300.0, 445.0],
         MenuAction::EndExit,
         false,
     );
-    // A portal victory has left the game (CAM-3.5).
-    let continues = end != EndScreen::Victory(4);
-    text_button(
+    // A portal victory has left the game (CAM-3.5); a defeat cannot go on.
+    let continues = !matches!(end, EndScreen::Victory(4) | EndScreen::Defeat);
+    dialog_button(
         &mut p,
         texts.get("!CONTINUE").to_owned(),
-        [x, 492.0],
+        [300.0, 489.0],
         MenuAction::EndContinue,
         continues,
     );
@@ -816,7 +905,10 @@ pub(crate) fn expects(step: u8, action: &Action) -> Option<bool> {
         "CallScholar" => matches!(action, Action::CloseContext | Action::Command(_)),
         "StartAttack" => matches!(action, Action::AttackGo),
         "OpenMilitaryDialog" => matches!(action, Action::Hud(6) | Action::OpenGlobal(_)),
-        "CloseDialog" => matches!(action, Action::CloseContext | Action::CloseGlobal),
+        // CAM-5.3c (E-cam-014): 0x1b closes the economy dialog's military
+        // page; lesson 4's steps close the building, harbour or ship window.
+        "CloseDialog" if name.contains("Misc") => matches!(action, Action::CloseGlobal),
+        "CloseDialog" => matches!(action, Action::CloseContext),
         // CAM-5.3c (E-cam-012): the building window's third button, the
         // shipyard's boat / ship switch.
         "ChangeProduction" => matches!(action, Action::Command(C::ProductionSwitch { .. })),
@@ -853,16 +945,14 @@ pub(crate) fn expected_cell(step: u8) -> Option<usize> {
     })
 }
 
-/// CAM-5.3c (E-cam-011): the error of a click on the wrong control: the
-/// build menu's SelectPage steps (0x15, 0x25, 0x48, 0x4b) show
+/// CAM-5.3c (E-cam-011, E-cam-014): the error of a click on the wrong
+/// control: the page-choice steps (the build menu's 0x15, 0x25, 0x48, 0x4b,
+/// the harbour window's 5, the economy dialog's 0x1a) show
 /// `T01_ERROR_SelectStreetIcon` (the original's own choice of key), every
 /// other step `T01_ERROR_SelectMarkedButton`.
 pub(crate) fn wrong_click_error(step: u8) -> &'static str {
     let name = step_key(step);
-    let build_menu_page = name.ends_with("_SelectPage")
-        && !name.contains("StartExpedition")
-        && !name.contains("Misc");
-    if build_menu_page {
+    if name.ends_with("_SelectPage") {
         "T01_ERROR_SelectStreetIcon"
     } else {
         "T01_ERROR_SelectMarkedButton"
@@ -1194,7 +1284,13 @@ pub(crate) fn expected_widget_corner(panels: &[Panel], step: u8) -> Option<[f32;
 }
 
 /// The mission panels of the frame (book, end screen, tutorial window).
-pub fn panels(mission: &MissionUi, texts: &Texts, screen: [f32; 2], world: &World) -> Vec<Panel> {
+pub fn panels(
+    mission: &MissionUi,
+    texts: &Texts,
+    screen: [f32; 2],
+    world: &World,
+    player_name: &str,
+) -> Vec<Panel> {
     let mut out = Vec::new();
     if let Some(t) = &mission.tutorial {
         out.push(tutorial_panel(texts, screen, t));
@@ -1203,7 +1299,14 @@ pub fn panels(mission: &MissionUi, texts: &Texts, screen: [f32; 2], world: &Worl
     if let Some(book) = mission.book.as_ref().filter(|b| b.end.is_some()) {
         out.push(book_panel(texts, screen, book));
     } else if let Some(end) = mission.end {
-        out.push(end_panel(texts, screen, end, world));
+        out.push(end_panel(
+            texts,
+            screen,
+            end,
+            world,
+            &mission.title,
+            player_name,
+        ));
     } else if let Some(book) = &mission.book {
         out.push(book_panel(texts, screen, book));
     }
@@ -1212,6 +1315,39 @@ pub fn panels(mission: &MissionUi, texts: &Texts, screen: [f32; 2], world: &Worl
 
 #[cfg(test)]
 mod tests {
+
+    // UI-MENU-1.7 (F29): the pointer on mission 1's eagle shows its
+    // `campaign01_dsc` text in the box at the map's lower left, (116, 596)
+    // from the map's corner, 268 wide; nothing without a hovered eagle.
+    // spec: UI-MENU-1.7
+    #[test]
+    fn the_hovered_eagle_shows_its_description() {
+        let texts = Texts::parse("campaign01_dsc\tReach the gate.\n");
+        let mut menu = crate::menus::menu::MenuState::default();
+        let screen = [1024.0, 768.0];
+        let o = origin(screen);
+        let described = |menu: &crate::menus::menu::MenuState| {
+            campaign_menu(menu, &texts, screen)
+                .widgets
+                .iter()
+                .find_map(|w| match w {
+                    Widget::Paragraph {
+                        text, at, width, ..
+                    } => Some((text.clone(), *at, *width)),
+                    _ => None,
+                })
+        };
+        assert_eq!(described(&menu), None);
+        menu.hovered = Some(Action::Menu(MenuAction::StartMission(1)));
+        assert_eq!(
+            described(&menu),
+            Some((
+                "Reach the gate.".to_string(),
+                [o[0] + 116.0, o[1] + 596.0],
+                268.0
+            ))
+        );
+    }
 
     // UI-MENU T16 (1.7): no mission won: one silver eagle, on island I at
     // (278, 112); with mission 1 won, a gold one there and a silver one on

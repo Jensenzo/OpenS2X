@@ -56,6 +56,10 @@ dialog-game-menu | --map-name MP_2P_Storm_Coast --3d --still --open-global game-
 dialog-headquarters | --map-name MP_2P_Storm_Coast --3d --still --open 29,51
 # The headquarters' military page (UI-GAME-4.4, Q-1053).
 dialog-hq-military | --map-name MP_2P_Storm_Coast --3d --still --open 29,51 --open-tab 11
+# The attack menu on the enemy's headquarters (UI-GAME-5.1, MIL-ATK-1.3):
+# at the start no soldier of ours is in reach, so it shows "Cannot attack
+# this building!" in place of the slider, the number and ATTACK.
+dialog-attack | --map-name MP_2P_Storm_Coast --3d --still --open 139,51
 dialog-flag | --map-name MP_2P_Storm_Coast --3d --still --open 30,50
 dialog-barracks | --map-name MP_2P_Storm_Coast --3d --still --scene barracks
 dialog-ship | --map-name MP_2P_Storm_Coast --3d --still --scene ship
@@ -71,6 +75,11 @@ dialog-fleet | --map-name MP_2P_Storm_Coast --3d --still --open-global fleet
 mission-book | --mission campaign01 --3d --still --run 300
 tutorial-explain | --mission tutorial01 --3d --still
 tutorial-action | --mission tutorial01 --tutorial-step 30 --3d --still
+# The end screens (CAM-3.6a): a free game won and lost; and the defeat
+# screen of a campaign mission, made on the book (CAM-3.6c).
+end-victory | --map-name MP_2P_Storm_Coast --3d --still --end-screen victory
+end-defeat | --map-name MP_2P_Storm_Coast --3d --still --end-screen defeat
+mission-defeat | --mission campaign01 --3d --still --end-screen defeat
 # Building windows (UI-GAME-4.1): a workshop, an outdoor worker's hut and a
 # farm built by the headquarters, their windows open.
 dialog-sawmill | --map-name MP_2P_Storm_Coast --3d --still --scene building:Sawmill --until-built 100 --open-building --building-type Sawmill

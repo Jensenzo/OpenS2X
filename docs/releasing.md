@@ -55,7 +55,7 @@ Every release commit has passed, in this order:
   checks) and `scripts/public-check.py .` (nothing that must not be public);
 - the golden state hashes of whole games, on Linux and on the Windows build,
   which must be the same (`scripts/golden.sh`);
-- the golden pictures of 60 scenes, the same to the pixel within a small
+- the golden pictures of 63 scenes, the same to the pixel within a small
   tolerance (`scripts/golden-images.sh`);
 - the play harness, which drives the real Windows program with the mouse and
   the keyboard through the menus, the tutorial and the campaign
@@ -96,6 +96,27 @@ Zlib, ISC and Apache require those notices to go with a binary. The archive
 is made from that fixed list and its listing checked against it, so no game
 file can slip in. The game's films are not in it: the player converts them
 from their own copy ([`docs/video.md`](video.md)).
+
+## The version
+
+The program says which version it is in three places, never on the
+original's menus (they show none):
+
+- the Windows file properties (Explorer's Properties, Details; Task
+  Manager's description): `crates/viewer/build.rs` gives `OpenS2X.exe` and
+  `s2-viewer.exe` a version resource with the workspace's version, made by
+  MinGW's `windres` for the Windows GNU target; `scripts/dist.sh` stops when
+  the download's program lacks it;
+- the first line of the game's log, `log.txt` in the settings folder
+  (`%APPDATA%\s2-reborn`, or `--profile-dir`'s): `OpenS2X 0.11.1`, the
+  same line first on the console; the log holds the console's messages
+  without colour codes and a panic's message, and the game empties it at
+  each start (`s2-viewer` writes none);
+- `OpenS2X.exe --version` (or `-V`) prints the line on the console it was
+  started from and quits; a project's program says `<its title> (OpenS2X
+  0.11.1)`.
+
+A build between releases says the last release's number.
 
 ## The public copy
 

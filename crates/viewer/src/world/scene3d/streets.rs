@@ -176,10 +176,21 @@ pub(crate) fn roads_at_flags(world: &World) -> HashMap<Point, usize> {
 /// curve through its field points, 8 samples a step, one segment short at
 /// an end flag where another road ends too, draped on the terrain.
 /// TRN-ROAD-8.4: the roads being built are drawn as roads too, once they
-/// have two fields. Waterways (6.2a f) keep a straight strip on the water.
+/// have two fields. Waterways (6.2a f, 6.2b) draw no strip, only buoys.
 #[cfg(test)]
 pub fn streets(world: &World, donkey: bool) -> Street {
-    streets_in(world, donkey, None, &road_ends_of(world))
+    streets_in(world, donkey, None, &road_ends_of(world), Paved::Ignored)
+}
+
+/// Hook W21: which roads a strip part takes by their pavement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Paved {
+    /// No paved look: every road by its donkey (the original's pass).
+    Ignored,
+    /// A paved look is set: the paved roads are left to [`PAVED_PART`].
+    Left,
+    /// The paved roads only, whatever their donkey ([`PAVED_PART`]).
+    Only,
 }
 
 /// [`streets`] of the roads whose first field lies in `chunk` (all without),
@@ -189,6 +200,7 @@ pub(crate) fn streets_in(
     donkey: bool,
     chunk: Option<RoadChunk>,
     ends: &RoadEnds,
+    paved: Paved,
 ) -> Street {
     use crate::world::roads::{Curve, Strip};
     use s2_sim::grid::Point as P;
@@ -204,11 +216,17 @@ pub(crate) fn streets_in(
     };
     let roads = world
         .roads()
-        .filter(|r| (r.traffic.donkey_requested && !r.water) == donkey)
+        .filter(|r| match paved {
+            Paved::Ignored => (r.traffic.donkey_requested && !r.water) == donkey,
+            Paved::Left => {
+                (r.traffic.donkey_requested && !r.water) == donkey && !world.is_paved(r.number)
+            }
+            Paved::Only => !r.water && world.is_paved(r.number),
+        })
         .map(|r| (&r.path, r.water));
     let routes = world
         .routes()
-        .filter(|(_, r)| r.fields.len() > 1 && !donkey)
+        .filter(|(_, r)| r.fields.len() > 1 && !donkey && paved != Paved::Only)
         .map(|(_, r)| (&r.fields, r.water));
     let mut land = Strip::default();
     for (path, water) in roads.chain(routes) {
@@ -478,6 +496,23 @@ pub const STREET_PARTS: [(&str, &str); 4] = [
     ("crossing.dds", "crossing_n.dds"),
 ];
 
+/// Hook W21: the street pass's fifth part, the paved roads drawn with a
+/// project's [`crate::extend::StreetLook`] (only while one is set).
+pub const PAVED_PART: u8 = 4;
+
+/// The part of the street pass a land road is drawn in: 0 with a donkey, 1
+/// without (GFX-OBJ-6.2), [`PAVED_PART`] when it is paved and a paved look
+/// is set (hook W21).
+pub fn road_part(donkey: bool, paved: bool, paved_look: bool) -> u8 {
+    if paved && paved_look {
+        PAVED_PART
+    } else if donkey {
+        0
+    } else {
+        1
+    }
+}
+
 /// The square a field's road, flag or building is drawn with.
 pub fn road_chunk(field: Point) -> RoadChunk {
     (field.0 / ROAD_CHUNK_FIELDS, field.1 / ROAD_CHUNK_FIELDS)
@@ -491,24 +526,44 @@ pub fn street_part(
     ends: &RoadEnds,
     part: u8,
     chunk: RoadChunk,
+    paved_look: bool,
 ) -> Street {
+    let paved = if paved_look {
+        Paved::Left
+    } else {
+        Paved::Ignored
+    };
     match part {
-        0 => streets_in(world, true, Some(chunk), ends),
+        0 => streets_in(world, true, Some(chunk), ends, paved),
         1 => {
-            let mut plain = streets_in(world, false, Some(chunk), ends);
+            let mut plain = streets_in(world, false, Some(chunk), ends, paved);
             plain.append(door_strips_in(world, Some(chunk)));
             plain
         }
+        PAVED_PART => streets_in(world, false, Some(chunk), ends, Paved::Only),
         _ => crossings_in(world, frame, moved, part == 3, Some(chunk)),
     }
 }
 
+#[cfg(test)]
 /// Every mesh the street pass has now, with a number for what it shows but for
 /// the ground: the same number means the same strips on the same ground.
 pub fn street_parts(
     world: &World,
     moved: &std::collections::HashSet<Point>,
     road_ends: &RoadEnds,
+) -> std::collections::BTreeMap<(u8, RoadChunk), u64> {
+    street_parts_with(world, moved, road_ends, false)
+}
+
+/// [`street_parts`] with a paved look set or not (hook W21): with one, a
+/// paved road is in [`PAVED_PART`], so a road becoming paved changes the
+/// numbers of both its parts.
+pub fn street_parts_with(
+    world: &World,
+    moved: &std::collections::HashSet<Point>,
+    road_ends: &RoadEnds,
+    paved_look: bool,
 ) -> std::collections::BTreeMap<(u8, RoadChunk), u64> {
     let mut out = std::collections::BTreeMap::new();
     let mut add = |part: u8, at: Point, values: &mut dyn Iterator<Item = u64>| {
@@ -523,7 +578,11 @@ pub fn street_parts(
     let counts = roads_at_flags(world);
     let shared = |p: &Point| u64::from(counts.get(p).copied().unwrap_or(0) >= 2);
     for road in world.roads().filter(|r| !r.water) {
-        let part = if road.traffic.donkey_requested { 0 } else { 1 };
+        let part = road_part(
+            road.traffic.donkey_requested,
+            world.is_paved(road.number),
+            paved_look,
+        );
         let ends = road_ends.get(&road.path).map_or(
             [
                 shared(&road.path[0]),

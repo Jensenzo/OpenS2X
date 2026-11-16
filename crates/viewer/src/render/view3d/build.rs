@@ -35,8 +35,9 @@ pub fn setup_3d(mut commands: Commands, menu: Res<crate::menus::menu::MenuState>
         // The shaders produce the final colours themselves, undithered.
         Tonemapping::None,
         bevy::render::view::DebandDither::Disabled,
-        // GFX-VIEW-2.5c: 2 x 2 percentage-closer filtering.
-        bevy::light::ShadowFilteringMethod::Hardware2x2,
+        // GFX-VIEW-2.5c: 2 x 2 percentage-closer filtering (a project's
+        // filter instead, hook W17).
+        render.shadow_filter.method(),
         RenderLayers::layer(MAP_LAYER),
         Transform::from_xyz(0.0, 50.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
@@ -111,13 +112,17 @@ pub fn drawn_shadow_map(settings: &crate::menus::settings::Settings) -> Option<u
 pub struct GameShadows {
     project: Option<usize>,
     map: Option<usize>,
+    /// Hook W17: a project's factor on the profile's size (`None` is 1).
+    scale: Option<u32>,
 }
 
 impl GameShadows {
     pub fn at_start(settings: &crate::menus::settings::Settings) -> Self {
+        let render = crate::extend::render();
         Self {
-            project: crate::extend::render().shadow_map_size,
+            project: render.shadow_map_size,
             map: game_shadow_map(&settings.cfg.scene),
+            scale: render.shadow_map_scale,
         }
     }
 
@@ -126,9 +131,16 @@ impl GameShadows {
         match self.project {
             Some(0) => None,
             Some(size) => Some(size),
-            None => frame_shadow_map(&settings.cfg.scene, self.map),
+            None => scaled_shadow_map(frame_shadow_map(&settings.cfg.scene, self.map), self.scale),
         }
     }
+}
+
+/// Hook W17: the profile's map size times a project's factor, at most
+/// [`crate::extend::MAX_SHADOW_MAP`]; none stays none (shadows off).
+pub fn scaled_shadow_map(size: Option<usize>, scale: Option<u32>) -> Option<usize> {
+    let factor = scale.unwrap_or(1).max(1) as usize;
+    size.map(|s| (s * factor).min(crate::extend::MAX_SHADOW_MAP.max(s)))
 }
 
 /// SET-4b, GFX-VIEW-2.5 d: the shadow map a game starts with: its size
@@ -749,6 +761,9 @@ pub fn build_scene(
         assets.images.add(image)
     };
     let (wave0, wave1) = (wave(WAVE_MAPS[0]), wave(WAVE_MAPS[1]));
+    // Hook W18: a project's shore foam, none by default.
+    let (foam, foam_reach) =
+        crate::render::view3d::materials::foam_params(crate::extend::render().shore_foam);
     let surface = WaterMaterial {
         params: WaterParams {
             water_color: vec4(WATER_COLOR, 1.0),
@@ -773,6 +788,8 @@ pub fn build_scene(
                 REFLECTION_NOISE[0],
                 REFLECTION_NOISE[1],
             ),
+            foam,
+            foam_reach,
         },
         wave0,
         wave1,

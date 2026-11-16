@@ -251,7 +251,7 @@ fn campaign_state_is_written_and_read_back() {
         ],
     );
     // The file the program wrote: SET-2.2, the map state keyed by its name.
-    let file = folder.join("users").join("default.cfg");
+    let file = folder.join("users").join("default01.cfg");
     let data = std::fs::read(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()));
     assert!(
         data.windows(10).any(|w| w == b"campaign01"),

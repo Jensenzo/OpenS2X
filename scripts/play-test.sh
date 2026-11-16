@@ -2,12 +2,19 @@
 # Run the play harness (crates/viewer/tests/play.rs) from WSL: the Windows
 # build of the viewer is driven in a native window, since a Linux build has
 # no display here. scripts/play-test.sh [cargo test options]
+#
+# The harness writes none of the player's files: a play script without a
+# profile folder of its own holds the settings and the profile file
+# unwritten, the saves go to target/tmp/play/saves (crates/viewer/tests/play.rs);
+# the run fails when the player's settings, profile or save files changed
+# their modified time during it (scripts/player-files-guard.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/recording-guard.sh
 refuse_while_recording
 source scripts/input-guard.sh
 refuse_without_desktop_input
+source scripts/player-files-guard.sh
 : "${S2_GAME_DIR:?set S2_GAME_DIR to the game install}"
 cargo build --release --target x86_64-pc-windows-gnu -p s2-viewer
 source scripts/windows-copy.sh
@@ -32,4 +39,8 @@ fi
 echo "play-test: game data from ${S2_PLAY_GAME_DIR:-$S2_GAME_DIR}"
 # One test at a time: the play scripts move the desktop's real pointer,
 # which must not wander over the colour probe's window while it measures.
-cargo test -p s2-viewer --test play -- --nocapture --test-threads=1 "$@"
+player_files_note
+status=0
+cargo test -p s2-viewer --test play -- --nocapture --test-threads=1 "$@" || status=$?
+player_files_check || status=1
+exit $status

@@ -49,6 +49,7 @@ pub mod paths {
 /// The engine the viewer draws with, for [`Extensions::plugins`].
 pub use bevy;
 pub use extend::{
-    CameraFollow, Captions, Extensions, MapHit, MapThing, MapThings, MusicSlot, RenderOptions,
-    SettingsOptions,
+    ButtonPicture, ButtonPictures, CameraFollow, Captions, EffectRule, Extensions, MapHit,
+    MapThing, MapThings, MusicSlot, ProjectEvent, RenderOptions, SettingsOptions, ShadowFilter,
+    ShoreFoam, StreetLook, MAX_SHADOW_MAP,
 };

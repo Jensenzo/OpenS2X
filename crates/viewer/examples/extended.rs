@@ -18,7 +18,7 @@ use s2_viewer::bevy::prelude::*;
 use s2_viewer::extend::{
     CameraFollow, CurrentSettings, MapThings, MenuEntry, MusicSlot, PageWidget,
 };
-use s2_viewer::{Captions, Extensions, RenderOptions, SettingsOptions};
+use s2_viewer::{Captions, EffectRule, Extensions, ProjectEvent, RenderOptions, SettingsOptions};
 
 /// The woodcutter's hut costs one more stone: an overlay sees the
 /// originals' globals and calls the same `properties` functions (LUA-PROP).
@@ -157,6 +157,13 @@ fn main() -> std::process::ExitCode {
             );
         })),
         map_things: true,
+        // Dust over a site while its builder hammers (the original shows
+        // none there, GFX-OBJ-8.3b; the leveller's StoneDust taken).
+        effects: vec![EffectRule {
+            effect: "data/scripts/effects/StoneDust.pfx".into(),
+            profession: "good_constructor".into(),
+            work_loop: Some(0),
+        }],
         screenshot_dir: Some("screens/extended".into()),
         // Its games apart from OpenS2X's, marked with its name and the
         // overlay above: OpenS2X does not load them, nor this program
@@ -164,6 +171,11 @@ fn main() -> std::process::ExitCode {
         save_dir: s2_viewer::paths::documents()
             .map(|d| d.join("S2").join("extended").join("saves")),
         project_name: Some("extended".into()),
+        // Hook W24: a message when a project's rule finishes (this example
+        // has no deepening or paving overlay, so none comes).
+        messages: vec![(ProjectEvent::RoadPaved, "Road paved".into())],
+        // The hooks' buttons keep the boat-and-ship switch's picture.
+        button_pictures: Default::default(),
     };
     s2_viewer::run_with(true, extensions)
 }

@@ -59,6 +59,23 @@ one of six headings. Build-help icons are billboards over buildable fields.
   point; the picked field is the vertex of that triangle nearest to the hit
   point. No hit (off the map) picks nothing. There is no height sampling in
   steps and no depth read-back. Confidence: high (E-pt2-001).
+  **Which lattice, and the row parity (2026-11-16 day, Q-202 a; E-gfx-074, code reading, high).**
+  - The triangles join **field points**, not the fine samples the terrain is drawn with: each
+    corner is the terrain vertex at the field's own sample (sample column 4x + 2 on odd rows,
+    4x on even rows, sample row 4y), with its drawn height. So the pick surface is the coarse
+    field-point surface; between field points it can lie above or below the drawn fine surface.
+  - **The row parity above is the other way round** (corrected): for an **even** row y the cell's
+    two triangles are (x, y) (x + 1, y) (x, y + 1) and (x + 1, y) (x + 1, y + 1) (x, y + 1); for an
+    **odd** row they are (x, y) (x + 1, y + 1) (x, y + 1) and (x, y) (x + 1, y) (x + 1, y + 1). With
+    the half-field shift of the odd rows (1.1) these are exactly the lattice triangles.
+  - Order: the visible sectors' cell ranges in turn, in each range the rows from top to bottom
+    and in each row the cells from left to right, the first triangle of a cell before the second;
+    the **first** triangle hit ends the search (not the nearest hit).
+  - The picked field is the hit triangle's corner nearest to the hit point (squared distance in
+    world space): the first corner if it is strictly nearer than both others, else the second if
+    it is strictly nearer than both others, else the third.
+  So a program that picks against the drawn fine triangles and then takes the nearest field can
+  pick another field near ridges and slopes.
 
 ### GFX-VIEW-2 Terrain mesh and lighting
 
@@ -844,8 +861,13 @@ one of six headings. Build-help icons are billboards over buildable fields.
   fog of war Off, run with the fixed step to counter 36 999 and read there while paused, has the
   generator state 272511491 and the next object number 93877, where the recording with fog of war
   On (E-trace-014) has 33210560 and 93959 at the same counter. So the setting reaches the
-  simulation somewhere between counters 11 099 (T29, still equal) and 36 999; where is open (a
-  computer player that reads the local player's exploration, for one). Pictures of the original
+  simulation somewhere between counters 11 099 (T29, still equal) and 36 999. **How (2026-11-16
+  night, Q-1049; E-eco-046, code reading):** the option is read only at the game's start, where
+  Off explores the whole map for every player, the computer players included
+  (`ECO-warehouse-construction.md` ECO-HQ-3.6). So it is not a drawing switch: the lit map is the
+  explored map, and every simulation rule that tests exploration (the computer players' attack
+  candidates, the hunters' animal test, the scout) then sees every field explored. The first
+  counter at which the two recorded games part, and by which of these rules, was not measured. Pictures of the original
   taken with fog of war Off stand for the recorded game only up to counter 11 099 (the
   look comparison's `weakfogoff` pairs at 1500, 6000, 11000 are safe).
   **Where it acts on the ground (2026-11-08 b, E-gfx-041):** the
@@ -1176,6 +1198,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-gfx-011 | code reading | | building heading, matrix, height, sink, rising-wall plane |
 | E-gfx-011 | code reading | | daytime to shader constants: shadow factor 1 - k x intensity, luminance alphas |
 | E-gfx-011 | code reading | | shadow renderer (frustum fit, ortho / LiSPSM), debug toggles, -postFX switch |
+| E-gfx-074 | code reading | (session 2026-11-16 day) | 1.5: the field pick's triangles over the field points, their row parity, order and nearest-corner rule (Q-202 a) |
 | data | shaders | `shadow.fx`, `skin_color_mesh.fx`, `postprocess.fx`, `house_decal.fx` | casters, settler luminance light, post effects, decal states |
 | E-pt2-001 | code reading | | build-help quad, picking, decal, sky dome states, jump to field |
 | data | shaders | `water_shader.fx` lines 6-10 (address modes), passes RenderMapBorder*, `shared.inc` | skirt sampling clamp, fog settings unused |

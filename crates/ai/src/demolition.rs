@@ -76,6 +76,40 @@ impl AiPlayer {
                 return;
             }
         }
+        // Hook W25 (reborn.ai_setDeepen): an exhausted mine of a type with
+        // a deepening is deepened, or kept for one, instead (none in the
+        // original's rules: torn down as below).
+        if let Some(deepening) = world.deepening(rec.building_type) {
+            let done = world.mine_deepening(rec.at);
+            let other_under_way = self
+                .records
+                .values()
+                .any(|r| r.at != rec.at && world.mine_deepening(r.at).is_some_and(|d| d.under_way));
+            let n = &cfg.names;
+            let food = [n.fish, n.flesh, n.bread]
+                .iter()
+                .map(|&g| self.econ.stock(g))
+                .sum();
+            let fate = crate::project::mine_fate(
+                cfg.project_rules.deepen_food,
+                done.map_or(0, |d| d.done) < deepening.most,
+                done.is_some_and(|d| d.under_way),
+                food,
+                other_under_way,
+                world.can_deepen(self.id, rec.at),
+            );
+            match fate {
+                crate::project::MineFate::TearDown => {}
+                crate::project::MineFate::Keep => return,
+                crate::project::MineFate::Deepen => {
+                    ctx.out.push(Command::DeepenMine {
+                        player: self.id,
+                        at: rec.at,
+                    });
+                    return;
+                }
+            }
+        }
         // AI-CON-9.3: torn down with remains (T41).
         ctx.out.push(Command::TearDown {
             player: self.id,

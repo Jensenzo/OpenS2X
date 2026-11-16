@@ -507,6 +507,18 @@ TRN-MOVE-1 and 2.
   arrival on the flag's point. Nothing is cut and no fine walk is added. Confidence:
   high for this case (measured, T33); medium that any other walk under way (such as the
   walk to the site) is likewise finished first (added 2026-10-27 night).
+  **On the approach's back leg (2026-11-16 day; E-trn-037, code reading and the R6 recording,
+  high; T47).** When the site is removed while he walks the approach's **back leg** (the walk
+  from the far point back to the flag field's point), that walk already ends on the flag's
+  point, so going home's own fine walk (6.4a (a)) has **nothing left to walk**: he arrives in A,
+  stands in A and A + 1, and his walk home starts at progress 0 in **A + 2** (6.4a: "(c) in the
+  tick after (b), (b) in the tick after (a) when it had nothing to walk"), one tick later than
+  after the out leg (T33), where the walk back is going home's own walk and the home search
+  follows in A + 1. The same holds for any walk under way at the removal that already ends on
+  the point going home walks to. Measured: all 17 removed sites' builders of the R6 recording
+  that reached the flag's point: the 5 whose walk under way already ended there started home
+  in A + 2, the 12 who needed a new walk to the point in A + 1, whether or not the flag still
+  stood.
   **A builder in a work step's walk** (`ECO-warehouse-construction.md` ECO-HQ-4.6b
   step 4, the lattice walk from one construction position to the next, TRN-FREE-5.5)
   when the site is removed (2026-10-27 b, measured T34; route corrected 2026-10-28,
@@ -679,6 +691,7 @@ produce over all six starting draws (TRN-FREE-3.2a).
 | T45 | 6.3a: a guard house that wants 1 soldier; its soldier's road walk ends short at a flag 3 fields from it, so he goes home (6.3); no other soldier is linked or requested | the allocation passes while he walks home, then his arrival | no soldier request while he walks (wanted 1 - linked 1 - open requests 0 = 0); he is taken into the warehouse's stock and unlinked in the tick after his walk home ends; the first allocation pass after that files one soldier request |
 | T46 | 6.3a: a site with work left whose builder's road walk ends short (he goes home); his walk home ends in tick T at a warehouse | the site's builder request | none while he walks home; he is taken into the stock and unlinked in tick T + 1 (settlers' update); the site files a new builder request in tick T + 2 (its building update) |
 | T46a | 6.3a Worker (Q-1056): a woodcutter's hut finished in tick F (its worker timer fires in F + 101, F + 202, ...); the first request's woodcutter is sent at F + 101, his road walk ends short and he goes home; his walk home ends in tick T at a warehouse, with F + 303 < T + 1 < F + 404 | the hut's worker requests | no request at F + 202 or F + 303 (he is linked and counted); he is taken into the stock and unlinked in T + 1; the next request is filed at F + 404 (the timer's next firing), not at T + 2; had T + 1 been F + 404 itself, the firing then would still count him and the request would wait until F + 505 |
+| T47 | 6.4b, the approach's back leg: E-trace-019 (R6, MP_4P_Fight, three Hard computer players), player 3's hunter's hut site on (33, 22) (flag (33, 21), flag point sample (134, 84)) removed after counter 8306 while its builder walks the back leg from (135, 87) (at counter 8306 on (135, 87), progress 0.18) | his rows (counters; trace ticks = counter + 1) | no new walk: on (134, 85) -> (134, 84) at 0.97 in 8337; on the point (A) in 8338; standing 8338 and 8339; walk home (free walk, first step to (33, 20), its 2 read-out draws) at progress 0 in 8340, 0.045 in 8341. The other back-leg cases of the recording: counters 8416 -> 8418, 9320 -> 9322, 13460 -> 13462, 15388 -> 15390; out-leg or work-walk cases (a new walk after the removal): 9459 -> 9460, 10874 -> 10875, 12749 -> 12750 among 12. A build starting home in A + 1 here differs from the fight game's generator at trace tick 8340; with the rule at 8456 (experiment build; every MP_2P_Storm_Coast pair unchanged) |
 
 ## Evidence
 
@@ -714,6 +727,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-trn-033 | code reading | | 6.3a: the soldier's, builder's and leveller's removal and its unlink, the military allocation's count, the site's builder and leveller checks (T45, T46) |
 | E-trn-034 | code reading | (session 2026-11-15 night) | 6.3: every work routine's arrival check (the worker on the building's field, else home); Q-272 |
 | E-trn-035 | code reading | (session 2026-11-15 day) | 6.3a Worker: the worker's link is dropped only by his object's removal or the building's; going home leaves it; the worker request counts linked workers |
+| E-trn-037 | code reading and recording | going home's update (wait for the step's end, its fine walk to the target's point, finish, search); E-trace-019's 17 removed-site builders | 6.4b back leg, T47 |
 | E-trace-011 | recording | `settlers.csv.gz` and `buildings.csv.gz` (builder 91177, counters 11043 .. 11116; site 91151 gone after 11063) | 6.4b, the approach walk (T33) |
 
 ## Open questions

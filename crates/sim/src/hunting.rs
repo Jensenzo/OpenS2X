@@ -783,6 +783,8 @@ impl World {
     /// ECO-PROD-3.3, 4.5: take one unit from the resource on `field`; a
     /// field that reaches 0 loses its good.
     pub(crate) fn take_unit(&mut self, field: Point) {
+        // W15: a game with deepenings keeps the field's first resource.
+        self.keep_first_resource(field);
         let index = self.terrain.index(field);
         let Some(resource) = self.resources.get(index).copied().flatten() else {
             return;

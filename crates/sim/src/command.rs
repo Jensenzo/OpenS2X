@@ -275,6 +275,25 @@ pub enum Command {
         wares: Vec<(u32, u32)>,
         workers: bool,
     },
+    /// Hook W20 (a project's, not the original's): the finished building on
+    /// `at` works recipe `index` of its type's set (`Rules::recipe_sets`,
+    /// `docs/extending.md` "Recipes a player chooses"); the open orders of
+    /// goods the new recipe does not take are withdrawn.
+    ChooseRecipe {
+        player: PlayerId,
+        at: Point,
+        index: u32,
+    },
+    /// Hook W15 (a project's, not the original's): deepen the player's
+    /// exhausted mine on `at` (`Rules::deepenings`, `docs/extending.md`
+    /// "Deepening a mine"): its material is ordered and a builder works it
+    /// as an upgrade's construction; at its end part of the ore comes back.
+    DeepenMine { player: PlayerId, at: Point },
+    /// Hook W19 (a project's, not the original's): pave the player's road
+    /// through the inner field `at` (`Rules::paving`, `docs/extending.md`
+    /// "Paved roads"): its material is sent from the warehouses to the
+    /// road's first flag; once it has all arrived the road is paved.
+    PaveRoad { player: PlayerId, at: Point },
 }
 
 /// Why a command was not carried out. Each names the rule it failed.
@@ -362,6 +381,16 @@ pub enum Rejection {
     BuildingLocked,
     /// CAM-1.4: no trigger has that name.
     NoSuchTrigger,
+    /// Hook W20: the building's type has no recipe of that index.
+    NotARecipe,
+    /// Hook W15: not a mine of a type with a deepening, not exhausted, at
+    /// its most deepenings, or one under way.
+    NotDeepenable,
+    /// Hook W19: no paving rule, a waterway, or paved or being paved.
+    NotPavable,
+    /// ECO-PLACE-6.2: a military type within 4 fields of a military
+    /// building or site ("Too close to other military buildings").
+    TooCloseToMilitary,
 }
 
 impl std::fmt::Display for Rejection {
@@ -392,6 +421,9 @@ impl std::fmt::Display for Rejection {
             Self::NotCoast => "a waterway starts at a flag on the coast",
             Self::WaterwayTooLong => "a waterway is at most 6 steps long",
             Self::PlannedRoadTooLong => "longer than 2 x the distance of its ends (AI-CON-8.1 b)",
+            Self::NotARecipe => "the building's type has no such recipe (a project's hook W20)",
+            Self::NotDeepenable => "the mine cannot be deepened now (a project's hook W15)",
+            Self::NotPavable => "the road cannot be paved (a project's hook W19)",
             Self::RouteExists => "a road is already being built",
             Self::NotAHarbour => "there is no finished harbour of yours there",
             Self::NoSuchShip => "you have no such ship",
@@ -411,6 +443,7 @@ impl std::fmt::Display for Rejection {
             Self::WareNotNeeded => "the site does not need that (ECO-HQ-4.1)",
             Self::BuildingLocked => "locked in this mission (CAM-1.3)",
             Self::NoSuchTrigger => "no trigger of that name (CAM-1.4)",
+            Self::TooCloseToMilitary => "too close to other military buildings (ECO-PLACE-6.2)",
         })
     }
 }

@@ -159,6 +159,10 @@ pub struct Message {
     /// message came (its name follows the text: "Building constructed
     /// (Woodcutter's Hut)").
     pub building: Option<u32>,
+    /// UI-GAME-11.1, 4.5 c: the ship the message names (its index in the
+    /// world's ship list), whose name follows the text ("Ship is awaiting
+    /// orders (Aurora)", E-trace-030).
+    pub ship: Option<u32>,
 }
 
 /// UI-GAME-11.2: a message's timer starts at 600 timer units and each tick
@@ -205,8 +209,30 @@ impl World {
                 text,
                 until: now + MESSAGE_TICKS,
                 building,
+                ship: None,
             }),
         }
+    }
+
+    /// UI-GAME-11.1, 4.5 c: a message naming ship `ship` (its name follows
+    /// the text in the row).
+    pub(crate) fn ship_message(
+        &mut self,
+        player: PlayerId,
+        at: Point,
+        text: &'static str,
+        ship: usize,
+    ) {
+        let now = self.tick;
+        self.messages.push(Message {
+            tick: now,
+            player,
+            at,
+            text,
+            until: now + MESSAGE_TICKS,
+            building: self.building_at(at).map(|b| b.building_type),
+            ship: u32::try_from(ship).ok(),
+        });
     }
 
     /// The building `target` names, if it still stands.
@@ -240,6 +266,22 @@ impl World {
             self.used(good, 1);
             return;
         }
+        // W16: a member delivered for a recipe group's order counts as the
+        // group in the building's stock.
+        let good = match served {
+            Some(o)
+                if o.good != good
+                    && self
+                        .recipe_groups
+                        .get(&o.good)
+                        .is_some_and(|m| m.contains(&good)) =>
+            {
+                self.used(good, 1);
+                self.made(Some(o.good), 1);
+                o.good
+            }
+            _ => good,
+        };
         // ECO-REQ-5.3f (T20): the served order is open again, last among
         // the open orders with the stamp it was chosen with; then the
         // building drops its open order of the good that was made first
@@ -270,6 +312,25 @@ impl World {
         } else {
             self.receive_input(target.at, good);
         }
+    }
+
+    /// W16: the member of the recipe group `group` the warehouse on `at`
+    /// hands out to its order: the first in good order it holds of which
+    /// the player has more than it keeps back across its warehouses.
+    pub(crate) fn group_member_at(&self, player: PlayerId, at: Point, group: u32) -> Option<u32> {
+        let members = self.recipe_groups.get(&group)?;
+        let warehouse = self.warehouses.get(&at)?;
+        members.iter().copied().find(|&m| {
+            warehouse.count(m) > 0 && {
+                let total: u32 = self
+                    .warehouses_of(player)
+                    .iter()
+                    .filter_map(|w| self.warehouses.get(w))
+                    .map(|w| w.count(m))
+                    .sum();
+                total > self.recipe_keep.get(&m).copied().unwrap_or(0)
+            }
+        })
     }
 
     /// The player's finished warehouses in order of creation.
@@ -335,7 +396,7 @@ impl World {
     /// (TRN-CARRY-5.3a), the first in the player's list on a tie; with
     /// waterways it must also be reachable over land (as
     /// [`World::nearest_warehouse`]).
-    fn stocked_warehouse(
+    pub(crate) fn stocked_warehouse(
         &mut self,
         player: PlayerId,
         candidates: Vec<Point>,
@@ -351,7 +412,14 @@ impl World {
         let mut best: Option<(Point, u32)> = None;
         for at in candidates {
             let warehouse_flag = self.flag_of(at);
-            if self.warehouses[&at].count(good) == 0 || network.from(warehouse_flag).is_none() {
+            // W16: a recipe group's order is served by a member the
+            // warehouse holds above the player's kept stock.
+            let has = if self.recipe_groups.contains_key(&good) {
+                self.group_member_at(player, at, good).is_some()
+            } else {
+                self.warehouses[&at].count(good) > 0
+            };
+            if !has || network.from(warehouse_flag).is_none() {
                 continue;
             }
             let Some(cost) = self.stored_ware_cost(player, destination, warehouse_flag) else {
@@ -532,6 +600,8 @@ impl World {
     pub(crate) fn update_roads(&mut self) {
         self.remove_lost_flags();
         self.update_traffic();
+        // W19: a project's pavements under way send their material.
+        self.update_pavings();
         for id in 0..self.roads.len() {
             let Some(road) = self.roads[id].as_ref() else {
                 continue;
@@ -1283,7 +1353,14 @@ impl World {
     /// ECO-REQ-5.3 (b): the warehouse on `h`, able to send (`can_send`),
     /// sends one of the order's good to its building, whose flag is `flag`.
     fn send_from(&mut self, h: Point, order: Order, flag: Point) {
-        let good = order.good;
+        // W16: for a recipe group's order H hands out the member chosen by
+        // `group_member_at`; the order keeps the group.
+        let good = if self.recipe_groups.contains_key(&order.good) {
+            self.group_member_at(order.player, h, order.good)
+                .expect("checked by stocked_warehouse")
+        } else {
+            order.good
+        };
         let helper = self.roles.helper.expect("checked by can_send");
         let warehouse = self.warehouses.get_mut(&h).expect("a warehouse");
         warehouse.take(good);

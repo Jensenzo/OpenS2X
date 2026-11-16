@@ -436,9 +436,6 @@ pub(crate) fn load_map(
     // UI-SETUP-2: a free game started from the menu has the players and
     // tribes of its slots and computer players by their strength.
     let setup_players = viewer.setup.take();
-    // GFX-VIEW-5.3: fog of war Off is the free game setup's; a mission, a
-    // map or a save opens with it on.
-    viewer.fog_off = super::opens_fog_off(setup_players.is_some(), viewer.start_fog_off);
     // FMT-S2M-2.6, CAM-4.3a: the players' colours: a campaign map's records also
     // for a save of a mission (nothing else keeps them), else their own numbers.
     let kind = s2_rules::mission::map_kind(&path);
@@ -479,8 +476,12 @@ pub(crate) fn load_map(
         None => viewer.rules.as_ref().map(|rules| match &setup_players {
             Some(players) => rules.sim_rules().map(|sim| {
                 // UI-SETUP-2.1: each player on its slot's start position.
-                let setup =
+                let mut setup =
                     s2_rules::setup_of_players(&map, rules, viewer.start_resources, players);
+                // ECO-HQ-3.6, GFX-VIEW-5.3: fog of war Off explores the whole
+                // map for every player at the start; the drawing follows
+                // the explored fields.
+                setup.fog_of_war_off = viewer.start_fog_off;
                 World::new_game(s2_sim::rng::SIM_SEED as u64, map.terrain(), sim, &setup)
             }),
             None => match &save {
@@ -614,6 +615,21 @@ pub(crate) fn load_map(
     mission.title = map.info.name.clone();
     if let (Some(t), Some(step)) = (mission.tutorial.as_mut(), viewer.tutorial_step) {
         t.step = step;
+    }
+    // `--end-screen` (screenshots): the end as the mission's own events
+    // would bring it (CAM-3.6).
+    if let Some(end) = viewer.end_screen {
+        let player = crate::game::PLAYER;
+        let event = match end {
+            crate::menus::campaign::EndScreen::Victory(value) => {
+                s2_sim::mission::MissionEvent::Completed { value }
+            }
+            crate::menus::campaign::EndScreen::Defeat => s2_sim::mission::MissionEvent::Lost {
+                player,
+                reason: s2_sim::mission::LossReason::CastleDestroyed,
+            },
+        };
+        mission.results(&[event], player);
     }
     script.0 = None;
     // A save of ours: the mission is the world's; the interface's part
@@ -778,7 +794,7 @@ pub(crate) fn load_map(
     viewer.setup_terrain = Some(world.terrain().clone());
     let mut ahead = plays_ahead.then(|| {
         let aspect = window.width() / window.height().max(1.0);
-        let all_explored = !super::fog_drawn(real_game, viewer.no_fog, viewer.fog_off);
+        let all_explored = !super::fog_drawn(real_game, viewer.no_fog);
         let mut ahead = crate::render::view3d::PlayAhead::new(&world, aspect, all_explored);
         ahead.frame(&world);
         ahead

@@ -567,6 +567,127 @@ fn t46_a_short_walked_builder_stays_the_sites_until_he_goes() {
     assert!(asks(&world));
 }
 
+// TRN-FREE-6.3 (corrected 2026-11-15 night, Q-272), TRN-FREE-6.5 e: the
+// woodcutter walks to his hut over A -> B -> D; the road B-D is removed
+// while he walks A -> B and no other way leads on, so his walk ends on B.
+// It is not retried, and his work routine does not start there: not
+// standing on his building's field, he goes home at once, over the roads
+// from B to the headquarters (6.4).
+// spec: TRN-FREE-6.3, TRN-FREE-6.5
+#[test]
+fn a_worker_whose_walk_ended_short_goes_home_at_once() {
+    let (mut world, _) = finished_hut(&full_stock());
+    let (b, hut_flag) = ((13, 9), (16, 11));
+    apply_all(&mut world, vec![flag_cmd(b)]);
+    apply_all(
+        &mut world,
+        vec![road_cmd(HQ_FLAG, b), road_cmd(b, hut_flag)],
+    );
+    let bd = world
+        .roads()
+        .find(|r| r.path.contains(&b) && r.path.contains(&hut_flag))
+        .unwrap()
+        .path
+        .clone();
+    let woodcutter = |w: &World| {
+        w.settlers()
+            .find(|(_, s)| s.profession == WOODCUTTER)
+            .map(|(_, s)| s.clone())
+    };
+    run_until(&mut world, 1000, |w| {
+        woodcutter(w).is_some_and(|s| {
+            matches!(s.job, SettlerJob::ToBuilding { .. })
+                && s.walker.at == HQ_FLAG
+                && s.walker.next.is_some()
+        })
+    });
+    apply_all(
+        &mut world,
+        vec![Command::RemoveRoad {
+            player: P0,
+            at: bd[1],
+        }],
+    );
+    run_until(&mut world, 200, |w| {
+        woodcutter(w).is_some_and(|s| !matches!(s.job, SettlerJob::ToBuilding { .. }))
+    });
+    let s = woodcutter(&world).unwrap();
+    assert_eq!(s.walker.at, b);
+    assert!(matches!(s.job, SettlerJob::Home { .. }), "{:?}", s.job);
+    assert_eq!(s.walker.road_to, Some(HQ_FLAG));
+    // He reaches the headquarters and is taken into its stock.
+    let before = count(&world, WOODCUTTER);
+    run_until(&mut world, 400, |w| woodcutter(w).is_none());
+    assert_eq!(count(&world, WOODCUTTER), before + 1);
+}
+
+// TRN-FREE-6.3a Worker (T46a, Q-1056): the woodcutter of the test above
+// stays the hut's worker while he walks home: its 101-tick timer (firing in
+// F + 101, F + 202, ...) files no request. He is taken into the stock and
+// unlinked in tick G; the next request is filed at the timer's first firing
+// after G, not at once (a firing in G itself would still count him).
+// spec: TRN-FREE-6.3a (T46a), ECO-REQ-1.4
+#[test]
+fn t46a_a_short_walked_worker_stays_the_buildings_until_he_goes() {
+    let (mut world, finished) = finished_hut(&full_stock());
+    let hut = (16, 12);
+    let (b, hut_flag) = ((13, 9), (16, 11));
+    apply_all(&mut world, vec![flag_cmd(b)]);
+    apply_all(
+        &mut world,
+        vec![road_cmd(HQ_FLAG, b), road_cmd(b, hut_flag)],
+    );
+    let bd = world
+        .roads()
+        .find(|r| r.path.contains(&b) && r.path.contains(&hut_flag))
+        .unwrap()
+        .path
+        .clone();
+    let woodcutter = |w: &World| {
+        w.settlers()
+            .find(|(_, s)| s.profession == WOODCUTTER)
+            .map(|(_, s)| s.clone())
+    };
+    run_until(&mut world, 1000, |w| {
+        woodcutter(w).is_some_and(|s| s.walker.at == HQ_FLAG && s.walker.next.is_some())
+    });
+    apply_all(
+        &mut world,
+        vec![Command::RemoveRoad {
+            player: P0,
+            at: bd[1],
+        }],
+    );
+    let target = world.target_of(hut).unwrap();
+    let asks = |w: &World| {
+        w.queue
+            .iter()
+            .any(|r| r.requester == Requester::Building(target))
+    };
+    // While he walks home: still the hut's worker, nobody asked for.
+    let mut gone_in = None;
+    for _ in 0..600 {
+        world.step();
+        if woodcutter(&world).is_none() {
+            gone_in = Some(world.tick() - 1);
+            break;
+        }
+        assert!(!asks(&world), "asked in tick {}", world.tick() - 1);
+        assert_eq!(world.building_at(hut).unwrap().workers, 1);
+    }
+    let g = gone_in.expect("he got home");
+    assert_eq!(world.building_at(hut).unwrap().workers, 0);
+    // The timer's first firing after G.
+    let next = finished + 101 * ((g - finished) / 101 + 1);
+    while world.tick() < next {
+        assert!(!asks(&world), "asked in tick {}", world.tick() - 1);
+        world.step();
+    }
+    assert_eq!(world.tick() - 1, next - 1);
+    world.step();
+    assert!(asks(&world), "no request at the firing {next}");
+}
+
 // TRN-CARRY-3.3a: into a warehouse the carrier walks on to its door field,
 // stands there with the ware only in the arrival tick A, and in A + 1 the
 // warehouse has the ware and the walk back over its field to the flag
@@ -1502,6 +1623,59 @@ fn t33_the_approach_walk_is_walked_to_its_end() {
         (i64::from(c) * 1000, i64::from(r) * 1000),
         "on his way home"
     );
+}
+
+// TRN-FREE-6.4b (TRN-FREE T47): a site removed while its builder walks the
+// approach's back leg: that walk already ends on the flag's point, so going
+// home has nothing left to walk there; he arrives in A, stands in A and
+// A + 1, and his walk home starts at progress 0 in A + 2 (one tick later
+// than after the out leg, T33).
+// spec: TRN-FREE-6.4b (TRN-FREE T47), TRN-FREE-6.4a
+#[test]
+fn t47_on_the_back_leg_the_walk_home_starts_a_tick_later() {
+    let mut world = game(&without(&full_stock(), PLANK));
+    let hut = (16, 12);
+    apply_all(&mut world, vec![place(HUT, hut)]);
+    apply_all(&mut world, vec![road_cmd(HQ_FLAG, (16, 11))]);
+    run_until(&mut world, 3000, |w| {
+        w.approach_left(hut)
+            .is_some_and(|a| a.clock == a.out_ticks + 1 && a.back_ticks > 2)
+    });
+    apply_all(
+        &mut world,
+        vec![Command::RemoveBuilding {
+            player: P0,
+            at: hut,
+        }],
+    );
+    let home = |world: &World| {
+        world
+            .trace_settlers()
+            .into_iter()
+            .find(|r| r.job == "Home")
+            .map(|r| r.fine)
+            .unwrap()
+    };
+    let flag = world.terrain().neighbour(hut, 1).unwrap();
+    let (c, r) = crate::grid::field_sample(flag);
+    let point = (i64::from(c) * 1000, i64::from(r) * 1000);
+    let mut arrived = None;
+    for _ in 0..40 {
+        if home(&world) == point {
+            arrived = Some(world.tick());
+            break;
+        }
+        world.step();
+    }
+    let a = arrived.expect("back on the flag's point");
+    // A and A + 1 standing, A + 2 the walk home at progress 0, A + 3 off it.
+    world.step();
+    assert_eq!(home(&world), point, "A + 1, tick {}", world.tick());
+    world.step();
+    assert_eq!(home(&world), point, "A + 2: progress 0");
+    world.step();
+    assert_ne!(home(&world), point, "A + 3: on his way home");
+    assert_eq!(world.tick(), a + 3);
 }
 
 // TRN-CARRY-5.4 (TRN-CARRY T30): a ware's next flag is found as a walk's
@@ -2627,4 +2801,171 @@ fn t36_going_home_off_a_flag_counts_the_first_leg() {
         panic!("not going home: {:?}", settler.job);
     };
     assert_eq!(target.at, depot);
+}
+
+// Hook W16 (docs/extending.md "A group good in a recipe"): a hut whose
+// recipe takes 2 of the group TOOLS (members AXE, HAMMER) orders the group;
+// the headquarters holds 3 axes and 1 hammer and the player keeps 2 of each
+// back, so exactly one axe is handed out (3 > 2), then none (2 axes and 1
+// hammer are kept); the axe arrives and counts as the group in the hut.
+// The original's rules have no groups (the hashes stay).
+// spec: none (hook W16; the serving is ECO-REQ-5.3's, the orders ECO-PROD-6.1's)
+#[test]
+fn a_recipe_group_is_served_by_a_member_above_the_kept_stock() {
+    const TOOLS: u32 = 50;
+    let stock: Vec<(u32, u32)> = full_stock()
+        .into_iter()
+        .map(|(g, n)| if g == HAMMER { (g, 1) } else { (g, n) })
+        .collect();
+    let mut rules = rules(&stock);
+    let hut = rules
+        .building_types
+        .iter_mut()
+        .find(|t| t.id == HUT)
+        .unwrap();
+    hut.stock_limit = Some(4);
+    hut.product = Some(PLANK);
+    hut.cycle = crate::production::WorkCycle::Workshop;
+    rules.recipe_sets.insert(
+        HUT,
+        vec![crate::Recipe {
+            product: PLANK,
+            inputs: vec![(TOOLS, 2)],
+        }],
+    );
+    rules.recipe_groups.insert(TOOLS, vec![AXE, HAMMER]);
+    rules.recipe_keep.insert(AXE, 2);
+    rules.recipe_keep.insert(HAMMER, 2);
+    let setup = GameSetup {
+        players: vec![(P0, HQ)],
+        start_resources: 0,
+        local_player: P0,
+        ..Default::default()
+    };
+    let mut world = World::new_game(9, flat(40, 40), rules, &setup);
+    let hut = (16, 12);
+    apply_all(&mut world, vec![road_cmd_after_flag(), place(HUT, hut)]);
+    apply_all(
+        &mut world,
+        vec![Command::DebugSupplySite {
+            player: P0,
+            at: hut,
+            wares: vec![(PLANK, 2)],
+            workers: true,
+        }],
+    );
+    run_until(&mut world, 2000, |w| w.site(hut).is_none());
+    connect_hut(&mut world);
+    world.orders.retain(|o| o.target.at != hut);
+    world.file_input_orders(hut);
+    assert_eq!(world.open_orders(hut, TOOLS), 4);
+    let axes = count(&world, AXE);
+    assert_eq!((axes, count(&world, HAMMER)), (3, 1));
+    run_until(&mut world, 3000, |w| {
+        w.inputs(hut).iter().any(|&(g, n)| g == TOOLS && n == 1)
+    });
+    for _ in 0..600 {
+        world.step();
+    }
+    assert_eq!(count(&world, AXE), 2);
+    assert_eq!(count(&world, HAMMER), 1);
+    assert_eq!(world.inputs(hut), &[(TOOLS, 1)]);
+    assert_eq!(world.open_orders(hut, TOOLS), 3);
+    assert!(!world
+        .wares()
+        .any(|(_, w)| w.good == AXE || w.good == HAMMER));
+    assert!(format!("{world:?}").contains("recipe_groups"));
+    assert!(!format!("{:?}", game(&full_stock())).contains("recipe_groups"));
+}
+
+// Hook W19 (docs/extending.md "Paved roads"): with the rule (stone, 1 per
+// field, 130 %) a road A-B of the headquarters' flag is ordered paved: as
+// many stone as the road has fields leave the headquarters' stock, are
+// carried to A and laid there; then the road is paved and its carrier walks
+// its steps at 1.3 times the speed (the rate of a step between two of its
+// fields), every other road as before. A waterway, a paved road and a road
+// without the rule are refused; the snapshot keeps the pavement. The
+// original's rules have no paving (the hashes stay).
+// spec: none (hook W19; the transport is TRN-CARRY's, the step rate TRN-MOVE-1.2's)
+#[test]
+fn a_paved_road_costs_its_stone_and_is_walked_faster() {
+    let mut rules = rules(&full_stock());
+    rules.paving = Some(crate::PavingRule {
+        good: STONE,
+        per_field: 1,
+        speed_percent: 130,
+    });
+    let setup = GameSetup {
+        players: vec![(P0, HQ)],
+        start_resources: 0,
+        local_player: P0,
+        ..Default::default()
+    };
+    let mut world = World::new_game(9, flat(40, 40), rules, &setup);
+    // HQ's flag - B, and the road to pave B - C (its stone walks to B).
+    let (b, c) = ((13, 9), (16, 9));
+    apply_all(&mut world, vec![flag_cmd(b), flag_cmd(c)]);
+    apply_all(&mut world, vec![road_cmd(HQ_FLAG, b), road_cmd(b, c)]);
+    let road = world.roads().find(|r| r.path.contains(&c)).unwrap().clone();
+    assert_eq!(road.path[0], b);
+    let inner = road.path[1];
+    let fields = road.path.len() as u32;
+    let stone = count(&world, STONE);
+    let pave = Command::PaveRoad {
+        player: P0,
+        at: inner,
+    };
+    assert!(world.can_pave(P0, inner));
+    assert_eq!(apply(&mut world, pave.clone()), Ok(()));
+    // The first ware leaves in the command's own tick (the roads' part).
+    assert_eq!(
+        world.paving_work(road.number),
+        Some(crate::PavingWork {
+            needed: fields,
+            sent: 1,
+            laid: 0
+        })
+    );
+    assert_eq!(
+        apply(&mut world, pave.clone()),
+        Err(crate::Rejection::NotPavable)
+    );
+    // A stone lost on its way is sent again.
+    run_until(&mut world, 400, |w| {
+        w.wares()
+            .any(|(_, x)| x.good == STONE && x.destination == Some(b))
+    });
+    let ware = world
+        .wares()
+        .find(|(_, x)| x.good == STONE && x.destination == Some(b))
+        .map(|(id, _)| id)
+        .unwrap();
+    world.destroy_ware(ware);
+    run_until(&mut world, 5000, |w| w.is_paved(road.number));
+    assert_eq!(count(&world, STONE), stone - fields - 1);
+    assert_eq!(world.paving_work(road.number), None);
+    assert!(!world.can_pave(P0, inner));
+    // The carrier's next step between two of the road's fields: 1.3 times.
+    let id = world
+        .roads()
+        .position(|r| r.number == road.number)
+        .expect("the road");
+    let base = world.settings.settler_speed;
+    let (a, next) = (road.path[1], road.path[2]);
+    assert_eq!(world.paved_speed(id, a, Some(next), base), base * 130 / 100);
+    assert_eq!(world.paved_speed(id, a, Some((30, 30)), base), base);
+    let copy = World::from_snapshot(&world.snapshot()).unwrap();
+    assert!(copy == world && copy.is_paved(road.number));
+    assert!(format!("{world:?}").contains("paved"));
+    assert!(!format!("{:?}", game(&full_stock())).contains("paving"));
+    // Without the rule nothing can be paved.
+    let mut plain = game(&full_stock());
+    apply_all(&mut plain, vec![flag_cmd(b)]);
+    apply_all(&mut plain, vec![road_cmd(HQ_FLAG, b)]);
+    let inner = plain.roads().next().unwrap().path[1];
+    let pave = Command::PaveRoad {
+        player: P0,
+        at: inner,
+    };
+    assert_eq!(apply(&mut plain, pave), Err(crate::Rejection::NotPavable));
 }

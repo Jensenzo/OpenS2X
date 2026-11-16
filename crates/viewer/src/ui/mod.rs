@@ -68,12 +68,13 @@ pub(crate) const CASTLE_MOST: u32 = 15;
 #[derive(Resource, Default)]
 pub struct UiCatalog(pub Option<Catalog>);
 
-const ATLASES: [Atlas; 31] = [
+const ATLASES: [Atlas; 32] = [
     Atlas::Frame,
     Atlas::ShipMask,
     Atlas::Game,
     Atlas::Elements0,
     Atlas::Elements1,
+    Atlas::Elements2,
     Atlas::Elements3,
     Atlas::Elements4,
     Atlas::Elements5,
@@ -143,7 +144,8 @@ pub fn load_assets(
         return;
     }
     let pictures = (0..widgets::PICTURES.len() as u8).map(Atlas::Picture);
-    for a in ATLASES.into_iter().chain(pictures) {
+    let projects = (0..crate::extend::project_pictures().len() as u8).map(Atlas::Project);
+    for a in ATLASES.into_iter().chain(pictures).chain(projects) {
         let h = library.raw_image(a.file(), &mut images);
         if h.is_none() {
             eprintln!("interface atlas {} not found", a.file());
@@ -342,6 +344,7 @@ pub fn game_frame(
         &assets.texts,
         screen,
         world,
+        &player_name,
     ));
     // UI-GAME-1.11 (T46): paused by the player, a layer over everything.
     if viewer.pause_key && viewer.paused {
@@ -389,12 +392,11 @@ pub fn smart_cursor_target(context: &Context, panels: &[widgets::Panel]) -> Opti
 /// UI-GAME-1.10: with the SMART CURSOR option on (SET-2 field 9), a newly
 /// opened context dialog takes the pointer to its first button, and road
 /// building takes it onto the flag's place on the screen; the pointer stays
-/// within 1 % to 99 % of the window. When the flag menu closes (an action
-/// chosen) the pointer goes back onto the flag (OBS-10; the spec leaves the
-/// return untraced, Q-207). UI-GAME-1.10a, 1.10b, whatever the option:
-/// when the deploy-flag menu, the road menu, the build menu or a building
-/// window closes (`closed_on_field`), the pointer goes onto the dialog's
-/// field (the new flag), if it is on the screen.
+/// within 1 % to 99 % of the window. UI-GAME-1.10a, 1.10b, 3.1 (Q-207 h),
+/// whatever the option: when the flag menu, the deploy-flag menu, the road
+/// menu, the build menu or a building window closes (`closed_on_field`),
+/// the pointer goes onto the dialog's field (the flag), if it is on the
+/// screen.
 #[allow(clippy::too_many_arguments)]
 pub fn smart_cursor(
     viewer: Res<crate::game::Viewer>,
@@ -470,6 +472,7 @@ pub fn game_keys(
     mission: Res<crate::menus::campaign::MissionUi>,
     mut view: ResMut<crate::render::view3d::View3d>,
     hover: Res<crate::render::view3d::MapHover>,
+    windows: Query<&Window>,
 ) {
     // UI-GAME-12.2: a text input with the keys takes them all.
     if viewer.debug
@@ -537,7 +540,17 @@ pub fn game_keys(
         // A press that finds nothing only clears the key's cursor.
         *cursor = next.map(|(_, serial)| serial);
         if let Some((at, _)) = next {
+            // UI-GAME-4.4 (E-ui-038): the `,` key's window is placed as any
+            // context window (1.9), at the mouse pointer; a depot window
+            // already open keeps its place (medium).
+            let open_depot = matches!(ui.context, Some(game::Context::Building { at: open, .. })
+                if world.warehouse(open).is_some());
             ui.context = game::context_for(world, crate::game::PLAYER, at);
+            if !military && !open_depot {
+                if let Some(pointer) = windows.iter().next().and_then(Window::cursor_position) {
+                    ui.context_click = Some(pointer.to_array());
+                }
+            }
             viewer.focus_request = Some(at);
         }
     }
@@ -735,6 +748,18 @@ pub fn message_sounds(
     *seen = Some(now);
 }
 
+/// UI-GAME-11.4 (E-trace-030): a left click on a message row's icon marks
+/// the message read and gives its field, where the camera then jumps
+/// (GFX-VIEW-3.3, the zoom kept); a message without a field (the
+/// autosave's) moves no camera.
+fn message_icon_clicked(
+    read: &mut std::collections::HashSet<game::MessageKey>,
+    key: game::MessageKey,
+) -> Option<s2_sim::grid::Point> {
+    read.insert(key);
+    (key.1 != game::NO_FIELD).then_some(key.1)
+}
+
 /// The actions fired this frame, applied.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_actions(
@@ -891,7 +916,10 @@ fn submit(viewer: &mut crate::game::Viewer, command: s2_sim::Command) {
 /// its own jump comes first.
 fn closed_on_field(last: Option<&Context>, now: Option<&Context>) -> Option<s2_sim::grid::Point> {
     match (last?, now) {
-        (Context::DeployFlag(field), now) if now != last => Some(*field),
+        // UI-GAME-3.1 (Q-207 h): every exit of the flag menu (its buttons,
+        // a close request, the flag gone; the destroy button before its
+        // confirmation) puts the pointer back on the flag.
+        (Context::DeployFlag(field) | Context::Flag(field), now) if now != last => Some(*field),
         (Context::Road(field) | Context::Build { field, .. }, None) => Some(*field),
         (Context::Building { at, .. }, None) => Some(*at),
         _ => None,
@@ -968,7 +996,11 @@ fn apply(
                     _ => Some(Global::Buildings),
                 };
             }
-            5 => ui.minimap = !ui.minimap,
+            // UI-GAME-2.5 (seen, E-trace-030): during a tutorial lesson M
+            // and the bar's minimap button do nothing; after its end (Play)
+            // they toggle the minimap.
+            5 if minimap_toggles(mission) => ui.minimap = !ui.minimap,
+            5 => {}
             6 => {
                 ui.global = match ui.global {
                     Some(_) => None,
@@ -1183,10 +1215,12 @@ fn apply(
         // UI-GAME-11.4: a row's field: the camera jumps there (zoom kept).
         // A message without a field (the autosave's) moves no camera.
         Action::MessageRow(key) => {
-            if key.1 != game::NO_FIELD {
-                viewer.jump_request = Some(key.1);
+            if let Some(field) = message_icon_clicked(&mut ui.read_messages, *key) {
+                viewer.jump_request = Some(field);
             }
         }
+        // UI-GAME-11.4 (E-trace-030): a left click on the text does nothing.
+        Action::MessageText(_) => {}
         Action::DeleteMessage(key) => {
             ui.deleted_messages.insert(*key);
         }
@@ -1206,6 +1240,12 @@ fn apply(
         Action::Menu(m) => crate::menus::menu::apply(m, menu, viewer, ui, mission, exit),
         Action::None | Action::StatsList(_) => {}
     }
+}
+
+/// UI-GAME-2.5 (seen, E-trace-030): whether M and the bar's minimap button
+/// toggle the minimap: not while a tutorial lesson runs.
+fn minimap_toggles(mission: &crate::menus::campaign::MissionUi) -> bool {
+    mission.tutorial.is_none()
 }
 
 /// What Escape does in the game's screen (without a text input).
@@ -1764,8 +1804,9 @@ mod tests {
     /// warp onto their field on every exit that closes them (the build
     /// menu's flag and types close it), not when a tab changes; the
     /// deploy-flag menu on every exit; a building window when it closes;
-    /// the flag menu does not (its return is the smart cursor's, OBS-10).
-    // spec: UI-GAME-1.10a, UI-GAME-1.10b
+    /// the flag menu on every exit too, whatever the smart cursor option
+    /// (UI-GAME-3.1, Q-207 h).
+    // spec: UI-GAME-1.10a, UI-GAME-1.10b, UI-GAME-3.1
     #[test]
     fn the_map_menus_and_building_windows_warp_when_they_close() {
         let (field, other) = ((12, 20), (30, 31));
@@ -1791,8 +1832,35 @@ mod tests {
         assert_eq!(closed_on_field(Some(&deploy), Some(&deploy)), None);
         assert_eq!(closed_on_field(Some(&window(0)), None), Some(field));
         assert_eq!(closed_on_field(Some(&window(0)), Some(&window(2))), None);
-        assert_eq!(closed_on_field(Some(&Context::Flag(field)), None), None);
+        assert_eq!(
+            closed_on_field(Some(&Context::Flag(field)), None),
+            Some(field)
+        );
+        assert_eq!(
+            closed_on_field(Some(&Context::Flag(field)), Some(&road)),
+            Some(field)
+        );
+        assert_eq!(
+            closed_on_field(Some(&Context::Flag(field)), Some(&Context::Flag(field))),
+            None
+        );
         assert_eq!(closed_on_field(None, Some(&road)), None);
+    }
+
+    /// UI-GAME-2.5 (seen, E-trace-030): M and the bar's minimap button do
+    /// nothing during a tutorial lesson, and toggle the minimap in any other
+    /// game (and after a lesson's end).
+    // spec: UI-GAME-2.5
+    #[test]
+    fn the_minimap_does_not_open_during_a_lesson() {
+        let lesson = crate::menus::campaign::MissionUi::new("tutorial01", 2, 0);
+        assert!(lesson.tutorial.is_some());
+        assert!(!minimap_toggles(&lesson));
+        let mut ended = lesson;
+        ended.tutorial = None;
+        assert!(minimap_toggles(&ended));
+        let free = crate::menus::campaign::MissionUi::new("MP_2P_Storm_Coast", 0, 0);
+        assert!(minimap_toggles(&free));
     }
 
     /// CAM-3.1b (E-trace-025): Escape closes the briefing book (not the
@@ -1807,6 +1875,22 @@ mod tests {
         assert_eq!(escape_does(false, false, false), EscapeDoes::OpenGameMenu);
         assert_eq!(escape_does(false, false, true), EscapeDoes::CloseDialog);
         assert_eq!(escape_does(true, true, false), EscapeDoes::CloseMenu);
+    }
+
+    /// UI-GAME-11.4 (play test 16, F33): a left click on a message row's
+    /// icon marks it read and asks the camera to jump to its field; a
+    /// message without a field marks it read and moves nothing. The jump
+    /// itself keeps the zoom (GFX-VIEW-3.3, the camera rig's tests).
+    // spec: UI-GAME-11.4, GFX-VIEW-3.3
+    #[test]
+    fn a_message_icon_click_jumps_to_its_field() {
+        let mut read = std::collections::HashSet::new();
+        let key = (120, (31, 47), "Building constructed");
+        assert_eq!(message_icon_clicked(&mut read, key), Some((31, 47)));
+        assert!(read.contains(&key));
+        let autosave = (130, game::NO_FIELD, "Autosave...");
+        assert_eq!(message_icon_clicked(&mut read, autosave), None);
+        assert!(read.contains(&autosave));
     }
 
     /// UI-GAME-12.2: the input gives the keys back when its dialog closes.

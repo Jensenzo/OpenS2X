@@ -56,13 +56,7 @@ Hidden numbers in another place within the tick (ours, not open):
 | Q | What is open | What the program does | Where |
 |---|---|---|---|
 | Q-187 i | The strength of a lesson's computer players (UI-SETUP-2.4 sets only the kinds) | profile 1, every start position a player | `s2_rules::mission::players` |
-| Q-187 f | The end screen of a free game (CAM-3.6a: the campaign's victory and defeat are books now, CAM-3.6b) | `uiXXLDialog` with the three bars in a column; the rows' columns are not given | `menus/campaign.rs` (`end_panel`) |
-
-## The sliders (Q-1054)
-
-| Q | What is open | What the program does | Where |
-|---|---|---|---|
-| Q-1054 | The pictures of a slider's bar, fill and knob (the original's pictures show a dark bar about 200 x 18, a cyan fill from its left end to the knob, an orange square knob) | a flat dark bar 8 px high and a yellow 8 x 14 knob, no fill | `ui/render.rs` (`Widget::Slider`) |
+| Q-1057 | The end screen's name column (CAM-3.6a) for a computer player | the human's profile name; a computer player's name column empty | `menus/campaign.rs` (`end_panel`) |
 
 ## The chat line (Q-258 e)
 
@@ -78,12 +72,6 @@ other screen sizes were not seen.
 | Q | What is open | What the program does | Where |
 |---|---|---|---|
 | GFX-OBJ-1.4 (T32) | The making order of what the game made before the view first drew it (a game played ahead by `--run`, as the look comparison and the golden pictures do) and the list order of a save of ours | the flags in the order placed; the deposits not in the file field by field; then the signs. A save of ours lists its deposits field by field | `world/scene3d/objects.rs` (`load_poses`) |
-
-## A worker's walk that ends elsewhere (Q-272)
-
-| Q | What is open | What the program does | Where |
-|---|---|---|---|
-| Q-272 | Answered on 2026-11-15 (TRN-FREE-6.3 corrected: such a worker goes home at once, and every work routine checks that he stands on his building's field), not built in this release | the worker waits on the flag and searches again each tick | `sim/src/settlers.rs` |
 
 ## Saves (Q-257 b to e, Q-1033)
 

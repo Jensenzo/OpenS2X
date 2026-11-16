@@ -10,6 +10,7 @@ pub(crate) const USAGE: &str =
     "usage: s2-viewer [--map <file> | --map-name <name>] [--game-dir <dir>]
                  [--screenshot-dir <dir>] [--shot <file.png>]
 
+  --version               print the program's version and quit
   --map <file>            a map file to show
   --map-name <name>       a map of the install by name, e.g. campaign01
   --save <file.sav>       continue a save game of the original
@@ -134,6 +135,8 @@ pub(crate) const USAGE: &str =
   --3d                    start in the 3D view
   --tutorial-step <n>     start a tutorial at this step (0x00 to 0x50;
                           screenshots)
+  --end-screen <victory|defeat>
+                          show the game as just ended (CAM-3.6; screenshots)
   --size <WxH>            the window's size (default: the profile's
                           resolution for the game, 1280x900 for the viewer)
   --play <script>         the play harness: drive the game with pointer,
@@ -170,6 +173,8 @@ keys: N / P next / previous map, WASD or arrows pan, mouse drag pan,
       zoom, Page Up / Page Down rotate";
 
 pub(crate) struct Options {
+    /// `--version`: print the version line and quit (`version.rs`).
+    pub(crate) version: bool,
     pub(crate) map: Option<PathBuf>,
     /// `--save`: continue a save game (the original's or ours).
     pub(crate) save: Option<PathBuf>,
@@ -298,6 +303,9 @@ pub(crate) struct Options {
     pub(crate) size: Option<(u32, u32)>,
     /// `--tutorial-step <n>`: the tutorial step to start at (screenshots).
     pub(crate) tutorial_step: Option<u8>,
+    /// `--end-screen victory|defeat`: the game shown as just ended
+    /// (CAM-3.6: screenshots of the end and defeat screens).
+    pub(crate) end_screen: Option<crate::menus::campaign::EndScreen>,
     /// `--play <script>`: the play harness's script (`play`).
     pub(crate) play: Option<String>,
     /// `--play-report <file>`: where the harness writes its report.
@@ -319,6 +327,7 @@ pub(crate) fn parse_from(
     args: impl IntoIterator<Item = String>,
 ) -> Result<Options, String> {
     let mut options = Options {
+        version: false,
         map: None,
         save: None,
         save_dir: None,
@@ -364,6 +373,7 @@ pub(crate) fn parse_from(
         mission: None,
         size: None,
         tutorial_step: None,
+        end_screen: None,
         open: None,
         open_tab: None,
         open_global: Vec::new(),
@@ -589,6 +599,13 @@ pub(crate) fn parse_from(
                     .parse()
                     .map_err(|_| format!("bad tick count {ticks}"))?;
             }
+            "--end-screen" => {
+                options.end_screen = match value()?.as_str() {
+                    "victory" => Some(crate::menus::campaign::EndScreen::Victory(1)),
+                    "defeat" => Some(crate::menus::campaign::EndScreen::Defeat),
+                    other => return Err(format!("bad end screen {other}, want victory or defeat")),
+                };
+            }
             "--tutorial-step" => {
                 let text = value()?;
                 let step = match text.strip_prefix("0x") {
@@ -642,6 +659,7 @@ pub(crate) fn parse_from(
                     .parse()
                     .map_err(|_| format!("bad start resources {setting}"))?;
             }
+            "--version" | "-V" => options.version = true,
             "-h" | "--help" => return Err(String::new()),
             other => return Err(format!("unknown argument: {other}")),
         }
@@ -721,6 +739,16 @@ mod tests {
         let plain = parse_from(false, ["--open-building".to_string()]).unwrap();
         assert_eq!(plain.context_at, None);
         assert!(parse_from(false, ["--context-at", "12"].map(String::from)).is_err());
+    }
+
+    /// `--version` (or `-V`): the program prints its version line and
+    /// quits; not given, it runs as ever.
+    // spec: none (the program's version, docs/releasing.md)
+    #[test]
+    fn version_option() {
+        assert!(parse_from(true, ["--version".to_string()]).unwrap().version);
+        assert!(parse_from(false, ["-V".to_string()]).unwrap().version);
+        assert!(!parse_from(true, Vec::<String>::new()).unwrap().version);
     }
 
     /// `--open-tab n`: the tab of `--open`'s building window, so a picture

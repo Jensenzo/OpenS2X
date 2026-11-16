@@ -224,6 +224,14 @@ pub(crate) fn request_of(action: Action) -> Option<Request> {
     }
 }
 
+/// GFX-ANIM-3.1 (Q-180 g, E-gfx-075): a settler swims when his base point's
+/// height (the foot, as drawn) plus half the vertical extent of his model's
+/// mesh is at or below the map's water level: the middle of his body at or
+/// below the water surface. (A dying one keeps his clip, 3.1.)
+pub fn swims(foot: f32, height: f32) -> bool {
+    foot + height / 2.0 <= WATER_LEVEL
+}
+
 /// GFX-ANIM-3.1: a walker's tick state without a request. GFX-ANIM-3.1a:
 /// moving from the tick a walk is ordered, so no Stand tick shows between
 /// two walks.

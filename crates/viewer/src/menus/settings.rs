@@ -122,21 +122,18 @@ pub fn users_folder() -> Option<PathBuf> {
     Some(documents()?.join("S2").join("users"))
 }
 
-/// The profile to use when none was chosen: the first `.cfg` of the
-/// profiles' folder in name order, else `default` (SET-1.1; how the
-/// original picks one is Q-188).
-fn first_profile(users: &Path) -> String {
-    let mut names: Vec<String> = std::fs::read_dir(users)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
-            name.strip_suffix(".cfg").map(str::to_owned)
-        })
-        .collect();
-    names.sort();
-    names.into_iter().next().unwrap_or_else(|| "default".into())
+/// SET-1.1 (Q-188 a): the game has no profile choice: its one settings
+/// object is made with the fixed name `default01`, so it reads and writes
+/// `<Documents>\S2\users\default01.cfg` whatever other `.cfg` files the
+/// folder holds.
+pub(crate) const PROFILE: &str = "default01";
+
+/// The profile to use when the program's own file names none: always
+/// [`PROFILE`] (SET-1.1). A profile our settings file names (written by an
+/// earlier version of ours, which took the folder's first `.cfg`, else
+/// `default`) is kept, so such a player keeps his campaign.
+fn first_profile(_users: &Path) -> String {
+    PROFILE.into()
 }
 
 impl Settings {
@@ -426,6 +423,35 @@ mod tests {
         // The original's file is as it was; without the folder it is read.
         let plain = Settings::load_from(own, Some(users), None);
         assert_eq!((plain.autosave, plain.music_volume()), (600, 0.3));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    // SET-1.1 (Q-188 a): without a profile named in the program's own file
+    // the profile is default01, whatever other .cfg files the folder holds
+    // (none, or one sorting before it); one the file names is kept.
+    // spec: SET-1.1
+    #[test]
+    fn the_profile_is_default01() {
+        let root = std::env::temp_dir().join(format!("s2-profile-name-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let users = root.join("users");
+        std::fs::create_dir_all(&users).unwrap();
+        assert_eq!(
+            Settings::load_from(None, Some(users.clone()), None).profile,
+            "default01"
+        );
+        let other = Settings {
+            profile: "aaa".into(),
+            ..Settings::default()
+        };
+        other.write_files(None, Some(users.clone()), true, None);
+        assert!(users.join("aaa.cfg").is_file());
+        assert_eq!(
+            Settings::load_from(None, Some(users.clone()), None).profile,
+            "default01"
+        );
+        let kept = Settings::load_from(Some("profile=aaa\n"), Some(users), None);
+        assert_eq!(kept.profile, "aaa");
         std::fs::remove_dir_all(&root).unwrap();
     }
 

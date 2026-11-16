@@ -4,6 +4,10 @@ use crate::grid::{self, Point};
 use crate::map::state;
 use crate::{Building, PlayerId, Rejection, World, NOT_GENERAL};
 
+/// ECO-PLACE-6.2: the military clearance, in fields: no military type
+/// within this distance of another military building or site.
+pub const MILITARY_CLEARANCE: u32 = 4;
+
 /// Plot size class of a building type (`bp_setSize`, ECO-PLACE rules intro).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BuildingSize {
@@ -206,6 +210,35 @@ impl World {
     /// the map.
     pub(crate) fn footprint_of(&self, at: Point, size: BuildingSize) -> Vec<Point> {
         self.footprint(at, size).into_iter().flatten().collect()
+    }
+
+    /// ECO-PLACE-6.1: a building type counts as military for the clearance
+    /// when its territory range is above 0 (the headquarters, barracks,
+    /// guard house, watchtower and stronghold; never the lookout tower, the
+    /// catapult, the storehouse, the harbour or a workshop).
+    pub fn counts_as_military(&self, building_type: u32) -> bool {
+        self.building_types
+            .get(&building_type)
+            .is_some_and(|t| t.territory_range > 0)
+    }
+
+    /// ECO-PLACE-6.2: a building or construction site of any player whose
+    /// type counts as military (6.1) stands within distance
+    /// [`MILITARY_CLEARANCE`] of `at` (rings 0 to 4, `at` included; each
+    /// building on its own field only; fields outside the map skipped).
+    /// A military type may not be placed on such a field (6.3).
+    pub fn military_near(&self, at: Point) -> bool {
+        grid::area(
+            at,
+            MILITARY_CLEARANCE,
+            self.terrain.width,
+            self.terrain.height,
+        )
+        .into_iter()
+        .any(|f| {
+            self.building_at(f)
+                .is_some_and(|b| self.counts_as_military(b.building_type))
+        })
     }
 
     /// ECO-PLACE-3: whether a building of `size` fits on `at`, checked in the
@@ -466,6 +499,11 @@ impl World {
             .building_type(building_type)
             .ok_or(Rejection::UnknownBuildingType)?
             .size;
+        // ECO-PLACE-6.3: the military clearance first, before every other
+        // placement rule (the build menu greys the cell the same way).
+        if self.counts_as_military(building_type) && self.military_near(at) {
+            return Err(Rejection::TooCloseToMilitary);
+        }
         // CAM-1.3: not a type the mission has locked for the player.
         if self.is_locked(player, building_type) {
             return Err(Rejection::BuildingLocked);
@@ -579,12 +617,17 @@ impl World {
     /// ECO-PLACE-5.1: removing a building clears Blocked and MovementBlocked
     /// again. Blocked returns to the terrain's value, which was clear: a
     /// building can only be placed on a field that is not Blocked
-    /// (ECO-PLACE-3.3). The flag stays.
+    /// (ECO-PLACE-3.3). The flag stays. With remains (MIL-CON-4.1b: the
+    /// player's demolish too) a finished building's ruin marks its field
+    /// while it burns (MIL-CON-4.1a).
     pub(crate) fn remove_building(&mut self, player: PlayerId, at: Point) -> Result<(), Rejection> {
         self.building_at(at)
             .filter(|b| b.owner == player)
             .ok_or(Rejection::NoBuilding)?;
-        self.delete_building(at);
+        // MIL-CON-4.1b (Q-150, T17a): the player's demolish removes with
+        // remains, as the computer player's tear-down: material on the
+        // flag (4.4), a ruin for a finished building; the flag stays.
+        self.remove_with_remains(at);
         Ok(())
     }
 
@@ -663,6 +706,10 @@ impl World {
             builder_walk,
         );
         self.release_target(at);
+        // W20: a later building on the field starts with the first recipe.
+        self.chosen_recipes.remove(&at);
+        // W15: a later mine on the field starts undeepened.
+        self.mine_deepenings.remove(&at);
         if let Some(military) = self.military.remove(&at) {
             // Coins in its store are gone with it (MIL-PROM-3).
             self.inputs.remove(&at);

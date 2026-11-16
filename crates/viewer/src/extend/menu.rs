@@ -59,6 +59,10 @@ pub enum PageWidget {
     },
     /// The dialogs' 152 x 22 button at the row's x.
     Button { label: String, on_click: OnClick },
+    /// Hook W22: the rows after it start the page's next part (reached by
+    /// the page switch at the page's foot). Rows that do not fit above the
+    /// switch go on to the next part by themselves.
+    PageBreak,
 }
 
 /// A row as drawn: a [`PageWidget`] without its callback.
@@ -75,6 +79,7 @@ pub(crate) enum Row {
         index: usize,
     },
     Button(String),
+    PageBreak,
 }
 
 /// What the player did to a page's row.
@@ -104,6 +109,7 @@ impl PageWidget {
                 index: *index,
             },
             Self::Button { label, .. } => Row::Button(label.clone()),
+            Self::PageBreak => Row::PageBreak,
         }
     }
 

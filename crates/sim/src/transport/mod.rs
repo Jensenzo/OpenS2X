@@ -1361,7 +1361,13 @@ impl World {
             CarrierTask::Carry { to, entry } => Some((to, entry)),
             _ => None,
         };
-        let base = self.settings.settler_speed;
+        // W19: on its own paved road a carrier or donkey walks faster.
+        let base = self.paved_speed(
+            c.road,
+            c.walker.at,
+            c.walker.path.front().copied(),
+            self.settings.settler_speed,
+        );
         let may_enter = |field| match gate {
             Some((to, entry)) => field != to || !matches!(entry, Entry::Open { .. }),
             None => true,
@@ -1503,6 +1509,23 @@ impl World {
                         .neighbour(flag, 4)
                         .is_some_and(|b| self.door_field(b) != b);
                     self.carriers[carrier].task = CarrierTask::Inside { flag, waits: !door };
+                } else if self.carriers[carrier].ware.is_some() {
+                    // T60 (Q-230 c): back with the ware the removed building
+                    // did not take: he puts it down here like any ware, the
+                    // drop-time action from his arrival tick (its place
+                    // taken now, as a granted one).
+                    *self.flag_reserved.entry(flag).or_default() += 1;
+                    let key = self.take_join();
+                    if let Some(ware) = self.carriers[carrier].ware {
+                        self.wares[ware].as_mut().expect("live ware").joined = key;
+                    }
+                    self.carriers[carrier].task = CarrierTask::PutDown {
+                        at: flag,
+                        ends: tick + Tick::from(self.settings.drop_ticks),
+                        second: false,
+                        exchange: None,
+                        bid: true,
+                    };
                 } else {
                     // ECO-WORK-3.8d: back on the flag it stands this tick.
                     self.carriers[carrier].task = CarrierTask::Out { flag };
@@ -1515,14 +1538,25 @@ impl World {
                 // TRN-CARRY-3.3, 3.3a: the building receives the ware and the
                 // walk out to the flag starts at progress 0 (from a door
                 // field over the building's field).
-                let ware = self.carriers[carrier].ware.take().expect("a carried ware");
+                let ware = self.carriers[carrier].ware.expect("a carried ware");
                 let road = self.carriers[carrier].road;
                 if let Some(r) = self.roads[road].as_mut() {
                     r.traffic.transport_count += 1;
                 }
-                let w = self.wares[ware].take().expect("live ware");
-                let target = w.target.expect("a delivered ware has a target");
-                self.hand_over(target, w.good, w.order);
+                let target = self.wares[ware].as_ref().and_then(|w| w.target);
+                if target.is_some_and(|t| self.target_building(t).is_some()) {
+                    self.carriers[carrier].ware = None;
+                    let w = self.wares[ware].take().expect("live ware");
+                    self.hand_over(target.expect("a target"), w.good, w.order);
+                } else if let Some(w) = self.wares[ware].as_mut() {
+                    // T60 (Q-230 c): the building went while he walked in:
+                    // the hand-over finds no order, nothing is delivered and
+                    // the ware stays in his hands, bound for nothing; he
+                    // brings it back out and puts it down at the flag.
+                    w.target = None;
+                    w.order = None;
+                    w.destination = None;
+                }
                 self.carriers[carrier].task = CarrierTask::Deliver { flag, back: true };
                 let building = self.terrain.neighbour(flag, 4).unwrap_or(flag);
                 let walker = &mut self.carriers[carrier].walker;
@@ -2139,9 +2173,11 @@ impl World {
         // building no longer taking it), it keeps that destination, with
         // no next flag (ECO-REQ-5.7 a, c).
         if w.destination == Some(flag) && w.target.is_none() {
-            // A ware sent to a bare flag (`DropWare`) ends there.
+            // A ware sent to a bare flag (`DropWare`) ends there (W19: laid
+            // on a pavement that starts there).
             let good = w.good;
             self.wares[ware] = None;
+            self.paving_ware_arrived(flag, good);
             self.used(good, 1);
             self.carriers[carrier].ware = take;
             return;

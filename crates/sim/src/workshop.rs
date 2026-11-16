@@ -206,6 +206,43 @@ impl World {
         Ok(())
     }
 
+    /// W20: the recipe of its type's set the building on `at` works.
+    fn chosen_recipe_of(&self, at: Point) -> Option<&crate::rules::Recipe> {
+        let building = self.building_at(at)?;
+        let set = self.recipe_sets.get(&building.building_type)?;
+        set.get(self.chosen_recipes.get(&at).copied().unwrap_or(0) as usize)
+    }
+
+    /// W20 (`Command::ChooseRecipe`): the building on `at` works recipe
+    /// `index` of its type's set from now on. The open orders of goods the
+    /// new recipe does not take are withdrawn (wares already on their way
+    /// are still delivered, as when production is switched off, ECO-PROD-1.2),
+    /// and its inputs are ordered up to the limits (ECO-PROD-6.1).
+    pub(crate) fn choose_recipe(
+        &mut self,
+        player: PlayerId,
+        at: Point,
+        index: u32,
+    ) -> Result<(), Rejection> {
+        self.own_finished(player, at)?;
+        let building_type = self.building_at(at).expect("finished").building_type;
+        let inputs: Vec<u32> = match self.recipe_sets.get(&building_type) {
+            Some(set) if (index as usize) < set.len() => {
+                set[index as usize].inputs.iter().map(|&(g, _)| g).collect()
+            }
+            _ => return Err(Rejection::NotARecipe),
+        };
+        if index == 0 {
+            self.chosen_recipes.remove(&at);
+        } else {
+            self.chosen_recipes.insert(at, index);
+        }
+        self.orders
+            .retain(|o| o.target.at != at || inputs.contains(&o.good));
+        self.file_input_orders(at);
+        Ok(())
+    }
+
     /// ECO-PROD-1.3: toggle the product switch. The command does not look at
     /// `switchable`.
     pub(crate) fn toggle_switch(&mut self, player: PlayerId, at: Point) -> Result<(), Rejection> {
@@ -243,7 +280,11 @@ impl World {
         ) {
             return Vec::new();
         }
-        // H6: a project's recipe for the type comes first.
+        // W20: the recipe the building works of its type's set comes first.
+        if let Some(recipe) = self.chosen_recipe_of(at) {
+            return recipe.inputs.clone();
+        }
+        // H6: a project's recipe for the type comes next.
         if let Some(recipe) = self.recipes.get(&building.building_type) {
             return recipe.clone();
         }
@@ -294,7 +335,12 @@ impl World {
             if filed.len() == 3 {
                 filed.swap(1, 2);
             }
-            filed.iter().map(|&g| (g, MINE_FOOD_ORDER)).collect()
+            // W15: a deepened mine orders its extra food per product too.
+            let extra = self.mine_food_per_product(at) - 1;
+            filed
+                .iter()
+                .map(|&g| (g, MINE_FOOD_ORDER + extra))
+                .collect()
         } else if kind.catapult {
             match (self.stone, kind.stock_limit) {
                 (Some(stone), Some(limit)) => vec![(stone, limit)],
@@ -314,18 +360,26 @@ impl World {
     /// `at` whose ware is on its way: lying or carried towards it, or in the
     /// hands of a warehouse's helper carrying it out for it.
     pub(crate) fn orders_on_their_way(&self, at: Point, good: u32) -> u32 {
+        // W16: a member on its way for a recipe group's order counts for
+        // the group (its order's good).
         let wares = self
             .wares()
-            .filter(|(_, w)| w.good == good && w.target.is_some_and(|t| t.at == at))
+            .filter(|(_, w)| {
+                (w.good == good || w.order.is_some_and(|o| o.good == good))
+                    && w.target.is_some_and(|t| t.at == at)
+            })
             .count();
         let helpers = self
             .settlers()
-            .filter(|(_, s)| {
-                s.carrying == Some(good)
-                    && matches!(
-                        &s.job,
-                        crate::SettlerJob::CarryOut { target: Some(t), .. } if t.at == at
-                    )
+            .filter(|(_, s)| match &s.job {
+                crate::SettlerJob::CarryOut {
+                    target: Some(t),
+                    order,
+                    ..
+                } if t.at == at => {
+                    s.carrying == Some(good) || order.is_some_and(|o| o.good == good)
+                }
+                _ => false,
             })
             .count();
         (wares + helpers) as u32
@@ -340,7 +394,11 @@ impl World {
         }
         let stock = self.inputs(at);
         match kind.cycle {
-            WorkCycle::Mine => self.mine_food.iter().any(|&g| count(stock, g) >= 1),
+            // W15: a deepened mine begins only with all its food in stock.
+            WorkCycle::Mine => {
+                let food: u32 = self.mine_food.iter().map(|&g| count(stock, g)).sum();
+                food >= self.mine_food_per_product(at)
+            }
             _ => self
                 .input_list(at)
                 .iter()
@@ -355,16 +413,19 @@ impl World {
         let kind = &self.building_types[&building.building_type];
         let enabled = building.production.enabled;
         if kind.cycle == WorkCycle::Mine {
-            // ECO-PROD-2.2: the first food of fish, bread, ham in stock.
-            let eaten = self
-                .mine_food
-                .iter()
-                .copied()
-                .find(|&g| count(self.inputs(at), g) >= 1);
-            if let Some(good) = eaten {
-                self.take_input(at, good);
-                if enabled {
-                    self.order(at, good);
+            // ECO-PROD-2.2: the first food of fish, bread, ham in stock (W15:
+            // a deepened mine eats that many times, each the first).
+            for _ in 0..self.mine_food_per_product(at) {
+                let eaten = self
+                    .mine_food
+                    .iter()
+                    .copied()
+                    .find(|&g| count(self.inputs(at), g) >= 1);
+                if let Some(good) = eaten {
+                    self.take_input(at, good);
+                    if enabled {
+                        self.order(at, good);
+                    }
                 }
             }
             return;
@@ -404,7 +465,10 @@ impl World {
         let production = building.production;
         let second =
             production.switched || (kind.second_product.is_some() && production.count % 2 == 1);
-        let decided = if second {
+        // W20: a type with a recipe set makes its chosen recipe's product.
+        let decided = if let Some(recipe) = self.chosen_recipe_of(at) {
+            Some(recipe.product)
+        } else if second {
             kind.second_product
         } else {
             kind.product
@@ -828,6 +892,122 @@ mod tests {
 
     fn ore(w: &mut World, field: Point, good: u32, amount: u8) {
         w.set_resource(field, Some(FieldResource { good, amount }));
+    }
+
+    /// Hook W15 (`docs/extending.md`, "Deepening a mine"): a coal mine whose
+    /// type has a deepening (250 per mille, at most 2, 4 planks and 2 stone,
+    /// food 2 then 3) is refused a deepening while ore is left, accepted
+    /// once exhausted; its site orders the 4 planks and 2 stone, a builder
+    /// works them as an upgrade's, and at its end the field dug from 7 holds
+    /// 1 coal (7 x 0.25 rounded down), the mine eats 2 food per product
+    /// (it begins only with 2 in stock) and orders 2 more of each food; a
+    /// third deepening is refused; the snapshot keeps it all. The original's
+    /// game keeps no first resources and has no trace of the hook.
+    // spec: none (hook W15; the search is ECO-FOOD-2's, the food ECO-PROD-2.2's, the work MIL-UPG-2.3's)
+    #[test]
+    fn a_deepened_mine_digs_again_at_a_higher_food_cost() {
+        let mut plain = world();
+        ore(&mut plain, (10, 11), COAL, 7);
+        plain.take_unit((10, 11));
+        let debug = format!("{plain:?}");
+        assert!(!debug.contains("first_resources") && !debug.contains("deepenings"));
+        let mut rules = rules();
+        rules.building_types.iter_mut().for_each(|t| {
+            if t.id == COAL_MINE {
+                t.working_radius = 2;
+            }
+        });
+        rules.deepenings.insert(
+            COAL_MINE,
+            crate::Deepening {
+                share_per_mille: 250,
+                most: 2,
+                costs: vec![(PLANK, 4), (STONE, 2)],
+                food: vec![2, 3],
+            },
+        );
+        let mut w = World::with_map(5, flat(30, 30), rules, P0);
+        let (at, field) = ((10, 10), (10, 11));
+        ore(&mut w, field, COAL, 7);
+        let id = mine_on(&mut w, COAL_MINE, at, field);
+        let deepen = Command::DeepenMine { player: P0, at };
+        assert!(!w.can_deepen(P0, at));
+        assert_eq!(apply(&mut w, deepen.clone()), Err(Rejection::NotDeepenable));
+        // Dug out: 7 units, the last clears the field.
+        for _ in 0..7 {
+            w.take_unit(field);
+        }
+        w.ore_fields.remove(&at);
+        assert_eq!(w.resource_at(field), None);
+        assert!(w.can_deepen(P0, at));
+        assert!(!w.can_deepen(PlayerId(1), at));
+        assert_eq!(apply(&mut w, deepen.clone()), Ok(()));
+        assert_eq!(
+            w.mine_deepening(at),
+            Some(crate::MineDeepening {
+                done: 0,
+                under_way: true
+            })
+        );
+        assert!(!w.can_deepen(P0, at));
+        // Its site orders the material as any site's.
+        for _ in 0..3 {
+            w.step();
+        }
+        assert_eq!(w.open_orders(at, PLANK), 4);
+        assert_eq!(w.open_orders(at, STONE), 2);
+        // Delivered (the debug supply stands in for the carriers) and worked.
+        let supply = Command::DebugSupplySite {
+            player: P0,
+            at,
+            wares: vec![(PLANK, 4), (STONE, 2)],
+            workers: true,
+        };
+        assert_eq!(apply(&mut w, supply), Ok(()));
+        for _ in 0..5000 {
+            if w.mine_deepening(at).is_some_and(|d| d.done == 1) {
+                break;
+            }
+            w.step();
+        }
+        assert_eq!(
+            w.mine_deepening(at),
+            Some(crate::MineDeepening {
+                done: 1,
+                under_way: false
+            })
+        );
+        assert!(w.site(at).is_none());
+        assert_eq!(w.building_at(at).unwrap().building_type, COAL_MINE);
+        assert_eq!(
+            w.resource_at(field),
+            Some(FieldResource {
+                good: COAL,
+                amount: 1
+            })
+        );
+        // Two food per coal now: ordered 2 + 1 of each, begun only with 2.
+        assert_eq!(w.mine_food_per_product(at), 2);
+        assert_eq!(w.input_limit(at, FISH), Some(3));
+        w.inputs.insert(at, vec![(FISH, 1)]);
+        assert!(!w.can_produce(at));
+        w.inputs.insert(at, vec![(FISH, 1), (BREAD, 1)]);
+        assert!(w.can_produce(at));
+        w.consume_inputs(at);
+        assert_eq!(stock(&w, at, FISH) + stock(&w, at, BREAD), 0);
+        // The search finds the coal again and the miner digs it.
+        w.inputs.insert(at, vec![(FISH, 4)]);
+        assert_eq!(next_product(&mut w, id, 1500), Some(COAL));
+        // The snapshot keeps the deepening and the first amounts.
+        let copy = World::from_snapshot(&w.snapshot()).unwrap();
+        assert!(copy == w);
+        // A second deepening once exhausted, then no third.
+        w.ore_fields.remove(&at);
+        w.set_resource(field, None);
+        w.mine_deepenings.get_mut(&at).unwrap().done = 2;
+        assert!(!w.can_deepen(P0, at));
+        assert_eq!(apply(&mut w, deepen), Err(Rejection::NotDeepenable));
+        assert_eq!(w.mine_food_per_product(at), 3);
     }
 
     // ECO-PROD T8: fish is eaten before ham; the one eaten is re-ordered.

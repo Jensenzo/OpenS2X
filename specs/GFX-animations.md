@@ -104,6 +104,21 @@ same model and animation share one skeleton pose.
   after the clip's start offset are scheduled.
   Covers (inventory): *particle effect* from `settings/buildings.xml`. Covers
   (inventory): *sound* from `buildings.xml`.
+  **When the events of building and settler clips start (2026-11-16 day, Q-186 f; E-gfx-072, code
+  reading).** Events are scheduled by the clip's start on a model, together with the model's event
+  target (where a sound plays, where an effect stands):
+  - a **building's Working clip** is started (play once, from time 0) at each work start of the
+    building when it is not already working, so its events fire once per work cycle, each at its
+    `start` (high);
+  - a **settler's play-once clip** (the work clips, Pickup, PutDown, Hit, the idle clips) gets a pose
+    of its own restarted at time 0 (2.4 b), so all its events fire once per play, at that settler
+    (high);
+  - a **looping clip** shared by several settlers (2.4 a) schedules its events only when a pose is
+    started or restarted for it, with the event target of the settler that started it; a settler
+    that **joins** a running pose schedules nothing, so the shared clip's sounds play at the first
+    settler's place, not at each joiner's. The events are not scheduled again when the loop wraps
+    (medium: the wrap was not read). Code-driven sounds such as the footsteps (SND-2.2) are not clip
+    events and are not affected.
 - **GFX-ANIM-2.4 Shared poses (corrected 2026-10-18, Q-220; E-gfx-023).**
   Each settler (and animal) model file has one pool of skeleton poses, used
   by every settler of that model file whatever its player, site or work
@@ -143,7 +158,19 @@ same model and animation share one skeleton pose.
   request is ignored (treated as none) while the settler's "inside / hidden" flag is
   set. Without a request: moving (step progress >= 0) -> Walk, else Stand; when the
   model's base is below the terrain height the swim variants SwimFwd / SwimIdle are
-  used instead. The settler's dying state (6) keeps the current clip.
+  used instead. **The swim test is a water-level test (2026-11-16 day, Q-180 g; E-gfx-075, code
+  reading):** not the field's Water state and not the terrain: the settler swims when
+  `foot + sink + height / 2 <= water level`, where **foot** is the height of the settler's drawn
+  base point as last drawn (the blend of the two tick positions of GFX-ANIM-3.1a's walk, after
+  the optional snap to the terrain, with the sink already added), **sink** is the settler's
+  current sink offset (0 for a living settler; only a dying settler's sink lowers it, by 0.35
+  per second), and **height** is the vertical extent of his model's mesh (the highest minus the
+  lowest vertex height of the model's vertices, measured once when the settler's view is made).
+  The **water level** is the map's global water surface height. In words: a settler swims when
+  the middle of his body is at or below the water surface. So a settler on dry ground above the
+  water level never swims; one walking a field whose surface lies under the water level (a boat
+  carrier's waterway, a shore below the water plane) does. Confidence: high (all three terms
+  read from code, 2026-11-16 day b, E-gfx-075). The settler's dying state (6) keeps the current clip.
   **Kinds and the flag (answered 2026-11-08 b, Q-089; E-gfx-041).** A
   settler's visual kind is its settler class: 0 worker, 1 builder, 2 carrier (donkeys and boat
   carriers included), 3 soldier, 4 leveller, 5 specialist (scholar, explorer); each class has
@@ -474,6 +501,23 @@ same model and animation share one skeleton pose.
   of (1 - d^2 / R^2) x scale x evadeRadiusScale (split half each when both move,
   sign by the side they already lean to). The offset decays 0.75 units per second (once per tick by 0.75 x the tick length, 0.075 a tick; E-gfx-041, Q-231 d)
   toward 0 and is applied along the settler's side axis.
+  **Who takes the offset (2026-11-16 day, Q-207 g; E-gfx-073, code reading).** For a pair of settlers
+  closer than R = evadeStart x scale, with f = (1 - d^2 / R^2) x scale x evadeRadiusScale and "lean"
+  each settler's current offset (positive or negative along its side axis):
+  - **one walks, the other stands:** only the walker gets an offset, the full f, positive when his
+    own lean is 0 or positive, negative when it is negative; the standing one gets none, whatever
+    the directions (high);
+  - **both walk toward each other** (their headings' dot product 0 or below): each gets f / 2, both
+    with the same sign: negative when the sum of their two leans is negative, else positive. As they
+    face opposite ways, the same sign moves them to opposite sides, so they pass (high);
+  - **both walk the same way** (dot product above 0): no offset (high);
+  - neither walks: no offset.
+  The offset is added to the one the settler has (several pairs add up) and decays as above. Only
+  the settler renderer runs this, so settlers (carriers, workers, soldiers, donkeys drawn as settlers)
+  evade each other and animals take no part (medium for the donkey). Which way "positive" points on
+  the side axis (the settler's right or left) was not read (medium: right). The renderer has a
+  second, forced call of the same test (both settlers treated as walking, plus a rule that flips the
+  smaller lean's sign when both offsets would go the same way); its caller was not read.
 - **GFX-ANIM-4.4 LOD.** The mesh LOD is the first i with squared camera distance <
   lod_i Range^2 (40, 50, 60 from settler_config, else LOD 3), clamped to the model's
   mesh count - 1 (mesh, mesh1, mesh2, mesh3).
@@ -742,6 +786,9 @@ same model and animation share one skeleton pose.
 | E-gfx-015 | code reading | | walk home after a fine approach |
 | E-gfx-066 | code reading and model file | `data/ships/PV_R_Ship01.GR2` | 7.2a: the ship's per-frame turn (yaw-pitch-roll, heading + 90 degrees, the phase), the hull's extents and art axes |
 | E-gfx-010 | code reading | | lookup good (ware, else tool, boat), lists without base fill, carrier boat override, soldier kind without override |
+| E-gfx-072 | code reading | (session 2026-11-16 day) | 2.3: when clip events are scheduled: the building's Working clip at each work start, the settlers' pose pool (a restarted pose schedules with its starter's target, a joiner none) (Q-186 f) |
+| E-gfx-073 | code reading | (session 2026-11-16 day) | 4.3: the evade pair test: walker and stander, two walkers by heading, the shared sign (Q-207 g) |
+| E-gfx-075 | code reading | (session 2026-11-16 day) | 3.1: the in-water test of the settler motion against the global water level (Q-180 g) |
 | data | clips | `data/buildings/PB_R_WoodcutterHut01/door_open.GR2`, `door_close.GR2` (and ForesterHut01, Stonemason01, Sawmill01): track groups and track names read by the investigation's GR2 reader; `settings/buildings.xml`; `character/settler_animations.xml` WorkLoop0Forester events; `scripts/properties/sounds.lua` | 6.1a track groups, 3.8d planting (play test 11) |
 
 ## Open questions

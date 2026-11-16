@@ -1134,7 +1134,9 @@ fn t60_the_ship_is_finished_partway_through_the_last_trip() {
     assert_eq!(end.map(|e| e - start), Some(55), "the step's 56th");
 }
 
-// ECO-FOOD T12, 7.1, 7.3, 7.4: ship mode: 12 trips of one plank each.
+// ECO-FOOD T12, 7.1, 7.3, 7.4: ship mode: 12 trips of one plank each;
+// 7.4b: then "Ship constructed" at the ship's water field.
+// spec: ECO-FOOD-7.4b (ECO-FOOD T23)
 #[test]
 fn t12_shipyard_builds_a_ship_in_twelve_trips() {
     let mut w = world();
@@ -1183,10 +1185,12 @@ fn t12_shipyard_builds_a_ship_in_twelve_trips() {
     assert!(w.ships()[0].finished());
     assert_eq!(action, 12 * 55, "ECO-FOOD-7.4: the construct time");
     assert_eq!(w.inputs(at).iter().map(|&(_, n)| n).sum::<u32>(), 0);
+    // ECO-FOOD-7.4b: "Ship constructed" at the ship's water field.
+    let water = w.ships()[0].water.expect("a water field");
     assert!(w
         .messages()
         .iter()
-        .any(|m| m.at == site && m.text == "Ship finished."));
+        .any(|m| m.at == water && m.text == "Ship constructed"));
 }
 
 // ECO-FOOD T54 (7.3): in ship mode the step starts only while production is

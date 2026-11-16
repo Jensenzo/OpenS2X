@@ -98,6 +98,33 @@ pub struct Rules {
     /// count) in order, in place of its product's cost list (ECO-PROD-2.1).
     /// Empty in the original's rules.
     pub recipes: BTreeMap<u32, Vec<(u32, u32)>>,
+    /// A project's recipes a player chooses between per building (hook W20,
+    /// `docs/extending.md` "Recipes a player chooses"): by building type, in
+    /// the order the overlay added them. Empty in the original's rules.
+    pub recipe_sets: BTreeMap<u32, Vec<Recipe>>,
+    /// A project's deepening of a mine type (hook W15, `docs/extending.md`
+    /// "Deepening a mine"), by building type. Empty in the original's rules.
+    pub deepenings: BTreeMap<u32, crate::Deepening>,
+    /// A project's group goods in recipes (hook W16, `docs/extending.md`
+    /// "A group good in a recipe"): each group a recipe takes, with its
+    /// member goods in good order. An order of such a group is served by
+    /// any member a warehouse holds. Empty in the original's rules.
+    pub recipe_groups: BTreeMap<u32, Vec<u32>>,
+    /// Hook W16: how many of each good a player keeps back from the orders
+    /// of a recipe group (by member good). Empty in the original's rules.
+    pub recipe_keep: BTreeMap<u32, u32>,
+    /// A project's paving rule (hook W19, `docs/extending.md` "Paved
+    /// roads"). None in the original's rules.
+    pub paving: Option<crate::PavingRule>,
+}
+
+/// Hook W20: one recipe of a type's set: the product one cycle makes and
+/// what it consumes, (good, count) in order (in place of the product's
+/// cost list, ECO-PROD-2.1). Not part of the original game.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Recipe {
+    pub product: u32,
+    pub inputs: Vec<(u32, u32)>,
 }
 
 /// ECO-FOOD-7.4: what the ship record (`ship.lua`) gives the shipyard's
@@ -191,6 +218,11 @@ impl Rules {
             animals: Vec::new(),
             specialists: SpecialistRules::default(),
             recipes: BTreeMap::new(),
+            recipe_sets: BTreeMap::new(),
+            deepenings: BTreeMap::new(),
+            recipe_groups: BTreeMap::new(),
+            recipe_keep: BTreeMap::new(),
+            paving: None,
         }
     }
 }

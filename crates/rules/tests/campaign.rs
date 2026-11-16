@@ -111,7 +111,7 @@ fn campaign01_briefing_soldiers_and_locks() {
     );
 }
 
-// spec: CAM-5.1, CAM-1.3
+// spec: CAM-5.1, CAM-1.3, MIL-ATK-1.3
 #[test]
 fn tutorial_scripts_build_their_scenes() {
     let Some((dir, rules)) = install() else {
@@ -127,6 +127,10 @@ fn tutorial_scripts_build_their_scenes() {
     assert_eq!(world.garrison((51, 36)).len(), 1);
     assert!(world.building_at((51, 38)).is_some());
     assert_eq!(world.building_at((55, 29)).unwrap().owner, PlayerId(1));
+    // MIL-ATK-1.3 (Q-144): the lesson's attack target is occupied, so a
+    // click on it opens the attack dialog.
+    assert!(world.military_at((55, 29)).is_some_and(|m| m.applied));
+    assert!(!world.garrison((55, 29)).is_empty());
 
     let (mut world, script, _) = start(&dir, &rules, r"data\maps\tutorialMaps\tutorial04.s2m");
     step(&mut world, &script);
@@ -153,7 +157,7 @@ fn free_maps_have_no_script() {
     assert!(mission::script_for(&map, &rules).unwrap().is_none());
 }
 
-// spec: SHIP-6.1 (T15), CAM-5.3a
+// spec: SHIP-6.1 (T15), SHIP-2.7, SHIP-7.1 (T16), CAM-5.3a, CAM-1.2
 #[test]
 fn lesson_four_ships_wait_with_their_landings() {
     let Some((dir, rules)) = install() else {
@@ -172,9 +176,83 @@ fn lesson_four_ships_wait_with_their_landings() {
         assert!(s.vessel.expedition);
         assert!(!s.vessel.aboard.is_empty());
     }
+    // CAM-5.3a 2: the first ship's SouthWest button (direction 2) is lit.
+    assert!(ships[0].vessel.options[2].is_some());
+    // SHIP-2.7 (T16): each ship's last port position is its first land
+    // neighbour: (128, 36) for (127, 36), (102, 62) for (101, 63).
+    assert_eq!(ships[1].vessel.port, Some((128, 36)));
+    assert_eq!(ships[0].vessel.port, Some((102, 62)));
+    // The first ship's options skip the spots of continent 66 within 3
+    // fields of it, (103, 60) among them.
+    assert!(world.harbour_spots().contains(&(103, 60)));
+    assert_eq!(s2_sim::grid::distance((101, 63), (103, 60)), 3);
+    assert!(ships[0]
+        .vessel
+        .options
+        .iter()
+        .flatten()
+        .all(|l| l.spot != (103, 60)));
+    // "go 2": the first ship has no last port position while it sails.
+    world.submit(s2_sim::Command::ExpeditionGo {
+        player: PlayerId(0),
+        ship: 0,
+        direction: 2,
+    });
+    world.step();
+    assert_eq!(world.last_results()[0].outcome, Ok(()));
+    world.step();
+    assert!(world.ships()[0].vessel.walker.is_walking());
+    assert_eq!(world.ships()[0].vessel.port, None);
+    // SHIP-7.1 (T16): the second ship's spot (129, 34) is 3 fields away and
+    // free, so Construct harbor is possible and the command makes a
+    // harbour site of player 0 there (CAM-5.3 step 0x0b).
+    assert!(world.can_found_harbour(PlayerId(0), 1));
+    world.submit(s2_sim::Command::ExpeditionBuildHarbor {
+        player: PlayerId(0),
+        ship: 1,
+    });
+    world.step();
+    assert_eq!(world.last_results()[0].outcome, Ok(()));
+    let site = world.building_at((129, 34)).expect("a harbour site");
+    assert_eq!(site.owner, PlayerId(0));
+}
+
+// The second ship skips the spot (129, 34) (its own continent's, SHIP-2.7),
+// so the landing field search for it is checked with a ship in open water
+// west of it, which has no last port position.
+// spec: SHIP-6.1 (T15), SHIP-2.7
+#[test]
+fn lesson_four_spot_lands_on_the_first_water_field_of_ring_two() {
+    let Some((dir, rules)) = install() else {
+        return;
+    };
+    let (mut world, script, _) = start(&dir, &rules, r"data\maps\tutorialMaps\tutorial04.s2m");
+    step(&mut world, &script);
+    step(&mut world, &script);
+    assert!(world.ships()[1]
+        .vessel
+        .options
+        .iter()
+        .flatten()
+        .all(|l| l.spot != (129, 34)));
+    let terrain = world.terrain();
+    let water = |f: (u32, u32)| terrain.has(f, s2_sim::map::state::WATER);
+    let open = (110..126)
+        .rev()
+        .map(|x| (x, 36))
+        .find(|&f| water(f) && terrain.neighbours(f).iter().flatten().all(|&n| water(n)))
+        .expect("open water west of the second ship");
+    world.submit(s2_sim::Command::CreateShip {
+        player: PlayerId(0),
+        at: open,
+    });
+    world.step();
+    world.step();
+    let ship = world.ships().last().unwrap();
+    assert_eq!(ship.vessel.port, None);
     // SHIP-6.1 (T15): the spot (129, 34) lands on (127, 34), the first Water
     // field of ring 2 in ring order, not on (127, 36).
-    let landing = ships[1]
+    let landing = ship
         .vessel
         .options
         .iter()
@@ -182,8 +260,6 @@ fn lesson_four_ships_wait_with_their_landings() {
         .find(|l| l.spot == (129, 34))
         .expect("an option for the spot (129, 34)");
     assert_eq!(landing.field, (127, 34));
-    // CAM-5.3a 2: the first ship's SouthWest button (direction 2) is lit.
-    assert!(ships[0].vessel.options[2].is_some());
 }
 
 /// CAM-2.1, FMT-S2M-3.3 (Q-187 a): a trigger's player is the `u32` after

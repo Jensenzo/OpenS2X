@@ -53,6 +53,15 @@ fn the_autosave_continues_with_its_computer_players() {
     );
     // FMT-SAV-3.6, 3.9: every ware lying at a flag is put down there again.
     assert_eq!(restored.wares, s2_rules::saved_wares(&save).len());
+    // Play test 16, items 17 and 27 (the Fight autosave of 2026-11-01): its
+    // half-built ship comes back (FMT-SAV-3.5h), and its four settlers on
+    // their way home walk on (FMT-SAV-3.5a).
+    assert_eq!(restored.ships, save.saved_ships.len());
+    // The Fight autosave (100 buildings, 172 flags) by its own counts.
+    if save.buildings.len() == 100 && save.flags.len() == 172 {
+        assert_eq!(restored.ships, 1);
+        assert_eq!(restored.homeward, 4);
+    }
     // FMT-SAV-3.6 (Q-1022, Q-1023): the packages in carriers' hands are in
     // their carriers' hands, each keeps its destination and order.
     let lying = save.packages.iter().filter(|p| p.lying).count();

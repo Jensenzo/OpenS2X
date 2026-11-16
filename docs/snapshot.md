@@ -125,6 +125,12 @@ What an older game shows, by format:
 
 | Saved in | What it shows when loaded |
 |---|---|
+| 80 (before 2026-11-16 day b) | A "Ship waiting for Orders" message posted before the load names no ship: its row shows the text without the ship's name in brackets. Those posted after the load name it. |
+| 79 (before 2026-11-16 day) | Nothing different: no game of that format has a command refused for the military clearance (ECO-PLACE-6.2, the result `TooCloseToMilitary`); a military site placed within 4 fields of another military building stays as it was. |
+| 78 (before 2026-11-15 day d) | Nothing different: no game of that format has a project's paving rule or paved roads (hook W19, `reborn.cfg_setPaving`). |
+| 77 (before 2026-11-15 day c) | Nothing different: no game of that format has a project's recipe groups or kept stock (hook W16, `reborn.cfg_setRecipeKeep`). |
+| 76 (before 2026-11-15 day b) | Nothing different: no game of that format has a project's mine deepenings (hook W15, `reborn.bp_setDeepening`), so none keeps first resources or a deepened mine. |
+| 75 (before 2026-11-15 day) | Nothing different: no game of that format has a project's recipe sets (hook W20, `reborn.bp_addRecipe`), so none has a recipe chosen. |
 | 74 (before 2026-11-15 night b) | An interceptor out at the save does not know the building he defends (MIL-ATK-3.4): when his attacker is gone he walks home at once, as before, instead of waiting outside while the building has attackers. Interceptors sent after the load wait. |
 | 73 (before 2026-11-15 night) | An attacker standing on his waiting field at the save has made no offset step (MIL-ATK-6.1a): one paired with an opponent makes it, with its draw, in his next update and arrives 12 ticks later (level ground); an unpaired one stands on the field's point, as the rule has it. |
 | 72 (before 2026-11-13 late) | A soldier, builder or leveller going home after a short walk (TRN-FREE-6.3) at the save is no longer linked to his military building or site, as the rule before TRN-FREE-6.3a had it: the building or site may ask for another while he walks. Those sent home after the load stay linked until they go. |

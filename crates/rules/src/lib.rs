@@ -253,6 +253,60 @@ fn construction_positions(building: &model::Building) -> [[(i32, i32); 4]; 3] {
 }
 
 impl RuleSet {
+    /// W16: every group good a recipe takes (a recipe set's or an H6
+    /// recipe's input), with its member goods in good order.
+    pub(crate) fn recipe_groups(&self) -> std::collections::BTreeMap<u32, Vec<u32>> {
+        let inputs = self.buildings.iter().flat_map(|b| {
+            b.inputs.iter().map(|a| a.good).chain(
+                b.recipes
+                    .iter()
+                    .flat_map(|r| r.inputs.iter().map(|a| a.good)),
+            )
+        });
+        let mut groups = std::collections::BTreeMap::new();
+        for good in inputs {
+            let members: Vec<u32> = self
+                .goods
+                .iter()
+                .filter(|g| g.group == Some(good) && g.id != good)
+                .map(|g| g.id)
+                .collect();
+            if !members.is_empty() {
+                let mut sorted = members;
+                sorted.sort_unstable();
+                groups.insert(good, sorted);
+            }
+        }
+        groups
+    }
+
+    /// W16: the kept stock by member good: a group's keep stands for each
+    /// of its members; a good's own keep wins over its group's.
+    pub(crate) fn recipe_keep_by_member(&self) -> std::collections::BTreeMap<u32, u32> {
+        let mut keep = std::collections::BTreeMap::new();
+        for (&good, &count) in &self.recipe_keep {
+            for g in self
+                .goods
+                .iter()
+                .filter(|g| g.group == Some(good) && g.id != good)
+            {
+                keep.entry(g.id).or_insert(count);
+            }
+        }
+        for (&good, &count) in &self.recipe_keep {
+            if !self
+                .goods
+                .iter()
+                .any(|g| g.group == Some(good) && g.id != good)
+            {
+                keep.insert(good, count);
+            }
+        }
+        keep
+    }
+}
+
+impl RuleSet {
     /// Building types with a plot size (`bp_setSize`), for the simulation.
     /// Types without one (the construction-site entry) are left out.
     pub fn building_types(&self) -> Vec<BuildingType> {
@@ -422,6 +476,48 @@ impl RuleSet {
                 .filter(|b| !b.inputs.is_empty())
                 .map(|b| (b.id, b.inputs.iter().map(|a| (a.good, a.count)).collect()))
                 .collect(),
+            // W20: a project's recipe sets (`reborn.bp_addRecipe`); none in
+            // the original's scripts.
+            // W16: the groups a recipe takes, with their members in good
+            // order, and the stock kept back from them (a group's keep for
+            // each member); none in the original's scripts.
+            recipe_groups: self.recipe_groups(),
+            recipe_keep: self.recipe_keep_by_member(),
+            // W19: a project's paving rule (`reborn.cfg_setPaving`).
+            paving: self
+                .paving
+                .map(|(good, per_field, speed_percent)| s2_sim::PavingRule {
+                    good,
+                    per_field,
+                    speed_percent,
+                }),
+            // W15: a project's mine deepenings (`reborn.bp_setDeepening`).
+            deepenings: self
+                .buildings
+                .iter()
+                .filter_map(|b| b.deepening.as_ref().map(|d| (b.id, d)))
+                .map(|(id, d)| {
+                    let deepening = s2_sim::Deepening {
+                        share_per_mille: d.share_per_mille,
+                        most: d.most,
+                        costs: d.costs.iter().map(|a| (a.good, a.count)).collect(),
+                        food: d.food.clone(),
+                    };
+                    (id, deepening)
+                })
+                .collect(),
+            recipe_sets: self
+                .buildings
+                .iter()
+                .filter(|b| !b.recipes.is_empty())
+                .map(|b| {
+                    let set = b.recipes.iter().map(|r| s2_sim::Recipe {
+                        product: r.product,
+                        inputs: r.inputs.iter().map(|a| (a.good, a.count)).collect(),
+                    });
+                    (b.id, set.collect())
+                })
+                .collect(),
             building_types: self.building_types(),
             transport_priorities,
             settings,
@@ -471,12 +567,21 @@ impl RuleSet {
             ship: self.ship_rules(&settings),
             distribution: DISTRIBUTION
                 .iter()
-                .map(|&(goods, entries)| s2_sim::DistributionRules {
-                    goods: goods.iter().filter_map(|n| good(n)).collect(),
-                    entries: entries
+                .map(|&(goods, entries)| {
+                    let goods: Vec<u32> = goods.iter().filter_map(|n| good(n)).collect();
+                    let mut entries: Vec<(u32, u32)> = entries
                         .iter()
                         .filter_map(|&(n, w)| Some((self.id_named(n)?, w)))
-                        .collect(),
+                        .collect();
+                    // A project's consumers of the table's goods
+                    // (`reborn.dist_addConsumer`), after the original's, once
+                    // each; none in the original's scripts.
+                    for &(g, building, weight) in &self.dist_consumers {
+                        if goods.contains(&g) && !entries.iter().any(|&(k, _)| k == building) {
+                            entries.push((building, weight));
+                        }
+                    }
+                    s2_sim::DistributionRules { goods, entries }
                 })
                 .collect(),
             construction: self.id_named(CONSTRUCTION),
@@ -709,6 +814,8 @@ pub fn game_setup(map: &Map, rules: &RuleSet, start_resources: u8) -> GameSetup 
         // SHIP-1.1: the positions the map lists on its land continents.
         // SIM-START-3.1: each player on its own start position.
         shuffle_starts: false,
+        // ECO-HQ-3.6: fog of war On, as a new game opens.
+        fog_of_war_off: false,
         // SIM-START-4.5: the counter is set to the map file's next id
         // (FMT-S2M-3.1), its low 32 bits.
         next_object: map.logic.next_unique_id as u32,

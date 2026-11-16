@@ -17,13 +17,18 @@
 # of war off) gets ours with every field drawn as explored (`--explored`),
 # one with "paused": true the paused view's layer (`--paused`).
 # Nothing is written into the repository. Needs S2_GAME_DIR and a desktop
-# (the viewer draws in a window, as for the golden images).
+# (the viewer draws in a window, as for the golden images). Each picture's
+# viewer keeps its settings and profile in an empty folder of its own
+# (target/look-compare/profile/<stem>), never the player's; the run fails
+# when the player's files changed their modified time during it
+# (scripts/player-files-guard.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/recording-guard.sh
 refuse_while_recording
 source scripts/input-guard.sh
 refuse_without_desktop_input
+source scripts/player-files-guard.sh
 : "${S2_GAME_DIR:?set S2_GAME_DIR to the game install}"
 dir="${1:?usage: scripts/look-compare.sh DIR (the shots folder of one run)}"
 dir="${dir%/}"
@@ -37,6 +42,8 @@ windows_copy target/x86_64-pc-windows-gnu/release/s2-viewer.exe
 viewer="$copy"
 app=target/release/s2-app
 mkdir -p "$dir/ours" "$dir/log"
+profiles=target/look-compare/profile
+player_files_note
 
 # One field of a camera file (a number, a string, or "w h" for window).
 field() {
@@ -77,9 +84,10 @@ for json in "$dir"/original/*.json; do
   [[ "$fog" == off ]] && extra+=(--explored)
   # A picture taken paused gets the paused view's layer (UI-GAME-1.11).
   [[ "$(field "$json" paused)" == True ]] && extra+=(--paused)
+  rm -rf "${profiles:?}/$stem"
   if "$app" shot --map "$map" --ai "$ai" --tick "$tick" --camera "$json" \
       --size "${w}x${h}" --out "$ours" --viewer "$viewer" "${extra[@]}" \
-      >"$dir/log/$stem.log" 2>&1; then
+      --profile-dir "$profiles/$stem" >"$dir/log/$stem.log" 2>&1; then
     echo "$stem: tick $tick, ours drawn"
   else
     echo "$stem: no picture of ours (log: $dir/log/$stem.log)" >&2
@@ -91,6 +99,7 @@ for json in "$dir"/original/*.json; do
   rows+="<figure><a href=\"ours/$stem.png\"><img src=\"ours/$stem.png\" alt=\"ours\"></a><figcaption>s2-reborn</figcaption></figure></div>"
   rows+="<p class=camera>camera: <a href=\"original/$stem.json\">$stem.json</a></p></section>"
   [[ -f "$original" ]] || echo "$stem: no original picture $original" >&2
+  player_files_check "$stem" || status=1
 done
 commit="$(git rev-parse --short HEAD)"
 cat >"$dir/index.html" <<EOF

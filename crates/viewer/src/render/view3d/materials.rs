@@ -189,6 +189,22 @@ pub struct WaterParams {
     pub(crate) light_color: Vec4,
     pub(crate) ambient: Vec4,
     pub(crate) mirror: Vec4,
+    /// Hook W18: the shore foam's colour (rgb) and strength (w; 0 none),
+    /// and its reach (x).
+    pub(crate) foam: Vec4,
+    pub(crate) foam_reach: Vec4,
+}
+
+/// Hook W18: the water's foam uniforms for a project's option; none gives
+/// strength 0, which skips the shader's foam step (the pixels as without).
+pub(crate) fn foam_params(foam: Option<crate::extend::ShoreFoam>) -> (Vec4, Vec4) {
+    match foam {
+        Some(f) if f.strength > 0.0 && f.reach > 0.0 => (
+            Vec4::new(f.colour[0], f.colour[1], f.colour[2], f.strength.min(1.0)),
+            Vec4::new(f.reach, 0.0, 0.0, 0.0),
+        ),
+        _ => (Vec4::ZERO, Vec4::ZERO),
+    }
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
@@ -468,6 +484,30 @@ mod tests {
         assert_eq!(shift(p, eye, [0.0, 0.0], REFLECTION_NOISE), p);
     }
 
+    // spec: none (hook W18: no foam by default, a project's foam passed on)
+    #[test]
+    fn the_shore_foam_is_off_by_default() {
+        use super::*;
+        assert_eq!(foam_params(None), (Vec4::ZERO, Vec4::ZERO));
+        let foam = crate::extend::ShoreFoam {
+            reach: 300.0,
+            colour: [0.9, 0.95, 1.0],
+            strength: 0.6,
+        };
+        assert_eq!(
+            foam_params(Some(foam)),
+            (
+                Vec4::new(0.9, 0.95, 1.0, 0.6),
+                Vec4::new(300.0, 0.0, 0.0, 0.0)
+            )
+        );
+        let none = crate::extend::ShoreFoam {
+            strength: 0.0,
+            ..foam
+        };
+        assert_eq!(foam_params(Some(none)), (Vec4::ZERO, Vec4::ZERO));
+    }
+
     // GFX-WATER-4.5a (a), 6.1: the map border's water is the surface's
     // material with the shadow test off; everything else the same.
     // spec: GFX-WATER-4.5a, GFX-WATER-6.2
@@ -486,6 +526,8 @@ mod tests {
                 light_color: Vec4::ONE,
                 ambient: Vec4::ZERO,
                 mirror: Vec4::ZERO,
+                foam: Vec4::ZERO,
+                foam_reach: Vec4::ZERO,
             },
             wave0: Handle::default(),
             wave1: Handle::default(),

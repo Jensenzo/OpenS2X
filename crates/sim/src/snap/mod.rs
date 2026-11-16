@@ -37,7 +37,7 @@ pub const MAGIC: &[u8; 8] = b"s2-snap\0";
 /// The format this build writes, of the world and of the computer players.
 /// Changed whenever the bytes or the meaning of any of their types change
 /// (`docs/snapshot.md`, "Changing the format").
-pub const VERSION: u32 = 75;
+pub const VERSION: u32 = 81;
 /// The oldest format this build reads: the first whose saves every later
 /// version loads. Never raised.
 pub const OLDEST: u32 = 65;

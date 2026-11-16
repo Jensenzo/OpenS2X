@@ -107,6 +107,12 @@ impl World {
         self.statistics.get(&player)
     }
 
+    /// UI-GAME-8.5e, CAM-3.3 target 3: the coins `player`'s mints have made
+    /// since the game's start (the running total; 0 before the first).
+    pub fn coins_produced(&self, player: PlayerId) -> u32 {
+        self.statistics.get(&player).map_or(0, |s| s.coins)
+    }
+
     /// FMT-SAV-3.11: `player`'s statistics from a save's 8 + 14 series.
     pub(crate) fn restore_statistics(&mut self, player: PlayerId, saved: &[Vec<u32>]) {
         self.statistics
@@ -209,11 +215,22 @@ impl World {
         }
     }
 
-    /// Owned fields as a share of all fields, in hundredths of a percent.
-    fn land_share(&self, player: PlayerId) -> u32 {
-        let owned = self.owners.iter().filter(|&&o| o == Some(player)).count() as u64;
-        let all = self.owners.len().max(1) as u64;
-        (owned * 10_000 / all) as u32
+    /// UI-GAME-8.5a series 0 (Q-198 d, Q-1066 b): the player's owned fields
+    /// on land continents (continent index not -1, not a water continent)
+    /// times 100 over the map's fields on land continents, in whole percent
+    /// (integer division).
+    pub(crate) fn land_share(&self, player: PlayerId) -> u32 {
+        let (mut owned, mut land) = (0u64, 0u64);
+        for (i, field) in self.terrain.fields().enumerate() {
+            if !self.on_land_continent(field) {
+                continue;
+            }
+            land += 1;
+            if self.owners[i] == Some(player) {
+                owned += 1;
+            }
+        }
+        (owned * 100 / land.max(1)) as u32
     }
 
     /// Every building of the player, construction sites included (Q-198 d).
@@ -229,27 +246,21 @@ impl World {
             .map(|(_, w)| w.stock.as_slice())
     }
 
-    /// The sum of all building stocks: the wares in the warehouses and the
-    /// inputs stored in the other buildings (Q-198 d).
-    fn goods_count(&self, player: PlayerId) -> u32 {
+    /// UI-GAME-8.5a series 3 (Q-198 d, E-ui-042): the wares in the
+    /// stores of the player's warehouses (headquarters, storehouses,
+    /// harbours) only; the inputs held by workshops and the material on
+    /// sites do not count.
+    pub(crate) fn goods_count(&self, player: PlayerId) -> u32 {
         let ware = |good: u32| {
             self.goods
                 .get(&good)
                 .is_some_and(|g| g.kind == GoodKind::Ware)
         };
-        let stored: u32 = self
-            .stocks_of(player)
+        self.stocks_of(player)
             .flatten()
             .filter(|&&(good, _)| ware(good))
             .map(|&(_, n)| n)
-            .sum();
-        let inputs: u32 = self
-            .inputs
-            .iter()
-            .filter(|(&at, _)| self.building_at(at).is_some_and(|b| b.owner == player))
-            .flat_map(|(_, list)| list.iter().map(|&(_, n)| n))
-            .sum();
-        stored + inputs
+            .sum()
     }
 
     /// Settlers outside the warehouses except carriers, and the stocked
@@ -287,18 +298,18 @@ impl World {
         outside + stocked
     }
 
-    /// The mean productivity in percent of the player's finished buildings
-    /// that have a worker; one that never produced counts as 0 (Q-198 d).
-    fn mean_productivity(&self, player: PlayerId) -> u32 {
+    /// UI-GAME-8.5a series 6 (Q-1066 a): the mean over the player's
+    /// buildings that have a productivity entry (ECO-OUT-3.11: placed with
+    /// the site for a type with a product, so sites count; a building
+    /// without one, -1, not at all) of the entry times 100, rounded to a
+    /// whole number; the sum over their count, integer division.
+    pub(crate) fn mean_productivity(&self, player: PlayerId) -> u32 {
         let values: Vec<u32> = self
             .buildings()
-            .filter(|b| b.owner == player && !b.under_construction)
-            .filter(|b| {
-                self.building_types
-                    .get(&b.building_type)
-                    .is_some_and(|t| t.worker.is_some())
-            })
-            .map(|b| b.productivity.max(0) as u32)
+            .filter(|b| b.owner == player)
+            .map(|b| f32::from_bits(b.productivity_bits))
+            .filter(|&p| p >= 0.0)
+            .map(|p| (p * 100.0).round() as u32)
             .collect();
         if values.is_empty() {
             0
@@ -315,7 +326,8 @@ mod tests {
     use crate::test_support::*;
 
     // UI-GAME-8.5a: one sample per 601-tick cycle per series, each taken at
-    // its count of the cycle; the roll-over at count 600.
+    // its count of the cycle; the roll-over at count 600; goods are the
+    // warehouses' wares only (Q-198 d).
     // spec: UI-GAME-8.5a
     #[test]
     fn samples_every_601_ticks() {
@@ -363,7 +375,8 @@ mod tests {
         let s = world.statistics(P0).unwrap();
         // The headquarters is the one building; its land is part of the map.
         assert_eq!(s.series[series::BUILDINGS][0], 1);
-        assert!(s.series[series::LAND][0] > 0 && s.series[series::LAND][0] < 10_000);
+        // Q-1066 b: whole percent of the land fields.
+        assert!(s.series[series::LAND][0] > 0 && s.series[series::LAND][0] < 100);
         // Goods: the wares of the start stock (planks, stones, tools).
         let wares = 22 + 34 + 3 + 8 + 2;
         assert_eq!(s.series[series::GOODS][0], wares);
@@ -371,6 +384,58 @@ mod tests {
         assert_eq!(s.series[series::INHABITANTS][0], 5 + 3 + 4);
         assert_eq!(s.series[series::MILITARY][0], 0);
         assert!(world.warehouse(HQ).is_some());
+        // Q-198 d: a workshop's inputs do not count, only the warehouses'.
+        let before = world.goods_count(P0);
+        let shop = (20, 20);
+        world.put_building(P0, req::HUT, crate::BuildingSize::Small, shop, false);
+        world.inputs.insert(shop, vec![(req::PLANK, 3)]);
+        assert_eq!(world.goods_count(P0), before);
+    }
+
+    // UI-GAME-8.5a series 0 and 6 (Q-1066): land is the owned fields on land
+    // over the land fields, in whole percent (water fields count in
+    // neither); productivity averages every building with an entry (a site
+    // too), each entry x 100 rounded, and leaves out one without (-1).
+    // spec: UI-GAME-8.5a, ECO-OUT-3.11
+    #[test]
+    fn land_in_percent_and_productivity_over_the_entries() {
+        let rules = req::rules(&req::full_stock());
+        let setup = crate::GameSetup {
+            players: vec![(P0, HQ)],
+            start_resources: 0,
+            local_player: P0,
+            ..Default::default()
+        };
+        let mut terrain = flat(40, 40);
+        // The bottom ten rows water.
+        for y in 30..40 {
+            for x in 0..40 {
+                set(&mut terrain, (x, y), crate::map::state::WATER);
+            }
+        }
+        let mut world = World::new_game(9, terrain, rules, &setup);
+        let land = world
+            .terrain()
+            .fields()
+            .filter(|&f| world.on_land_continent(f))
+            .count() as u64;
+        assert_eq!(land, 40 * 30, "the water rows are not land");
+        let owned = world
+            .terrain()
+            .fields()
+            .filter(|&f| world.on_land_continent(f) && world.field_owner(f) == Some(P0))
+            .count() as u64;
+        assert_eq!(u64::from(world.land_share(P0)), owned * 100 / land);
+        // Productivity: entries 0.5 (a site), 0.75, and one without (-1).
+        for (k, value) in [0.5f32, 0.75, -1.0].into_iter().enumerate() {
+            let at = (10 + 4 * k as u32, 25);
+            world.put_building(P0, req::HUT, crate::BuildingSize::Small, at, k == 0);
+            let b = world.buildings[world.terrain.index(at)].as_mut().unwrap();
+            b.productivity_bits = value.to_bits();
+        }
+        let hq = world.buildings[world.terrain.index(HQ)].as_mut().unwrap();
+        hq.productivity_bits = (-1.0f32).to_bits();
+        assert_eq!(world.mean_productivity(P0), (50 + 75) / 2);
     }
 
     // UI-GAME-8.5e, 8.5a: a count on an empty series is dropped, so nothing made in

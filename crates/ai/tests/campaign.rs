@@ -362,6 +362,11 @@ fn the_start_stock_of_missions_and_lessons() {
     assert_eq!(stock_of(&game, private) + outside, 86);
     let lesson = MissionGame::start(&dir, &rules, "tutorial01").unwrap();
     assert_eq!(stock(&lesson, "plank"), 88);
+    // Play test 16, item 6: mission 2 starts with 44 planks as well.
+    let mut two = MissionGame::start(&dir, &rules, "campaign02").unwrap();
+    two.step();
+    two.step();
+    assert_eq!(stock(&two, "plank"), 44);
 }
 
 /// Mission 1 saved at `at`, loaded, and played on by a new player who only

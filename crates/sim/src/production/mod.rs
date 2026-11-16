@@ -1427,6 +1427,10 @@ impl World {
         let (site, water) = self.ship_site(at, radius)?;
         // SIM-START-4.2: a ship takes a number when it is made.
         self.new_number();
+        // SHIP-2.7: a ship the shipyard builds starts with the coast field
+        // the shipwright works from as its last port position.
+        let mut vessel = crate::navy::Vessel::new(site);
+        vessel.port = Some(site);
         self.ships.push(crate::Ship {
             owner,
             at: site,
@@ -1435,7 +1439,7 @@ impl World {
             main_work: 1.0f32.to_bits(),
             step_amount: None,
             name: None,
-            vessel: crate::navy::Vessel::new(site),
+            vessel,
         });
         Some(site)
     }
@@ -1544,8 +1548,10 @@ impl World {
         };
         ship.step_amount = None;
         if ship.finished() {
-            // Q-130: the text of the message is not specified.
-            self.message(owner, spot, "Ship finished.");
+            // ECO-FOOD-7.4b (Q-130): "Ship constructed", message type 4, at
+            // the ship's water field.
+            let at = ship.water.unwrap_or(spot);
+            self.message(owner, at, "Ship constructed");
         }
     }
 

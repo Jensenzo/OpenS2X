@@ -62,6 +62,7 @@ impl AutosaveClock {
             text: AUTOSAVE_MESSAGE,
             until: tick + crate::ui::game::MESSAGE_TICKS,
             building: None,
+            ship: None,
         });
     }
 }
@@ -243,6 +244,7 @@ mod tests {
                 text: "Building constructed",
                 until: 39_000,
                 building: None,
+                ship: None,
             },
             s2_sim::Message {
                 tick: 3020,
@@ -251,6 +253,7 @@ mod tests {
                 text: "Building constructed",
                 until: 39_020,
                 building: None,
+                ship: None,
             },
         ];
         let none = std::collections::HashSet::new();

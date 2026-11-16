@@ -6,6 +6,8 @@
 
 #[cfg(test)]
 mod animal_tests;
+#[cfg(test)]
+mod clearance_tests;
 mod combat;
 #[cfg(test)]
 mod combat_tests;
@@ -14,6 +16,7 @@ mod conquest;
 #[cfg(test)]
 mod conquest_tests;
 mod construction;
+mod deepening;
 mod distribution;
 #[cfg(test)]
 mod distribution_tests;
@@ -34,6 +37,7 @@ pub mod movement;
 pub mod navy;
 #[cfg(test)]
 mod navy_tests;
+mod paving;
 mod placement;
 mod production;
 #[cfg(test)]
@@ -78,6 +82,7 @@ pub use conquest::{turn_steps, Catapult, CatapultPhase, Ruin};
 pub use construction::{
     remaining_work, Approach, Builder, BuilderPose, ConstructionSite, Leveller,
 };
+pub use deepening::{Deepening, MineDeepening};
 pub use distribution::{DistEntry, DistTable, DistributionRules, GoodFlags, MIN_WEIGHT};
 pub use hunting::{Animal, AnimalKind, AnimalState, Respawn, Ship};
 pub use military::{MilitaryBuilding, MilitaryRules, MilitarySettings, SoldierView, SOLDIER_RANKS};
@@ -86,7 +91,8 @@ pub use navy::{
     Cargo, Dock, ExpeditionGood, ExpeditionState, Harbour, Landing, Need, ShipState, Transfer,
     Vessel,
 };
-pub use placement::{BuildingSize, BuildingType, Placement};
+pub use paving::{PavingRule, PavingWork};
+pub use placement::{BuildingSize, BuildingType, Placement, MILITARY_CLEARANCE};
 pub use production::{
     Deposit, DepositKind, DepositState, FinePosition, Ground, Work, WorkCycle, FALL_AFTER_WORK,
 };
@@ -98,7 +104,7 @@ pub use restore::{
 };
 pub use rng::Rng;
 pub use route::Route;
-pub use rules::{GoodKind, GoodRules, Roles, Rules, Settings, ShipRules};
+pub use rules::{GoodKind, GoodRules, Recipe, Roles, Rules, Settings, ShipRules};
 pub use settlers::{LeavingStep, ReleasedStep, Settler, SettlerJob, SettlerList};
 pub use specialists::{Sign, SignRule, SpecialistRules, SpecialistStep};
 pub use territory::{start_multiplier, GameSetup, MapAnimal, MapDeposit};
@@ -284,6 +290,31 @@ pub struct World {
     /// in the original's game, and then not in the state's `Debug` form, so
     /// its state hashes are as without the hook.
     recipes: BTreeMap<u32, Vec<(u32, u32)>>,
+    /// W20: a project's recipe sets by building type
+    /// ([`Rules::recipe_sets`]) and the recipe each building works (by its
+    /// field; absent is the first). Both empty in the original's game, and
+    /// then not in the state's `Debug` form.
+    recipe_sets: BTreeMap<u32, Vec<rules::Recipe>>,
+    chosen_recipes: BTreeMap<Point, u32>,
+    /// W15: a project's mine deepenings by type ([`Rules::deepenings`]),
+    /// each field's first resource (kept from its first dig on, only in a
+    /// game with deepenings) and each mine's deepenings. All empty in the
+    /// original's game, and then not in the state's `Debug` form.
+    deepenings: BTreeMap<u32, Deepening>,
+    first_resources: deepening::FirstResources,
+    mine_deepenings: BTreeMap<Point, MineDeepening>,
+    /// W16: a project's recipe groups ([`Rules::recipe_groups`]) and the
+    /// stock each player keeps back from them ([`Rules::recipe_keep`]).
+    /// Both empty in the original's game, and then not in the state's
+    /// `Debug` form.
+    recipe_groups: BTreeMap<u32, Vec<u32>>,
+    recipe_keep: BTreeMap<u32, u32>,
+    /// W19: a project's paving rule ([`Rules::paving`]), the pavements under
+    /// way and the paved roads, by road number. None and empty in the
+    /// original's game, and then not in the state's `Debug` form.
+    paving_rule: Option<PavingRule>,
+    pavings: BTreeMap<u32, PavingWork>,
+    paved: BTreeSet<u32>,
     roles: Roles,
     /// TRN-FREE-5.5b: each player's tribe; absent is Romans.
     tribes: BTreeMap<PlayerId, u8>,
@@ -495,6 +526,16 @@ impl std::fmt::Debug for World {
             stone,
             goods,
             recipes,
+            recipe_sets,
+            chosen_recipes,
+            deepenings,
+            first_resources,
+            mine_deepenings,
+            recipe_groups,
+            recipe_keep,
+            paving_rule,
+            pavings,
+            paved,
             roles,
             tribes,
             next_object,
@@ -677,6 +718,40 @@ impl std::fmt::Debug for World {
         if !recipes.is_empty() {
             d.field("recipes", recipes);
         }
+        // W20: only a project's game has recipe sets and choices.
+        if !recipe_sets.is_empty() {
+            d.field("recipe_sets", recipe_sets);
+        }
+        if !chosen_recipes.is_empty() {
+            d.field("chosen_recipes", chosen_recipes);
+        }
+        // W15: only a project's game has deepenings.
+        if !deepenings.is_empty() {
+            d.field("deepenings", deepenings);
+        }
+        if !first_resources.is_empty() {
+            d.field("first_resources", first_resources);
+        }
+        if !mine_deepenings.is_empty() {
+            d.field("mine_deepenings", mine_deepenings);
+        }
+        // W16: only a project's game has recipe groups.
+        if !recipe_groups.is_empty() {
+            d.field("recipe_groups", recipe_groups);
+        }
+        if !recipe_keep.is_empty() {
+            d.field("recipe_keep", recipe_keep);
+        }
+        // W19: only a project's game paves.
+        if paving_rule.is_some() {
+            d.field("paving_rule", paving_rule);
+        }
+        if !pavings.is_empty() {
+            d.field("pavings", pavings);
+        }
+        if !paved.is_empty() {
+            d.field("paved", paved);
+        }
         // FMT-SAV-3.11: only a loaded original save has phases.
         if *sample_phase != 0 || *productivity_phase != 0 {
             d.field("sample_phase", sample_phase)
@@ -758,6 +833,16 @@ impl World {
             stone: rules.stone,
             goods: rules.goods,
             recipes: rules.recipes,
+            recipe_sets: rules.recipe_sets,
+            chosen_recipes: BTreeMap::new(),
+            deepenings: rules.deepenings,
+            first_resources: BTreeMap::new(),
+            mine_deepenings: BTreeMap::new(),
+            recipe_groups: rules.recipe_groups,
+            recipe_keep: rules.recipe_keep,
+            paving_rule: rules.paving,
+            pavings: BTreeMap::new(),
+            paved: BTreeSet::new(),
             roles: rules.roles,
             tribes: BTreeMap::new(),
             next_object: 0,
@@ -1044,6 +1129,18 @@ impl World {
         self.players.contains(&player)
     }
 
+    /// The players of the game, in player order (CAM-3.6a: the end
+    /// screen's rows).
+    pub fn players(&self) -> &[PlayerId] {
+        &self.players
+    }
+
+    /// The team `player` plays in (UI-SETUP, CAM-4.3a: its index, 0 the
+    /// first), if it has one.
+    pub fn team_of(&self, player: PlayerId) -> Option<i8> {
+        self.teams.get(&player).copied().filter(|&t| t >= 0)
+    }
+
     pub fn local_player(&self) -> PlayerId {
         self.local_player
     }
@@ -1259,6 +1356,9 @@ impl World {
             Command::OrderGeologist { player, at } => self.order_specialist(player, at, false),
             Command::OrderScout { player, at } => self.order_specialist(player, at, true),
             Command::ProductionSwitch { player, at } => self.toggle_switch(player, at),
+            Command::ChooseRecipe { player, at, index } => self.choose_recipe(player, at, index),
+            Command::DeepenMine { player, at } => self.deepen_mine(player, at),
+            Command::PaveRoad { player, at } => self.pave_road(player, at),
             Command::ToolWeight {
                 player,
                 slot,
@@ -1482,11 +1582,31 @@ impl World {
         self.building_types.get(&id)
     }
 
+    /// ECO-HQ: the rules' headquarters type, if they name one.
+    pub fn headquarters_type(&self) -> Option<u32> {
+        self.headquarters
+    }
+
     /// H6: a project's recipe for building type `id` (`Rules::recipes`):
     /// what one product consumes in place of its product's cost list. None
     /// in the original's game.
     pub fn recipe(&self, id: u32) -> Option<&[(u32, u32)]> {
         self.recipes.get(&id).map(Vec::as_slice)
+    }
+
+    /// W20: a project's recipes building type `id` chooses between
+    /// (`Rules::recipe_sets`), in order. None in the original's game.
+    pub fn recipe_set(&self, id: u32) -> Option<&[rules::Recipe]> {
+        self.recipe_sets.get(&id).map(Vec::as_slice)
+    }
+
+    /// W20: the index of the recipe the building on `at` works, if its type
+    /// has a recipe set (0 until a `Command::ChooseRecipe`).
+    pub fn chosen_recipe(&self, at: Point) -> Option<u32> {
+        let building = self.building_at(at)?;
+        self.recipe_sets
+            .contains_key(&building.building_type)
+            .then(|| self.chosen_recipes.get(&at).copied().unwrap_or(0))
     }
 
     /// TRN-ROAD-1.3, ECO-HQ-3.3

@@ -12,6 +12,7 @@ mod game;
 mod hash;
 mod image_diff;
 mod look_measure;
+mod profile_seed;
 mod shot;
 #[cfg(test)]
 mod snapshot_tests;
@@ -87,6 +88,10 @@ fn main() -> ExitCode {
     if args.peek().map(String::as_str) == Some("image-diff") {
         args.next();
         return image_diff::run(&args.collect::<Vec<_>>());
+    }
+    if args.peek().map(String::as_str) == Some("profile-seed") {
+        args.next();
+        return profile_seed::run(&args.collect::<Vec<_>>());
     }
     if args.peek().map(String::as_str) == Some("colour-mean") {
         args.next();

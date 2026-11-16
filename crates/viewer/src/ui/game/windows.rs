@@ -17,8 +17,33 @@ pub(crate) fn column_button(
     action: Action,
     enabled: bool,
 ) {
+    column_button_of(
+        p,
+        ctx,
+        origin,
+        row,
+        (Atlas::Elements5, sprite, hover),
+        key,
+        action,
+        enabled,
+    );
+}
+
+/// [`column_button`] with its picture's atlas: a hook's button may have a
+/// project's picture (`Extensions::button_pictures`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn column_button_of(
+    p: &mut Panel,
+    ctx: &Ctx,
+    origin: [f32; 2],
+    row: usize,
+    (atlas, sprite, hover): (Atlas, [u32; 2], Option<[u32; 2]>),
+    key: &str,
+    action: Action,
+    enabled: bool,
+) {
     p.button(
-        Atlas::Elements5,
+        atlas,
         [sprite[0], sprite[1], 48, 48],
         hover.map_or(Hover::None, Hover::Swap),
         [origin[0] - 50.0 * row as f32, origin[1]],
@@ -70,7 +95,76 @@ pub fn building_window(ctx: &Ctx, at: Point, tab: u8) -> Option<Panel> {
     if ctx.world.military_at(at).is_some() {
         return Some(military_window(ctx, at));
     }
+    // Hook W23: the recipe list of a type with three or more recipes.
+    if tab == RECIPES_TAB && recipe_count(ctx.world, b.building_type) >= RECIPE_LIST_FROM {
+        return Some(recipes_window(ctx, at));
+    }
     Some(production_window(ctx, at))
+}
+
+/// Hook W23: the production window's tab that lists a type's recipes.
+pub const RECIPES_TAB: u8 = 20;
+
+/// Hook W23: a type with this many recipes or more has the list; two keep
+/// the next-recipe button.
+pub const RECIPE_LIST_FROM: usize = 3;
+
+/// The recipes of a building type's set (0 without one).
+fn recipe_count(world: &s2_sim::World, building_type: u32) -> usize {
+    world.recipe_set(building_type).map_or(0, <[_]>::len)
+}
+
+/// Hook W23 (a project's, docs/extending.md "Recipes a player chooses"):
+/// the list of a type's recipes on the big panel, titled with the
+/// building's name: from y 56 a row every 40 px, each the tools window's
+/// check box (`uiElements0` (104, 104) off, (168, 104) on, 24 x 24) at x
+/// 20, marked on the recipe the building works, the product's 32 px icon at
+/// x 56, `<` at x 96, and each input's icon from x 116 every 60 px with its
+/// count beside it; a click on the box chooses the recipe
+/// (`Command::ChooseRecipe`). The close button goes back to the production
+/// window. Rows past the panel's foot are left out (ten fit).
+pub fn recipes_window(ctx: &Ctx, at: Point) -> Panel {
+    let world = ctx.world;
+    let b = world.building_at(at).expect("a building");
+    let size = BIG_DIALOG;
+    let mut p = Panel::new(PanelId::Context, context_origin(ctx, size));
+    frame(
+        &mut p,
+        ctx,
+        &title_of(ctx, b.building_type),
+        size,
+        Action::BuildingTab(0),
+    );
+    let chosen = world.chosen_recipe(at).unwrap_or(0);
+    let set = world.recipe_set(b.building_type).unwrap_or(&[]);
+    for (i, recipe) in set.iter().enumerate().take(10) {
+        let y = 56.0 + 40.0 * i as f32;
+        let on = i as u32 == chosen;
+        p.widgets.push(Widget::Button {
+            atlas: Atlas::Elements0,
+            rect: [if on { 168 } else { 104 }, 104, 24, 24],
+            hover: Hover::None,
+            pressed: Hover::None,
+            at: [20.0, y + 4.0],
+            size: None,
+            tooltip: Some(format!("Recipe {}.", i + 1)),
+            action: Action::Command(Command::ChooseRecipe {
+                player: ctx.player,
+                at,
+                index: i as u32,
+            }),
+            enabled: true,
+            selected: on,
+        });
+        good_icon(&mut p, ctx, recipe.product, [56.0, y], 32.0);
+        p.text("<", Font::Body, [96.0, y + 8.0], WHITE);
+        for (k, &(good, count)) in recipe.inputs.iter().enumerate() {
+            let x = 116.0 + 60.0 * k as f32;
+            good_icon(&mut p, ctx, good, [x, y], 32.0);
+            p.text(count.to_string(), Font::Body, [x + 34.0, y + 8.0], WHITE);
+        }
+    }
+    p
 }
 
 pub(crate) fn title_of(ctx: &Ctx, building: u32) -> String {
@@ -110,8 +204,17 @@ pub fn production_window(ctx: &Ctx, at: Point) -> Panel {
     // separators, no PRODUCT, TOOL, NEEDED GOODS or PRODUCTIVITY, and one
     // slot, its stone, at 395 (no empty frames).
     let catapult = kind.is_some_and(|k| k.catapult);
+    // Hook W20 (a project's, docs/extending.md "Recipes a player chooses"):
+    // a type with a recipe set shows the recipe the building works, its
+    // inputs as the needed goods and its product.
+    let chosen = world
+        .chosen_recipe(at)
+        .zip(world.recipe_set(b.building_type))
+        .and_then(|(i, set)| set.get(i as usize).map(|r| (i, set.len() as u32, r)));
     let inputs = if catapult {
         ctx.catalog.stone.into_iter().collect()
+    } else if let Some((_, _, recipe)) = chosen {
+        recipe.inputs.iter().map(|&(g, _)| g).collect()
     } else {
         ctx.catalog
             .inputs
@@ -157,7 +260,9 @@ pub fn production_window(ctx: &Ctx, at: Point) -> Panel {
         // UI-GAME-4.1a (g): the shipyard shows the ship while it builds
         // ships (switched, ECO-PROD-1.3), else its product, the boat.
         let ships = kind.is_some_and(|k| k.switchable) && b.production.switched;
-        let product = if ships {
+        let product = if let Some((_, _, recipe)) = chosen {
+            Some(recipe.product)
+        } else if ships {
             ctx.catalog.ship
         } else {
             ctx.catalog.products.get(&b.building_type).copied()
@@ -282,6 +387,69 @@ pub fn production_window(ctx: &Ctx, at: Point) -> Panel {
                 player: ctx.player,
                 at,
             }),
+            true,
+        );
+    }
+    // W15 (a project's hook, docs/extending.md "Deepening a mine"): a mine
+    // whose type has a deepening shows a button for it in the third place,
+    // usable while the command would be accepted; its tooltip the cost.
+    if let Some(deepening) = world.deepening(b.building_type) {
+        let cost: Vec<String> = deepening
+            .costs
+            .iter()
+            .map(|&(g, n)| format!("{n} {}", ctx.good_name(g)))
+            .collect();
+        let done = world.mine_deepening(at).map_or(0, |d| d.done);
+        let tip = format!(
+            "Deepen the mine ({}). Deepened {done} of {} times.",
+            cost.join(", "),
+            deepening.most
+        );
+        let picture = crate::extend::button_pictures().and_then(|b| b.deepen.as_ref());
+        column_button_of(
+            &mut p,
+            ctx,
+            column,
+            2,
+            crate::extend::button_cell(picture, crate::extend::project_pictures()),
+            &tip,
+            Action::Command(Command::DeepenMine {
+                player: ctx.player,
+                at,
+            }),
+            world.can_deepen(ctx.player, at),
+        );
+    }
+    // W20: the next recipe of the set, after the last the first again; the
+    // switch's picture, in the next free place of the column. W23: with
+    // three or more recipes the button opens their list instead.
+    if let Some((index, count, _)) = chosen.filter(|&(_, n, _)| n > 1) {
+        let row = if kind.is_some_and(|k| k.switchable) {
+            3
+        } else {
+            2
+        };
+        let picture = crate::extend::button_pictures().and_then(|b| b.recipe.as_ref());
+        let (key, action) = if count as usize >= RECIPE_LIST_FROM {
+            ("Recipes.", Action::BuildingTab(RECIPES_TAB))
+        } else {
+            (
+                "Next recipe.",
+                Action::Command(Command::ChooseRecipe {
+                    player: ctx.player,
+                    at,
+                    index: (index + 1) % count,
+                }),
+            )
+        };
+        column_button_of(
+            &mut p,
+            ctx,
+            column,
+            row,
+            crate::extend::button_cell(picture, crate::extend::project_pictures()),
+            key,
+            action,
             true,
         );
     }
@@ -597,9 +765,10 @@ pub fn depot_window(ctx: &Ctx, at: Point, tab: u8) -> Panel {
                         WHITE,
                     );
                     p.widgets.push(Widget::Slider {
-                        // The bar's middle on about 108 + 65 k.
-                        at: [50.0, y + 18.0 - 4.0],
-                        width: 200.0,
+                        // The bar's middle on about 108 + 65 k (UI-GAME-6.5:
+                        // the economy slider, 20 high).
+                        at: [50.0, y + 18.0 - 10.0],
+                        width: crate::ui::widgets::ECONOMY_SLIDER,
                         value: amount as f32 / crate::ui::CASTLE_MOST as f32,
                         kind: SliderKind::Castle(rank as u8),
                         enabled: true,
@@ -710,6 +879,7 @@ fn expedition_page(p: &mut Panel, ctx: &Ctx, at: Point) {
         (planks.map(|r| r.good), planks.map_or(0, |r| r.aside), 4),
         (ctx.catalog.ship, u32::from(called), 1),
     ];
+    let preparing = harbour.is_some_and(|h| h.expedition != s2_sim::ExpeditionState::Inactive);
     for (i, (good, n, of)) in slots.into_iter().enumerate() {
         let cell = [23.0 + 54.0 * i as f32, 60.0];
         // A slot of 8.1 with its good's name as tooltip, no click action.
@@ -725,14 +895,20 @@ fn expedition_page(p: &mut Panel, ctx: &Ctx, at: Point) {
         if let Some(good) = good {
             good_icon(p, ctx, good, cell, 48.0);
         }
+        // UI-GAME-8.1a (seen, E-trace-030): before a preparation every
+        // slot reads `-/-`.
+        let count = if preparing {
+            format!("{n}/{of}")
+        } else {
+            "-/-".to_owned()
+        };
         p.text(
-            format!("{n}/{of}"),
+            count,
             Font::Body,
             [cell[0] + 46.0 - 18.0, cell[1] + 49.0 - 6.0],
             WHITE,
         );
     }
-    let preparing = harbour.is_some_and(|h| h.expedition != s2_sim::ExpeditionState::Inactive);
     // UI-GAME-8.1a (d) (corrected tonight, E-trace-028): the label at (50,
     // 400) reads `!Exploration is running!` while the harbour prepares an
     // expedition, white, left edge x 45, centred on y 400 (its text in the
@@ -863,15 +1039,29 @@ pub fn attack_dialog(ctx: &Ctx, target: Point, share: f32, strong: bool) -> Pane
             available > 0,
         );
     }
+    p.sprite(Atlas::Elements3, [0, 432, 400, 8], [37.0, 170.0]);
+    // UI-GAME-5.1, MIL-ATK-1.3 (E-trace-031, Q-1064): with no attackers
+    // (A = 0) the line `!Can not attack this building!` where the number
+    // stands, centred on x 243 with its glyphs from y 154 (a 16 px line
+    // centred on y 160), white; no slider, number or ATTACK.
+    if available == 0 {
+        p.centred_text(
+            ctx.t("!Can not attack this building!"),
+            Font::Body,
+            [243.0, 152.0],
+            WHITE,
+        );
+        return p;
+    }
+    // UI-GAME-5.1, 6.5 (b): the settings slider, 152 x 24.
     p.widgets.push(Widget::Slider {
         at: [164.0, 132.0],
-        width: 160.0,
+        width: crate::ui::widgets::SETTINGS_SLIDER,
         value: share,
         kind: SliderKind::AttackShare,
-        enabled: available > 0,
+        enabled: true,
     });
     p.text(count.to_string(), Font::Body, [245.0, 160.0], WHITE);
-    p.sprite(Atlas::Elements3, [0, 432, 400, 8], [37.0, 170.0]);
     p.widgets.push(Widget::TextButton {
         text: ctx.t("!ATTACK"),
         font: Font::Big,

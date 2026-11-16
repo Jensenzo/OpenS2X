@@ -214,14 +214,11 @@ pub(crate) struct Viewer {
     pub(crate) setup_terrain: Option<s2_sim::map::Terrain>,
     /// `--no-fog`: every field drawn as explored (Q-290).
     pub(crate) no_fog: bool,
-    /// GFX-VIEW-5.3, UI-SETUP-1.8: the free game setup's "Fog of war" set to
-    /// Off (the drop-down's choice when the game was started).
+    /// ECO-HQ-3.6, UI-SETUP-1.8: the free game setup's "Fog of war" set to
+    /// Off (the drop-down's choice when the game was started): the new
+    /// game explores the whole map for every player at its start; nothing
+    /// in the drawing reads it (GFX-VIEW-5.3).
     pub(crate) start_fog_off: bool,
-    /// GFX-VIEW-5.3: the game on screen was started from the free game
-    /// setup with fog of war Off: the world texture lights every field and
-    /// the seen mark takes every field as explored (5.4 d); the game is the
-    /// same game.
-    pub(crate) fog_off: bool,
     /// `--pause-layer`: the paused view's layer (UI-GAME-1.11) over a
     /// `--compare` shot whose interface is hidden.
     pub(crate) pause_layer: bool,
@@ -275,6 +272,8 @@ pub(crate) struct Viewer {
     pub(crate) setup: Option<Vec<crate::menus::menu::SetupPlayer>>,
     /// `--tutorial-step`
     pub(crate) tutorial_step: Option<u8>,
+    /// `--end-screen`
+    pub(crate) end_screen: Option<crate::menus::campaign::EndScreen>,
 }
 
 impl Viewer {
@@ -288,20 +287,16 @@ impl Viewer {
     /// Whether the fog of war is drawn at all: GFX-VIEW-5.3, with the
     /// scene's switch off the whole world texture is lit.
     pub(crate) fn fog_shown(&self) -> bool {
-        fog_drawn(self.real_game, self.no_fog, self.fog_off)
+        fog_drawn(self.real_game, self.no_fog)
     }
 }
 
-/// GFX-VIEW-5.1, 5.3: whether the fog of war is drawn: only in a game with
-/// rules, without `--no-fog`, and with the scene's fog of war switch on.
-pub(crate) fn fog_drawn(real_game: bool, no_fog: bool, fog_off: bool) -> bool {
-    real_game && !no_fog && !fog_off
-}
-
-/// GFX-VIEW-5.3, UI-SETUP-1.8: a game opens with fog of war Off only when it
-/// was started from the free game setup with the option set to Off.
-pub(crate) fn opens_fog_off(from_setup: bool, chosen_off: bool) -> bool {
-    from_setup && chosen_off
+/// GFX-VIEW-5.1, 5.3: whether the fog of war is drawn: in a game with rules
+/// and without `--no-fog`. The setup's fog of war Off is no drawing switch:
+/// it explores the map at the start (ECO-HQ-3.6), and the lit map is the
+/// explored map.
+pub(crate) fn fog_drawn(real_game: bool, no_fog: bool) -> bool {
+    real_game && !no_fog
 }
 
 /// The ECO-DIST settings panels; at most one is open.
@@ -418,6 +413,15 @@ pub(crate) fn describe_result(world: &World, result: &s2_sim::CommandResult) -> 
         }
         (Command::ProductionSwitch { at, .. }, Ok(())) => {
             format!("production switch toggled at ({}, {})", at.0, at.1)
+        }
+        (Command::ChooseRecipe { at, index, .. }, Ok(())) => {
+            format!("recipe {} chosen at ({}, {})", index + 1, at.0, at.1)
+        }
+        (Command::DeepenMine { at, .. }, Ok(())) => {
+            format!("deepening ordered at ({}, {})", at.0, at.1)
+        }
+        (Command::PaveRoad { at, .. }, Ok(())) => {
+            format!("paving ordered at ({}, {})", at.0, at.1)
         }
         (
             Command::ToolWeight { .. }
@@ -631,19 +635,15 @@ mod tests {
         assert_eq!(load::scripted_expansion(None, false), None);
     }
 
-    /// GFX-VIEW-5.3: a free game set up with fog of war Off draws without
-    /// fog (the whole world texture lit, every field explored for the seen
-    /// mark); a mission, a map or a save opens with it on.
+    /// GFX-VIEW-5.1, 5.3: the fog is drawn in a game with rules unless
+    /// `--no-fog`; the setup's fog of war Off is no drawing switch (it
+    /// explores the map at the start, ECO-HQ-3.6, tested in the sim).
     // spec: GFX-VIEW-5.3, GFX-VIEW-5.1
     #[test]
-    fn fog_of_war_off_from_the_free_game_setup() {
-        assert!(opens_fog_off(true, true));
-        assert!(!opens_fog_off(true, false));
-        assert!(!opens_fog_off(false, true));
-        assert!(fog_drawn(true, false, false));
-        assert!(!fog_drawn(true, false, true));
-        assert!(!fog_drawn(true, true, false));
-        assert!(!fog_drawn(false, false, false));
+    fn fog_is_drawn_in_a_game_with_rules() {
+        assert!(fog_drawn(true, false));
+        assert!(!fog_drawn(true, true));
+        assert!(!fog_drawn(false, false));
     }
 
     // TOOL-1.2, ECO-TIME-1.2, 1.3: the animation clock's step: none while

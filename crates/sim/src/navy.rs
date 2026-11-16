@@ -467,7 +467,10 @@ impl World {
     }
 
     /// Start the ship sailing to `to`; false if there is no way.
+    /// SHIP-3.1: the ship starts a route to `to`. SHIP-2.7: every route
+    /// start clears its last port position (one to its own field too).
     fn sail(&mut self, ship: usize, to: Point) -> bool {
+        self.ships[ship].vessel.port = None;
         let from = self.ships[ship].vessel.walker.at;
         match self.sea_route(from, to) {
             Some(path) => {
@@ -764,7 +767,9 @@ impl World {
             .is_some();
         let v = &mut self.ships[i].vessel;
         if docked {
-            v.port = Some(field);
+            // SHIP-2.5, 2.7: the harbour building's own field, not the
+            // docking place's water field.
+            v.port = Some(at);
             v.state = ShipState::Docked;
         } else {
             v.harbour = None;
@@ -828,7 +833,8 @@ impl World {
         let at = self.ships[i].vessel.walker.at;
         self.ships[i].vessel.options = self.landing_options(i);
         self.ships[i].vessel.state = ShipState::Waiting;
-        self.message(owner, at, WAITING_FOR_ORDERS);
+        // UI-GAME-11.1, 4.5 c (E-trace-030): the row names the ship.
+        self.ship_message(owner, at, WAITING_FOR_ORDERS, i);
     }
 
     /// SHIP-6.1
@@ -839,13 +845,12 @@ impl World {
         let sea = self.region_of(at);
         let (width, height) = (self.terrain.width, self.terrain.height);
         let mut options: [Option<(u32, Landing)>; 6] = [None; 6];
+        // The spots of the last port position's land continent (SHIP-2.7);
+        // none without one.
+        let own = v.port.map(|p| self.continent_spots(p)).unwrap_or_default();
         for &spot in &self.harbour_spots {
-            if let Some(port) = v.port {
-                if self.region_of(port) == self.region_of(spot)
-                    && grid::distance(at, spot) <= OWN_HARBOUR_DISTANCE
-                {
-                    continue;
-                }
+            if own.contains(&spot) && grid::distance(at, spot) <= OWN_HARBOUR_DISTANCE {
+                continue;
             }
             if !self.harbour_site_for(owner, spot) {
                 continue;
@@ -873,18 +878,17 @@ impl World {
         }
         let owner = self.ships[i].owner;
         let at = self.ships[i].vessel.walker.at;
-        let (width, height) = (self.terrain.width, self.terrain.height);
-        // "The land field nearest to it", the first in ring order.
-        let port = (1..=LANDING_RINGS + 3)
-            .flat_map(|k| grid::ring(at, k, width, height))
-            .find(|&f| !self.terrain.has(f, state::WATER));
+        // SHIP-2.7: the first land neighbour of the stop field; none when
+        // no neighbour qualifies (ring 1 only).
+        let port = self.first_land_neighbour(at);
         let v = &mut self.ships[i].vessel;
-        v.port = port.or(v.port);
+        v.port = port;
         v.target = None;
         self.ships[i].vessel.options = self.landing_options(i);
         self.explore(owner, at, ARRIVAL_EXPLORE);
         self.ships[i].vessel.state = ShipState::Waiting;
-        self.message(owner, at, WAITING_FOR_ORDERS);
+        // UI-GAME-11.1, 4.5 c (E-trace-030): the row names the ship.
+        self.ship_message(owner, at, WAITING_FOR_ORDERS, i);
     }
 
     // ---- Harbours (SHIP-4, 5) ----
@@ -1394,20 +1398,78 @@ impl World {
         Ok(())
     }
 
-    /// SHIP-7.1: the harbour spot nearest to the ship's last port position
-    /// on its continent, if a harbour can be built there for the player.
+    /// SHIP-7.1: among the harbour spots of the land continent of the
+    /// ship's last port position (SHIP-2.7), the one nearest to the ship's
+    /// own field (a strictly smaller distance wins, so the first in the
+    /// continent's list on equal distance), if a harbour can be built
+    /// there for the player.
     fn founding_spot(&self, i: usize) -> Option<Point> {
         let v = &self.ships[i].vessel;
         let port = v.port?;
-        let continent = self.region_of(port);
+        let ship_at = v.walker.at;
         let spot = self
-            .harbour_spots
-            .iter()
-            .copied()
-            .filter(|&s| self.region_of(s) == continent)
-            .min_by_key(|&s| grid::distance(port, s))?;
+            .continent_spots(port)
+            .into_iter()
+            .min_by_key(|&s| grid::distance(ship_at, s))?;
         self.harbour_site_for(self.ships[i].owner, spot)
             .then_some(spot)
+    }
+
+    /// SHIP-7.1: the harbour spots of the land continent `field` is on, in
+    /// the continent's own order (FMT-S2M-4.9: its object's positions, by
+    /// the stored continent index). A world made without a map file has no
+    /// continent objects: there the spots of `field`'s computed region
+    /// stand in, in map order.
+    fn continent_spots(&self, field: Point) -> Vec<Point> {
+        if self.land_spots.is_empty() {
+            let region = self.region_of(field);
+            return self
+                .harbour_spots
+                .iter()
+                .copied()
+                .filter(|&s| self.region_of(s) == region)
+                .collect();
+        }
+        self.continent_of(field)
+            .map(|c| self.land_spots(c).to_vec())
+            .unwrap_or_default()
+    }
+
+    /// SHIP-2.7: whether `field` belongs to a land continent: its stored
+    /// continent index has a land continent object (FMT-S2M-4.9). In a
+    /// world made without a map file, its computed region is land.
+    pub(crate) fn on_land_continent(&self, field: Point) -> bool {
+        if self.land_spots.is_empty() {
+            return self.region_of(field) != 0 && !self.terrain.has(field, state::WATER);
+        }
+        self.continent_of(field)
+            .is_some_and(|c| self.land_spots.contains_key(&c))
+    }
+
+    /// SHIP-2.7: the first land neighbour of `field`: its six neighbours
+    /// in the order of directions 4, 5, 0, 1, 2, 3 (ring 1 from its start
+    /// field), the first inside the map that is not Water and lies on a
+    /// land continent; none when none of the six does.
+    pub(crate) fn first_land_neighbour(&self, field: Point) -> Option<Point> {
+        [4u8, 5, 0, 1, 2, 3]
+            .into_iter()
+            .filter_map(|d| self.terrain.neighbour(field, d))
+            .find(|&n| !self.terrain.has(n, state::WATER) && self.on_land_continent(n))
+    }
+
+    /// SHIP-7, UI-GAME-4.5 (f): whether `Command::ExpeditionBuildHarbor`
+    /// would be accepted for the player's ship `ship` now (its window then
+    /// shows the button).
+    pub fn can_found_harbour(&self, player: PlayerId, ship: usize) -> bool {
+        let Ok(i) = self.expedition_ship(player, ship as u32) else {
+            return false;
+        };
+        let v = &self.ships[i].vessel;
+        if !v.expedition || v.walker.is_walking() {
+            return false;
+        }
+        self.founding_spot(i)
+            .is_some_and(|spot| grid::distance(v.walker.at, spot) < BUILD_DISTANCE)
     }
 
     /// SHIP-7: found a harbour.

@@ -329,6 +329,8 @@ pub struct MenuState {
     pub captions: crate::extend::Captions,
     pub page: Vec<crate::extend::menu::Row>,
     pub page_input: Vec<(usize, crate::extend::menu::PageInput)>,
+    /// Hook W22: the part of a project's page on screen (0 when it opens).
+    pub page_part: usize,
 }
 
 /// UI-MENU-0.1: the screen after the intro.
@@ -1160,7 +1162,11 @@ pub fn apply(
             exit.write(bevy::app::AppExit::Success);
         }
         MenuAction::CloseNotice => menu.notice = None,
-        MenuAction::OpenPage(n) => menu.screen = Screen::Extension(*n),
+        MenuAction::OpenPage(n) => {
+            menu.screen = Screen::Extension(*n);
+            menu.page_part = 0;
+        }
+        MenuAction::PagePart(part) => menu.page_part = *part,
         MenuAction::Page(row, input) => menu.page_input.push((*row, *input)),
     }
     hold_or_run(menu, viewer, mission);

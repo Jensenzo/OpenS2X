@@ -193,11 +193,12 @@ impl World {
         Some(profession) == self.specialist_rules.scout
     }
 
-    /// ECO-SPC-2.2: the next spot, or he finishes without one.
+    /// ECO-SPC-2.2: the next spot; 2.2b: with none, or a spot whose walk
+    /// cannot start, he goes home at once from where he stands.
     fn next_spot(&mut self, settler: &mut Settler, flag: Point, spots_left: u8) {
         let candidates = self.specialist_candidates(settler.player, flag, settler.profession);
         if candidates.is_empty() {
-            self.specialist_finishes(settler, flag);
+            self.specialist_goes_home(settler, flag);
             return;
         }
         // ECO-SPC-2.2: the random draw, over the one candidate.
@@ -211,9 +212,27 @@ impl World {
                     step: SpecialistStep::ToSpot { spot },
                 };
             }
-            // No walk to the spot (not specified): he finishes.
-            None => self.specialist_finishes(settler, flag),
+            // ECO-SPC-2.2b: no walk to the spot: home at once.
+            None => self.specialist_goes_home(settler, flag),
         }
+    }
+
+    /// ECO-SPC-2.2a: the spots marked now: the current spot of every
+    /// geologist and scout (of any player) walking to it or working at it.
+    /// The one choosing is out of the list while his job runs, so his own
+    /// spot, just done, is not among them.
+    fn marked_spots(&self) -> std::collections::BTreeSet<Point> {
+        self.settlers
+            .iter()
+            .flatten()
+            .filter_map(|s| match s.job {
+                SettlerJob::Specialist {
+                    step: SpecialistStep::ToSpot { spot } | SpecialistStep::Work { spot },
+                    ..
+                } => Some(spot),
+                _ => None,
+            })
+            .collect()
     }
 
     /// ECO-SPC-2.2: the candidate spots around `flag`: a six-neighbour
@@ -221,7 +240,8 @@ impl World {
     /// first candidate, or at the first field beyond the radius with none
     /// found. So at most one candidate, the nearest in frontier order. A
     /// geologist's candidate is diggable, a scout's unexplored; neither
-    /// holds a layer-4 object (Q-201: the program keeps signs only).
+    /// holds a layer-4 object: a sign, or another specialist's current spot
+    /// (2.2a).
     pub(crate) fn specialist_candidates(
         &self,
         player: PlayerId,
@@ -229,13 +249,14 @@ impl World {
         profession: u32,
     ) -> Vec<Point> {
         let scout = self.is_scout(profession);
+        let marked = self.marked_spots();
         let radius = if scout {
             SCOUT_RADIUS
         } else {
             GEOLOGIST_RADIUS
         };
         let candidate = |f: Point| {
-            if self.signs.contains_key(&f) {
+            if self.signs.contains_key(&f) || marked.contains(&f) {
                 false
             } else if scout {
                 !self.explored(player, f)
@@ -353,9 +374,21 @@ impl World {
     /// starts where he stands (off the roads: TRN-FREE-6.4 step 3, first to
     /// the nearest flag of his home's network).
     fn specialist_finishes(&mut self, settler: &mut Settler, flag: Point) {
+        self.specialist_home(settler, flag, true);
+    }
+
+    /// ECO-SPC-2.2b: home at once from where he stands (TRN-FREE-6.4), no
+    /// walk back to the order's flag.
+    fn specialist_goes_home(&mut self, settler: &mut Settler, flag: Point) {
+        self.specialist_home(settler, flag, false);
+    }
+
+    /// ECO-SPC-2.5: home, by way of the order's flag field when `by_flag`
+    /// and the flag stands, else from where he stands.
+    fn specialist_home(&mut self, settler: &mut Settler, flag: Point, by_flag: bool) {
         let at = settler.walker.at;
         let on_roads = self.flag_at(at).is_some() || self.road_at(at).is_some();
-        let to = if self.flag_at(flag) == Some(settler.player) {
+        let to = if by_flag && self.flag_at(flag) == Some(settler.player) {
             (at != flag).then_some(flag)
         } else if on_roads {
             None

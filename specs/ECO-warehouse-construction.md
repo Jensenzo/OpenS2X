@@ -121,6 +121,35 @@ timed actions as in `ECO-worker-cycle.md` ECO-WORK-2.1.
     owner.
   A player who loses fields this way gets the message "Lost Territory."
   (repeats suppressed as in ECO-REQ-3.8).
+- **ECO-HQ-3.6 Fog of war Off (added 2026-11-16 night, Q-1049; E-eco-046, code
+  reading).** The free game's fog of war option (`UI-game-setup.md`
+  UI-SETUP-1.8; 0 On, 1 Off) is read at one place only: when the game
+  starts, in the loop that makes the players. With Off, right after each
+  player is made (human and computer, in slot order), the whole map is
+  explored for that player: the exploration of ECO-HQ-3.3 around the map's
+  centre (width / 2, height / 2, halves rounded down) with radius
+  2 x max(width, height), so every field except the outermost rows and
+  columns (which ECO-HQ-3.3 never marks). With On nothing is done there. The
+  option is not kept anywhere the running game reads it. Everything that
+  then differs follows from the explored fields:
+  - the drawing (`GFX-world-view.md` GFX-VIEW-5.3: the map is lit from the
+    first tick);
+  - every rule that tests exploration: the computer player's attack
+    candidates (`AI-military.md` AI-MIL-5.3, "in the player's explored map"),
+    the hunter's animal test (`ECO-food-mining.md` ECO-FOOD-5.2) and the
+    computer player's hunting site test (`AI-construction.md`), the scout
+    (`ECO-specialists.md` ECO-SPC-2.2: no unexplored field is left, so he
+    finds no spot), a soldier's own exploring (`MIL-soldiers.md`, nothing left
+    to mark);
+  - a player "meets" another when an exploration covers fields the other
+    owns while the first has them explored. With Off every later
+    exploration (a military building, a soldier, a ship) passes over owned
+    fields that all players have explored, so players meet as soon as their
+    lands are explored over; the music adds a tribe's pieces when the local
+    player meets it.
+  Confidence: high for the reader and the call; medium for the list of
+  consequences (each is the reading of its own rule, not measured with fog
+  of war Off). Test T27.
 
 ### ECO-HQ-4 Construction site
 
@@ -423,6 +452,7 @@ timed actions as in `ECO-worker-cycle.md` ECO-WORK-2.1.
 | T24 | 4.6b step 4, TRN-MOVE-2.5: E-trace-012 (Hard game), builder 90583 of the stone pit site (138, 54) (flag (137, 53)); in a unit his action at position 1, sample (552, 215), ends and the walk to position 2, sample (551, 213), is ordered at counter 4166 over (552, 214); the heights of those samples changed after the unit started | the walk's ticks (E-trace-013, every tick) | first step 0.09 per tick (counters 4166 .. 4177), second 0.072 per tick (a rise, 4178 .. 4190), on (551, 213) and working from 4191: 25 ticks. With both steps' rates from the heights at the unit's start (an experiment build) 23 ticks: working from 4189, two decrements ahead (buildings first differ at trace tick 4190; with the rule at 5160, settlers 4190 -> 4210) |
 | T23 | ECO-HQ-4.3: a bulldozing leveller on (138, 48) | fine position | (552, 192), the field's own sample; the rows of trace ticks 510-564 |
 | T26 | 4.6b step 2 (Q-1037), FMT-SAV-3.5a (e): the Fight autosave of 2026-11-01, the four constructors at step 13 | flag field, the approach's two points, the saved leg and what follows the saved walk | 24454: site (22, 49), flag (23, 48), flag sample (92, 192), far point (93, 195), leg 2, walking to (92, 192): chooses his unit when he arrives. 24416: site (21, 50), flag (21, 49), (86, 196) / (87, 199), leg 2, to (86, 196): chooses on arrival. 24602: site (56, 20), flag (56, 19), (226, 76) / (227, 79), leg 1, to (227, 79): on arrival walks back to (226, 76), then chooses. 24675: site (21, 41), flag (22, 40), (88, 160) / (89, 163), leg 1, to (89, 163): walks back to (88, 160), then chooses |
+| T27 | ECO-HQ-3.6: a free game on an 80 x 80 map, two players, fog of war Off | the first tick | every field with 0 < x < 79 and 0 < y < 79 is explored for both players (the outermost rows and columns are not); the same set-up with fog of war On has only the fields within 12 of each headquarters explored. The game's generator and objects are the same in both games until a rule that reads exploration decides differently (E-trace-017 / E-trace-014: the same to counter 11 099, different by 36 999) |
 | T25 | ECO-HQ-4.3 (the step's height change in the settlers' part), ECO-REQ-0.2 (list order), TRN-MOVE-2.5: E-trace-012 / E-trace-013 (Hard), the mill site 90961 on (136, 59) with leveller 91004 on (137, 60), and constructor 91022 of the site on (136, 61) walking his lattice steps nearby | the samples (549, 242), (549, 243) and the constructor's step between them | heap dumps 7000 and 7500: (549, 242) 76.07, (549, 243) 72.95; the leveller's action ends in counter 7621 (he walks on to (137, 59) at progress 0 that tick) and the heights table shows 74.25 / 74.20 from 7621; the constructor reaches (549, 243) and starts the step to (549, 242) in the same counter 7621 at progress 0, 0.072 per tick (factor 0.8: the old heights, rising 3.12). The constructors' list is updated before the levellers' list, so a constructor (and a carrier) starting a step in that tick sees the heights before the levelling step; applying the levelling in the site's own update (the buildings' part) gives 0.09 per tick (the Hard pair's settlers first differ at 7623 in that build, its buildings at 7680). Experiment build (s2-reborn 0cf1665 with the leveller still in the site's update, but the step's height changes held back until after the settlers' pass): Hard pair view-free settlers 7623 -> 7919, buildings 7680 -> 9324, generator 8471 -> 8866; the Weak pairs unchanged |
 | T-level-1 | computer player places a hunter's hut on level ground in tick n | building rows | tick n: state levelling, progress 0; tick n+1: frame, 0 |
 | T-level-2 | sawmill site needing 6 levelling steps, leveller arrived | progress per step | 0.17 per step, steps 78 to 83 ticks apart (55 bulldoze + the walk), done after the 6th |
@@ -449,6 +479,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-trn-004 | code reading | | game-created building: the levelling loop with height change runs at creation |
 | E-eco-006 | code reading | | territory claim from the territory range |
 | E-eco-006 | code reading | | exploration from the explore radius |
+| E-eco-046 | code reading | (session 2026-11-16 night) | 3.6: the fog of war option read once at the start, the whole map explored for each player when it is Off; the players' meeting marks |
 | E-eco-006 | code reading | | leveller and levelling |
 | E-eco-006 | code reading | | builder, work units, progress of frame and main |
 | E-trn-005 | code reading | | builder tick order, approach walk, unit choice, waiting loop (Q-125) |

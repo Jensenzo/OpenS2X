@@ -306,18 +306,13 @@ impl World {
                         .count() as u64;
                     total > 0 && owned * 100 > 74 * total
                 }
+                // CAM-3.3 target 3 (Q-1063): the coins the team's players
+                // have made so far (UI-GAME-8.5e's running total; never the
+                // stock, start, cheat or conquered coins; spent ones stay).
                 target::COINS => {
-                    let Some(coin) = self.roles.coin else {
-                        continue;
-                    };
-                    let coins: u32 = self
-                        .warehouses
+                    let coins: u64 = team
                         .iter()
-                        .filter(|(at, _)| {
-                            self.building_at(**at)
-                                .is_some_and(|b| team.contains(&b.owner))
-                        })
-                        .map(|(_, w)| w.count(coin))
+                        .map(|&p| u64::from(self.coins_produced(p)))
                         .sum();
                     coins > 99
                 }
@@ -506,13 +501,18 @@ impl World {
     }
 
     /// `menu.createShip`: a finished ship on `at`, loaded with an
-    /// expedition's builder, 4 wood and 6 stone (CAM-1.3, Q-187).
+    /// expedition's builder, 4 wood and 6 stone (CAM-1.3, Q-187), with its
+    /// first land neighbour as last port position (SHIP-2.7).
     pub(crate) fn create_ship(&mut self, player: PlayerId, at: Point) -> Result<(), Rejection> {
         if !self.terrain.contains(at) {
             return Err(Rejection::OutsideMap);
         }
         let ship = self.debug_add_ship(player, at);
+        // SHIP-2.7 (CAM-1.2): its last port position is its field's first
+        // land neighbour.
+        let port = self.first_land_neighbour(at);
         let v = &mut self.ships[ship].vessel;
+        v.port = port;
         v.aboard = SHIP_LOAD.to_vec();
         v.expedition = true;
         for (good, n) in SHIP_LOAD {

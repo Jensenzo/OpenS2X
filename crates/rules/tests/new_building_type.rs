@@ -215,3 +215,46 @@ fn an_overlay_building_type_is_built_staffed_and_makes_coal() {
     }
     panic!("no map with room for the burner");
 }
+
+/// Hook W20's companion (docs/extending.md "Recipes a player chooses"):
+/// `reborn.dist_addConsumer` adds a building type to the distribution table
+/// of a good (ECO-DIST-2.1) after the original's consumers, once; the
+/// original's tables are unchanged without it.
+// spec: none (hook W20; the tables are ECO-DIST-2.1's)
+#[test]
+fn an_overlay_adds_a_consumer_to_a_distribution_table() {
+    let Some(dir) = game_dir() else { return };
+    let overlay = s2_rules::Overlay {
+        name: "fish-for-the-woodcutter".into(),
+        code: b"reborn.dist_addConsumer(fish, woodCutter, 200)
+                reborn.dist_addConsumer(bread, woodCutter, 300)"
+            .to_vec(),
+    };
+    let (plain, _) = s2_rules::load(&dir).unwrap();
+    let (rules, _) = s2_rules::load_with_overlays(&dir, &[overlay]).unwrap();
+    let woodcutter = rules.names["woodCutter"];
+    let fish = rules.names["fish"];
+    let food = |r: &s2_rules::RuleSet| {
+        r.sim_rules()
+            .unwrap()
+            .distribution
+            .into_iter()
+            .find(|t| t.goods.contains(&fish))
+            .expect("the food table")
+            .entries
+    };
+    let (before, after) = (food(&plain), food(&rules));
+    assert!(!before.iter().any(|&(k, _)| k == woodcutter));
+    assert_eq!(&after[..before.len()], &before[..]);
+    assert_eq!(&after[before.len()..], &[(woodcutter, 200)]);
+    // Every other table as the original's.
+    let others = |r: &s2_rules::RuleSet| {
+        r.sim_rules()
+            .unwrap()
+            .distribution
+            .into_iter()
+            .filter(|t| !t.goods.contains(&fish))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(others(&plain), others(&rules));
+}

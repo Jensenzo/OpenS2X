@@ -738,11 +738,14 @@ pub fn sync_objects(
         );
         // GFX-OBJ-6.2a (d), T47: each road's ends decided when it is made.
         crate::world::scene3d::update_road_ends(&mut placements.road_ends, world);
-        // F55: only the squares whose strips or ground changed.
-        let wanted = crate::world::scene3d::street_parts(
+        // F55: only the squares whose strips or ground changed. Hook W21:
+        // with a paved look the paved roads have a part of their own.
+        let paved_look = crate::extend::render().paved_road;
+        let wanted = crate::world::scene3d::street_parts_with(
             world,
             &placements.donkey_crossings,
             &placements.road_ends,
+            paved_look.is_some(),
         );
         placements.road_parts.retain(|key, (_, entity)| {
             let stays = wanted.contains_key(key);
@@ -770,6 +773,7 @@ pub fn sync_objects(
                 &placements.road_ends,
                 part,
                 chunk,
+                paved_look.is_some(),
             );
             let mut made = None;
             if !street.positions.is_empty() {
@@ -780,10 +784,20 @@ pub fn sync_objects(
                     street.tangents,
                     street.indices,
                 ));
-                let (texture, normal) = crate::world::scene3d::STREET_PARTS[usize::from(part)];
+                // Hook W21: the paved part with the project's textures,
+                // shaded as a road strip (part 1).
+                let (texture, normal, shaded_as) = match (&paved_look, part) {
+                    (Some(look), crate::world::scene3d::PAVED_PART) => {
+                        (look.texture.as_str(), look.normal.as_str(), 1)
+                    }
+                    _ => {
+                        let (t, n) = crate::world::scene3d::STREET_PARTS[usize::from(part)];
+                        (t, n, part)
+                    }
+                };
                 if let Some(material) = library.street_material(
                     &mesh,
-                    part,
+                    shaded_as,
                     texture,
                     normal,
                     &mut images,

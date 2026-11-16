@@ -61,6 +61,68 @@ fn carriers_evade() {
     assert!((o[0] - 0.7).abs() < 1e-5 && o[1] == 0.0);
 }
 
+// GFX-ANIM-4.3 (Q-207 g): a walker passing a stander takes the full offset
+// whatever the directions, signed by his own lean; the stander none. Two
+// walkers toward each other take half each with one sign, from the sum of
+// their leans; the offsets add to what each has.
+// spec: GFX-ANIM-4.3
+#[test]
+fn who_takes_the_evading_offset() {
+    let pi = std::f32::consts::PI;
+    let s = |x: f32, heading: f32, moving: bool, offset: f32| Evader {
+        at: [x, 0.0],
+        heading,
+        moving,
+        offset,
+    };
+    let full = (1.0 - 1.44 / (2.4 * 2.4)) * 1.2 * 0.5;
+    // Walking away from a stander: the walker the full f, signed by his
+    // lean (here negative), the stander nothing.
+    let o = evade(
+        &[s(0.0, pi / 2.0, true, -0.1), s(1.2, pi / 2.0, false, 0.4)],
+        2.0,
+        0.5,
+        1.2,
+        0.0,
+    );
+    assert!((o[0] - (-0.1 - full)).abs() < 1e-5, "{o:?}");
+    assert!((o[1] - 0.4).abs() < 1e-5, "{o:?}");
+    // Toward each other, leans -0.1 and +0.3: the sum positive, both + f/2,
+    // added to their leans.
+    let o = evade(
+        &[s(0.0, pi / 2.0, true, -0.1), s(1.2, -pi / 2.0, true, 0.3)],
+        2.0,
+        0.5,
+        1.2,
+        0.0,
+    );
+    assert!((o[0] - (-0.1 + full / 2.0)).abs() < 1e-5, "{o:?}");
+    assert!((o[1] - (0.3 + full / 2.0)).abs() < 1e-5, "{o:?}");
+    // Leans summing below 0: both negative.
+    let o = evade(
+        &[s(0.0, pi / 2.0, true, -0.3), s(1.2, -pi / 2.0, true, 0.1)],
+        2.0,
+        0.5,
+        1.2,
+        0.0,
+    );
+    assert!((o[0] - (-0.3 - full / 2.0)).abs() < 1e-5, "{o:?}");
+    assert!((o[1] - (0.1 - full / 2.0)).abs() < 1e-5, "{o:?}");
+    // Two standers around one walker: the two pairs add up.
+    let o = evade(
+        &[
+            s(0.0, 0.0, true, 0.0),
+            s(1.2, 0.0, false, 0.0),
+            s(-1.2, 0.0, false, 0.0),
+        ],
+        2.0,
+        0.5,
+        1.2,
+        0.0,
+    );
+    assert!((o[0] - 2.0 * full).abs() < 1e-5, "{o:?}");
+}
+
 // TOOL-trace TRACE-5.3: the decay runs once per logic tick, a tick length
 // (0.1 s) at a time: 0.075 a tick, 0.3 after 4 ticks; a frame without a
 // tick (paused) takes nothing off.
@@ -569,7 +631,7 @@ fn t47_the_first_road_at_a_flag_runs_to_it() {
     // its row), and none of R2 lies closer to F than 0.8722 on the right.
     let frame = Frame::new(20, 20);
     let [x6, z6] = frame.field_xz(f.0, f.1);
-    let street = streets_in(&world, false, None, &ends);
+    let street = streets_in(&world, false, None, &ends, Paved::Ignored);
     let near: Vec<[f32; 3]> = street
         .positions
         .iter()
@@ -919,9 +981,17 @@ fn street_parts_add_up_to_the_whole_map() {
             .keys()
             .filter(|k| k.0 == part)
             .map(|k| {
-                street_part(&world, &frame, &moved, &road_ends_of(&world), part, k.1)
-                    .positions
-                    .len()
+                street_part(
+                    &world,
+                    &frame,
+                    &moved,
+                    &road_ends_of(&world),
+                    part,
+                    k.1,
+                    false,
+                )
+                .positions
+                .len()
             })
             .sum()
     };
@@ -2155,4 +2225,74 @@ fn f60_street_meshes_face_up() {
     let crossings = faces(&crossings(&world, &frame, &HashSet::new(), false));
     assert!(roads.0 > 0 && doors.0 > 0 && crossings.0 > 0);
     assert_eq!((roads.1, doors.1, crossings.1), (0, 0, 0));
+}
+
+/// Hook W21: without a paved look the street pass is the original's, paved
+/// roads or not; with one, a paved land road leaves its part (0 or 1) for
+/// the paved part, a mesh of its own, so becoming paved changes the numbers
+/// of both parts; a road not paved stays where it was.
+// spec: none (hook W21, docs/extending.md "The look of a paved road")
+#[test]
+fn a_paved_look_draws_paved_roads_in_a_part_of_their_own() {
+    let mut world = flat_world(20, 20);
+    let player = s2_sim::PlayerId(0);
+    for at in [(2, 2), (6, 2), (10, 2)] {
+        world.submit(s2_sim::Command::PlaceFlag { player, at });
+    }
+    world.step();
+    for (from, to) in [((2, 2), (6, 2)), ((6, 2), (10, 2))] {
+        world.submit(s2_sim::Command::BuildRoad { player, from, to });
+        world.step();
+    }
+    let moved = HashSet::new();
+    let ends = road_ends_of(&world);
+    let number = world
+        .roads()
+        .find(|r| r.path[0] == (2, 2))
+        .expect("the first road")
+        .number;
+    let plain = street_parts(&world, &moved, &ends);
+    assert_eq!(street_parts_with(&world, &moved, &ends, true), plain);
+    world.debug_pave_road(number);
+    assert!(world.is_paved(number));
+    // No look: the original's pass, the paved road drawn as a dirt road.
+    assert_eq!(street_parts(&world, &moved, &ends), plain);
+    let with = street_parts_with(&world, &moved, &ends, true);
+    let square = road_chunk((2, 2));
+    assert!(with.contains_key(&(PAVED_PART, square)));
+    assert!(!plain.contains_key(&(PAVED_PART, square)));
+    assert_ne!(with.get(&(1, square)), plain.get(&(1, square)));
+    assert_eq!(road_part(false, true, true), PAVED_PART);
+    assert_eq!(
+        (road_part(true, true, false), road_part(false, true, false)),
+        (0, 1)
+    );
+    // The strips: the paved road's in the paved part only, the other road's
+    // in part 1 as before.
+    let count = |paved| {
+        streets_in(&world, false, None, &ends, paved)
+            .positions
+            .len()
+    };
+    let (all, left, only) = (
+        count(Paved::Ignored),
+        count(Paved::Left),
+        count(Paved::Only),
+    );
+    assert!(only > 0 && left > 0);
+    assert_eq!(left + only, all);
+}
+
+// GFX-ANIM-3.1 (Q-180 g): the swim test is against the water level: the
+// middle of the body (foot + half the model's height) at or below it swims;
+// a settler on dry ground above the water level never does, one whose field
+// lies under the water plane deep enough does.
+// spec: GFX-ANIM-3.1
+#[test]
+fn the_swim_test_is_the_water_level() {
+    let level = crate::render::world3d::WATER_LEVEL;
+    assert!(swims(level - 1.0, 2.0), "the middle exactly at the surface");
+    assert!(!swims(level - 0.9, 2.0));
+    assert!(!swims(level + 3.0, 2.0), "dry ground above the water");
+    assert!(swims(level - 5.0, 2.0));
 }

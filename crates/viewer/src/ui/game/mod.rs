@@ -251,6 +251,9 @@ pub struct GameUi {
     pub message_hidden: [bool; 4],
     /// UI-GAME-11.4: the messages deleted with a right click.
     pub deleted_messages: std::collections::HashSet<MessageKey>,
+    /// UI-GAME-11.4: the messages marked read by a left click on their
+    /// icon.
+    pub read_messages: std::collections::HashSet<MessageKey>,
     /// UI-GAME-3.4: road building from this flag.
     pub road_from: Option<Point>,
     /// TRN-ROAD-7.1: the road being built is a waterway.
@@ -583,8 +586,24 @@ pub fn briefing(ctx: &Ctx) -> Panel {
             line(50.0),
             [0, 0, 0],
         );
+    } else if target == 3 {
+        // UI-GAME-2.4 (Q-1063): the coins target's second line, the local
+        // player's own coins made so far (CAM-3.3), not his team's sum. The
+        // panel is built every frame; the original refreshes the figure
+        // every half second.
+        p.right_text(
+            coin_line(ctx.world.coins_produced(ctx.player)),
+            Font::Dark,
+            line(50.0),
+            [0, 0, 0],
+        );
     }
     p
+}
+
+/// UI-GAME-2.4: the coins target's line, `(<n>/100)`.
+pub(crate) fn coin_line(coins: u32) -> String {
+    format!("({coins}/100)")
 }
 
 /// UI-GAME-1.8 (corrected 2026-11-14 b, F59, E-ui-033): each window passes

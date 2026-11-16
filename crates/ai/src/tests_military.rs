@@ -872,9 +872,10 @@ fn an_upgrading_building_counts_as_under_construction() {
             threat: 3,
         },
     );
+    // Four fields from the castle: no site a player could place there
+    // (ECO-PLACE-6.2), so a mission's finished building (CAM-1.3).
     let at = (23, 22);
-    with_building(&mut world, BARRACKS, at);
-    finish_site(&mut world, at);
+    created(&mut world, BARRACKS, at);
     // MIL-UPG-1.2: its builder released (the end of his last action).
     for _ in 0..60 {
         world.step();
@@ -904,12 +905,27 @@ fn upgrade_game() -> (World, AiSystem, Point) {
     upgrade_game_of(&[0])
 }
 
+/// A finished building of player 0 made as a mission makes one
+/// (`CreateBuilding`, CAM-1.3), where ECO-PLACE-6.2 keeps a player's site
+/// away.
+fn created(world: &mut World, kind: u32, at: Point) {
+    world.submit(Command::CreateBuilding {
+        player: P0,
+        building: kind,
+        at,
+        settler: None,
+    });
+    world.step();
+    assert!(world.building_at(at).is_some_and(|b| !b.under_construction));
+}
+
 /// `upgrade_game` with the headquarters of `players` (player 0's barracks).
 fn upgrade_game_of(players: &[u8]) -> (World, AiSystem, Point) {
     let mut world = world(players);
+    // Four fields from the castle: no site a player could place there
+    // (ECO-PLACE-6.2), so a mission's finished building (CAM-1.3).
     let at = (23, 22);
-    with_building(&mut world, BARRACKS, at);
-    finish_site(&mut world, at);
+    created(&mut world, BARRACKS, at);
     // MIL-UPG-1.2: its builder released (the end of his last action).
     for _ in 0..60 {
         world.step();
@@ -1254,10 +1270,11 @@ fn t22_a_smithy_site_counts_for_the_recruiting_depot() {
 fn the_upgrade_check_counts_a_warehouse_near_the_site() {
     let mut world = world(&[0]);
     let (near, far, woodcutter) = ((23, 22), (25, 24), (23, 26));
-    for at in [near, far] {
-        with_building(&mut world, BARRACKS, at);
-        finish_site(&mut world, at);
-    }
+    with_building(&mut world, BARRACKS, far);
+    finish_site(&mut world, far);
+    // The near one, four from the castle, is no site a player could place
+    // (ECO-PLACE-6.2).
+    created(&mut world, BARRACKS, near);
     with_building(&mut world, WOODCUTTER, woodcutter);
     finish_site(&mut world, woodcutter);
     assert!(crate::view::dist(far, (20, 20)) >= 5 && crate::view::dist(far, woodcutter) < 5);
@@ -1322,7 +1339,9 @@ fn an_order_needs_twice_its_costs_in_stock() {
 #[test]
 fn stock_counts_the_warehouses_only() {
     let mut world = world(&[0]);
-    let at = (23, 22);
+    // Five fields from the castle: ECO-PLACE-6.2 keeps a barracks site
+    // off the four around it.
+    let at = (24, 22);
     with_building(&mut world, BARRACKS, at);
     world.submit(Command::DebugSupplySite {
         player: P0,

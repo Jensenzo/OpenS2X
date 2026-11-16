@@ -241,8 +241,38 @@ pub struct Building {
     /// good none of their cells offers a square for. None in the original's
     /// scripts.
     pub ai_alternative: Option<AiAlternative>,
+    /// Hook W20, a project's only (`reborn.bp_addRecipe` and
+    /// `reborn.bp_addRecipeInput` in an overlay): the recipes a player
+    /// chooses between per building of this type, in order. Empty in the
+    /// original's scripts.
+    pub recipes: Vec<RecipeChoice>,
+    /// Hook W15, a project's only (`reborn.bp_setDeepening` and its
+    /// companions in an overlay): how an exhausted mine of this type is
+    /// deepened. None in the original's scripts.
+    pub deepening: Option<DeepeningRule>,
 }
 record!(Building);
+
+/// Hook W15: a mine type's deepening. Not part of the original game.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DeepeningRule {
+    /// Of each field's first amount, the share that comes back, per mille.
+    pub share_per_mille: u32,
+    /// The most deepenings of one mine.
+    pub most: u32,
+    /// What one deepening costs.
+    pub costs: Vec<Amount>,
+    /// The food one product eats after the first deepening, the second, ...
+    pub food: Vec<u32>,
+}
+
+/// Hook W20: one recipe of a type's set: the product one cycle makes and
+/// what it consumes. Not part of the original game.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecipeChoice {
+    pub product: Id,
+    pub inputs: Vec<Amount>,
+}
 
 /// Hook W12: when the computer players build a project's type in place of
 /// the mine of a square good (`docs/extending.md`, "The computer players and
@@ -487,6 +517,59 @@ pub struct RuleSet {
     /// Hook W12: the building types a project's overlay created (an id the
     /// original's scripts do not have). Empty without overlays.
     pub project_buildings: std::collections::BTreeSet<Id>,
+    /// Hook W16 (`reborn.cfg_setRecipeKeep` in an overlay): how many of a
+    /// good, or of each member of a group, a player keeps back from the
+    /// orders of a recipe group. Empty without overlays.
+    pub recipe_keep: std::collections::BTreeMap<Id, u32>,
+    /// Hook W19 (`reborn.cfg_setPaving` in an overlay): the good a road's
+    /// pavement takes per field and the speed on it in percent. None
+    /// without overlays.
+    pub paving: Option<(Id, u32, u32)>,
+    /// Hook W20's companion (`reborn.dist_addConsumer` in an overlay): a
+    /// building type added to the distribution table of a good (ECO-DIST-2.1),
+    /// with its default weight in thousandths: (good, building, weight), in
+    /// call order. Empty without overlays.
+    pub dist_consumers: Vec<(Id, Id, u32)>,
+    /// Hook W25 (`reborn.ai_set*` in an overlay): when the computer players
+    /// use the project's rules. Empty without overlays: they play the
+    /// original's game.
+    pub ai_project: AiProjectRules,
+}
+
+/// Hook W25: the computer players' use of a project's rules, each none by
+/// default (they never deepen, pave or choose a recipe).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AiProjectRules {
+    /// `reborn.ai_setDeepen(food_at_least)`: a computer player deepens an
+    /// exhausted mine of a type with a deepening while its stock of food
+    /// (fish, meat and bread together) is at least this, one at a time.
+    pub deepen_food: Option<u32>,
+    /// `reborn.ai_setPaving(traffic_at_least, reserve)`: a computer player
+    /// paves its road of the highest traffic average, when that is at least
+    /// the first value, while it holds more of the paving good than the
+    /// reserve plus the road's cost, one at a time.
+    pub paving: Option<(u32, u32)>,
+    /// `reborn.ai_setRecipeRule(building, index, good, above)`: a computer
+    /// player's building of the type works recipe `index` while the player
+    /// holds more than `above` of the good (a group good: its members
+    /// together), else its first; in call order, the last for a type wins.
+    pub recipes: Vec<AiRecipeRule>,
+}
+
+/// Hook W25: one `reborn.ai_setRecipeRule`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AiRecipeRule {
+    pub building: Id,
+    pub index: u32,
+    pub good: Id,
+    pub above: u32,
+}
+
+impl AiProjectRules {
+    /// Whether any rule is set.
+    pub fn any(&self) -> bool {
+        self.deepen_food.is_some() || self.paving.is_some() || !self.recipes.is_empty()
+    }
 }
 
 impl RuleSet {
@@ -564,6 +647,15 @@ impl RuleSet {
                 check(good(amount.good), "building", b.id, "good", amount.good);
             }
             let alternative = b.ai_alternative.iter().flat_map(|a| [a.good, a.input]);
+            let recipes = b
+                .recipes
+                .iter()
+                .flat_map(|r| std::iter::once(r.product).chain(r.inputs.iter().map(|a| a.good)));
+            let deepening = b
+                .deepening
+                .iter()
+                .flat_map(|d| d.costs.iter().map(|a| a.good));
+            let alternative = alternative.chain(recipes).chain(deepening);
             for target in b
                 .worker
                 .iter()

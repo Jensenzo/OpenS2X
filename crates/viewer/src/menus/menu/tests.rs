@@ -851,7 +851,8 @@ fn captions_add_one_line_each() {
 /// the game settings (UI-MENU-4.1): labels at x 24 in the headings'
 /// colour from y 72 stepping 32, a toggle's Off / On at 168 / 268, a
 /// choice's options three to a line, a button's bar at 168; BACK at
-/// (50, 480); rows past the eleventh are left out. Entry, row and input
+/// (50, 480); rows past the eleventh go on to the page's next part (hook
+/// W22, a switch at the foot). Entry, row and input
 /// go back as menu actions.
 // spec: UI-MENU-4.1 (the settings pages' rows the hook's page follows)
 #[test]
@@ -934,15 +935,99 @@ fn an_extension_page_is_laid_out_like_the_settings() {
         action("Own", 268.0),
         Some(Action::Menu(MenuAction::Page(2, PageInput::Choose(1))))
     );
-    // Eleven rows fit; the twelfth is left out.
-    menu.page = (0..12).map(|n| Row::Caption(format!("row {n}"))).collect();
+    // Eleven rows fit, with no page switch; hook W22: the twelfth goes on
+    // to the page's second part.
+    menu.page = (0..11).map(|n| Row::Caption(format!("row {n}"))).collect();
     let p = extension_page(&menu, &texts, screen, 0);
-    let shown = |name: &str| {
+    let shown = |p: &Panel, name: &str| {
         p.widgets
             .iter()
             .any(|w| matches!(w, Widget::Text { text, .. } if text == name))
     };
-    assert!(shown("row 10") && !shown("row 11"));
+    assert!(shown(&p, "row 10") && !shown(&p, "1/1"));
+    assert!(!p.widgets.iter().any(|w| matches!(
+        w,
+        Widget::TextButton {
+            action: Action::Menu(MenuAction::PagePart(_)),
+            ..
+        }
+    )));
+    menu.page = (0..15).map(|n| Row::Caption(format!("row {n}"))).collect();
+    let p = extension_page(&menu, &texts, screen, 0);
+    assert!(shown(&p, "row 10") && !shown(&p, "row 11") && shown(&p, "1/2"));
+    let switch = |p: &Panel, text: &str| {
+        p.widgets.iter().find_map(|w| match w {
+            Widget::TextButton {
+                text: t,
+                at,
+                action,
+                enabled,
+                ..
+            } if t == text => Some((*at, action.clone(), *enabled)),
+            _ => None,
+        })
+    };
+    assert_eq!(
+        switch(&p, ">"),
+        Some((
+            at(268.0, PAGE_SWITCH_Y),
+            Action::Menu(MenuAction::PagePart(1)),
+            true
+        ))
+    );
+    assert_eq!(switch(&p, "<").map(|s| s.2), Some(false));
+    // The switch's click (`MenuAction::PagePart`): rows 12 to 15 from the
+    // top, their own indices.
+    menu.page_part = 1;
+    let p = extension_page(&menu, &texts, screen, 0);
+    assert!(!shown(&p, "row 10") && shown(&p, "row 11") && shown(&p, "row 14"));
+    assert!(p.widgets.iter().any(|w| matches!(
+        w,
+        Widget::Text { text, at: a, .. } if text == "row 11" && *a == at(24.0, 72.0)
+    )));
+    assert!(shown(&p, "2/2") && switch(&p, ">").map(|s| s.2) == Some(false));
+    // A PageBreak starts a part of its own; reopening shows the first.
+    menu.page = vec![
+        Row::Caption("general".into()),
+        Row::PageBreak,
+        Row::Caption("rules".into()),
+    ];
+    let p = extension_page(&menu, &texts, screen, 0);
+    assert!(shown(&p, "rules") && !shown(&p, "general") && shown(&p, "2/2"));
+}
+
+// Hook W22: the parts of a page: breaks, overflow, a choice's lines, an
+// empty part not made.
+// spec: none (hook W22, a project's page; the original has no such page)
+#[test]
+fn a_projects_page_in_parts() {
+    use crate::extend::menu::Row;
+    let cap = |n: usize| Row::Caption(format!("{n}"));
+    assert_eq!(page_parts(&[]), vec![Vec::<usize>::new()]);
+    let rows: Vec<Row> = (0..23).map(cap).collect();
+    let parts = page_parts(&rows);
+    assert_eq!(parts.iter().map(Vec::len).collect::<Vec<_>>(), [11, 11, 1]);
+    // A choice of six options takes two rows: ten captions and it do not fit.
+    let mut rows: Vec<Row> = (0..10).map(cap).collect();
+    rows.push(Row::Choice {
+        label: "c".into(),
+        options: (0..6).map(|n| n.to_string()).collect(),
+        index: 0,
+    });
+    assert_eq!(
+        page_parts(&rows),
+        vec![(0..10).collect::<Vec<_>>(), vec![10]]
+    );
+    // Breaks at the start, twice or at the end make no empty part.
+    let rows = vec![
+        Row::PageBreak,
+        cap(0),
+        Row::PageBreak,
+        Row::PageBreak,
+        cap(1),
+        Row::PageBreak,
+    ];
+    assert_eq!(page_parts(&rows), vec![vec![1], vec![4]]);
 }
 
 // UI-MENU-3.1, 3.1a (Run D): the game menu has the five rows of 3.1
@@ -1825,8 +1910,9 @@ fn the_engine_page() {
             .map(SliderKind::Scene)
             .to_vec()
     );
-    assert_eq!(sliders[0].1, 104.0 + 6.0);
-    assert_eq!(sliders[7].1, 360.0 + 6.0);
+    // UI-MENU-4.0, UI-GAME-6.5 (b): the 152 x 24 bar's top on the row.
+    assert_eq!(sliders[0].1, 104.0);
+    assert_eq!(sliders[7].1, 360.0);
     // The tabs: the engine page's (id 1, the second) selected.
     assert!(sprites(&p).contains(&(
         Atlas::Elements0,

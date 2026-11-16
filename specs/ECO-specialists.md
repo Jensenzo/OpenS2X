@@ -39,8 +39,22 @@ one sends it. At the flag the specialist visits ten random spots around the flag
   radius (geologist 5 fields, scout 10) is examined with no candidate yet. So the spot is the
   nearest acceptable field in frontier order (the random draw is over one candidate), and the
   geologist works outward field by field because every dug field gets a sign and is no longer
-  diggable. With no candidate he finishes (2.5). Confidence: high (E-pt2-001; replaces the earlier "passed the radius with at
+  diggable. With no candidate he goes home at once from where he stands (2.2b; corrected 2026-11-16 day, was "finishes (2.5)"). Confidence: high (E-pt2-001; replaces the earlier "passed the radius with at
   least one candidate" reading).
+- **ECO-SPC-2.2a The "layer-4 object" is another specialist's spot (2026-11-16 day, Q-201 a;
+  E-eco-048, code reading, high).** The map keeps one more object layer beside flags, buildings,
+  roads and deposits, and only the geologist and the scout use it: when one of them has chosen his
+  spot, the spot is **marked with him** before he starts walking; the mark stays while he walks
+  there and while he works there, and is taken off when his work at that spot is done (before he
+  chooses the next one), or when he leaves the order early (the flag gone, 2.4). So "no layer-4
+  object" in 2.2 means **not the current spot of any geologist or scout** (of any player): two
+  specialists never pick the same field at the same time. The marks are never in a map file.
+- **ECO-SPC-2.2b No spot, or a spot he cannot walk to (Q-201 c; E-eco-048, code reading,
+  high).** Choosing the spot and starting the free walk to it are one step. When it fails (no
+  candidate, or the walk cannot start), he **goes home at once from where he stands**, as a settler
+  sent home (`TRN-free-walk.md` TRN-FREE-6.4), without walking back to the order's flag first. The
+  same holds when, on his arrival at the order's flag (before the first spot), the flag is gone.
+  Only after his tenth spot does he walk back to the flag (2.5).
 - **ECO-SPC-2.3** At the spot he works for **80 ticks** (8 s): the geologist plays the dig clip, or
   the hammering clip when the field holds no resource entry and is not buildable ground; the scout
   plays his clip (GFX-ANIM-3.8). Then the result of 3 or 4 is applied, he steps off the spot and, if
@@ -51,6 +65,9 @@ one sends it. At the flag the specialist visits ten random spots around the flag
   the order's flag field, and from there home to a depot as a settler returning home (TRN-CARRY)
   and is stored there again. If the order's flag is gone (2.4) he steps off the spot and the
   returning-home walk starts from where he stands. Confidence: high (E-pt2-001).
+  The walk home is the common going-home state of TRN-FREE-6.4, with its retries: when no
+  warehouse is found he takes one wander step and tries again (its step 4), up to its limit
+  (Q-201 b, 2026-11-16 day, E-eco-048: the specialist has no going-home of his own).
 
 ### ECO-SPC-3 Geologist result
 
@@ -96,6 +113,8 @@ one sends it. At the flag the specialist visits ten random spots around the flag
 | T4 | geologist walking between spots | the flag is destroyed | he walks home at once |
 | T5 | geologist ordered at a flag on mountain ground, all fields diggable | spots | the 10 spots are the 10 nearest diggable fields in frontier order from the flag, each getting a sign (2.2) |
 | T6 | geologist digs a field with no resource entry | result | empty sign planted, no message (3.1, 3.2) |
+| T7 | 2.2a: two geologists ordered at two flags whose candidate fields overlap, the second sent while the first walks to his spot S | the second's spot choice | not S (S is marked); once the first has finished his work at S (the sign planted), S is no longer a candidate anyway (the sign) |
+| T8 | 2.2b: a geologist ordered at a flag with no diggable field within 5 (all grass) | after he reaches the flag | he goes home at once from the flag field (TRN-FREE-6.4), no spot, no sign; with a candidate whose walk cannot start the same |
 
 ## Evidence
 
@@ -103,6 +122,7 @@ one sends it. At the flag the specialist visits ten random spots around the flag
 |---|---|---|---|
 | E-cmd-001 | code reading | S2DNG.exe: the command handlers, the order and its request, the specialist's tick, the spot choice, the work, the geologist's result, the scout's reveal, the 10 spots | |
 | E-pt2-001 | code reading | | spot search stop rule, diggable test, sign rule, finishing, explore shape |
+| E-eco-048 | code reading | S2DNG.exe: the specialist's states, the spot mark layer and its writers and readers | 2.2a, 2.2b, 2.5 (Q-201) |
 
 ## Open questions
 

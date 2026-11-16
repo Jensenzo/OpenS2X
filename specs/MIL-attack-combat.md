@@ -45,8 +45,14 @@ health point off the other.
 - **MIL-ATK-1.3 Targets.** The attack dialog is opened on an enemy building;
   when `A = 0` it shows "Can not attack this building!" and sends no order.
   The order itself checks only that the target building exists. Confidence:
-  high for the `A = 0` message; medium for which building kinds open the dialog
-  (enemy military buildings, the headquarters included).
+  high for the `A = 0` message. **Which buildings open it (2026-11-16 night, Q-144; E-mil-015, code
+  reading and data, high):** a click on a building of a hostile player opens the attack dialog only
+  when that building is the **headquarters**, or its type has a **soldier limit above 0** (barracks
+  2, guard house 3, watchtower 6, fortress 9) **and it is occupied** (it has had its first soldier,
+  TER "Military building occupied!"). Any other enemy building (the lookout tower, which has no
+  soldiers, a harbour, a storehouse, a workshop, a military building not yet occupied, any
+  construction site) opens nothing: the click clears the selection. Seen in E-trace-031: an occupied
+  enemy guard tower opened "ATTACK MENU" with "Cannot attack this building!". Test T1b.
 - **MIL-ATK-1.4 Dialog count.** The dialog has four count buttons ("Low",
   "Medium", "High", "Highest number of soldiers") setting a fraction `s` of
   0.25, 0.5, 0.75, 1.0, and a choice "Use weak units first" / "Use strong units
@@ -158,6 +164,16 @@ health point off the other.
   can be taken (MIL-CON-1.1): it walks to the door; an opponent is available
   (MIL-ATK-5.1): it is paired with it and walks to its waiting field (it may
   already stand there). Confidence: medium.
+  **Walking home, and a home that is gone (2026-11-16 night and day, Q-142; E-mil-016, E-mil-017,
+  code reading, high).** "Walks home" is a free walk to the flag of **his own military building**
+  (the one that sent him), after which he goes in as every settler does. When that building no
+  longer exists, the walk does not start. Every tick, before his state is handled, a soldier
+  outside a building checks his four links: his home building, his attack target, and the two
+  links of the fight he may be in. When none of them exists any more, he is **sent home as a
+  settler without a building** (`TRN-free-walk.md` TRN-FREE-6.4: the nearest accepting warehouse
+  over the roads, and so on), in that tick. So an attacker whose target and home are both gone
+  ends in a warehouse. (How a home building that now wants fewer soldiers takes a returning one
+  was not read.)
 
 ### MIL-ATK-5 Defenders coming out of the target
 
@@ -335,6 +351,7 @@ health point off the other.
 | ID | Setup | Action | Expected |
 |---|---|---|---|
 | T1 | P's guard house G with 3 present idle soldiers at d 10 from enemy barracks T; attack strength 1.0; P owns a field on T's ring | available | `A = 2` |
+| T1b | 1.3 (Q-144): enemy buildings: its headquarters; an occupied barracks; a finished guard house no soldier has entered yet; a lookout tower; a harbour; a fortress site | a click on each | the attack dialog opens for the headquarters and the occupied barracks only; the other four open nothing and the selection is cleared |
 | T2 | as T1, strength 0.3 | available | `trunc(2 x 0.3) = 0`: "Can not attack this building!" |
 | T3 | `A = 7` | dialog counts | Low `trunc(0.25 x 6 + 1.5) = 3`, Medium 4, High 6, Highest 7 |
 | T4 | buildings X (d 8, k 2), Y (d 5, k 1), Z (d 8, k 3), list order X, Y, Z; count 4 | launch | Y sends 1, X 2, Z 1 |
@@ -378,6 +395,9 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-010 | code reading, saves of the original | (session 2026-11-14; the fight saves of E-sav-017) | 6.1a: the attacker's one-step offset with one draw, the defender on the point, the interceptor's duel field; the defender choice needs no presence (5.1) |
 | E-mil-011 | code reading | (session 2026-11-15 night) | 6.1a: the wait job starts only with an opponent; an unpaired attacker waits on the point without a draw; the step back to the point before any next choice (Q-1050) |
 | E-mil-012 | code reading | (session 2026-11-15 night) | 4.2, 4.3: the door is the target's flag; the waiting-field search's start, walk test and free test (Q-1051) |
+| E-mil-015 | code reading and data | (session 2026-11-16 night) | 1.3: which enemy buildings open the attack dialog (headquarters, or a soldier limit above 0 and occupied), T1b |
+| E-mil-016 | code reading | (session 2026-11-16 night) | 4.4: the waiting attacker's return to his own building's flag; the return refused when that building is gone |
+| E-mil-017 | code reading | (session 2026-11-16 day) | 4.4: the soldier's per-tick test of his four links; with none left he goes home as a settler without a building (Q-142) |
 | data | script | `military.lua`, `ai.lua` | fighting time, AI profile values |
 
 ## Open questions

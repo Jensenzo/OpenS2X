@@ -12,6 +12,8 @@ pub enum Atlas {
     Game,
     Elements0,
     Elements1,
+    /// UI-GAME-6.5: the economy sliders' bar and fill.
+    Elements2,
     Elements3,
     Elements4,
     Elements5,
@@ -58,6 +60,9 @@ pub enum Atlas {
     /// A film's picture (`video::FILM_TITLE`, `FILM_INTRO`), made by the
     /// program.
     Film(u8),
+    /// A project's picture (`Extensions::button_pictures`), by its index in
+    /// `extend::project_pictures()`.
+    Project(u8),
 }
 
 /// CAM-1.3, 3.6: the briefing pictures (`data/gfx/<name>.dds`).
@@ -94,6 +99,7 @@ impl Atlas {
             Self::Game => "uiGame.dds",
             Self::Elements0 => "uiElements0.dds",
             Self::Elements1 => "uiElements1.dds",
+            Self::Elements2 => "uiElements2.dds",
             Self::Elements3 => "uiElements3.dds",
             Self::Elements4 => "uielements4.dds",
             Self::Elements5 => "uielements5.dds",
@@ -141,6 +147,7 @@ impl Atlas {
             },
             // Not a file: the program draws it.
             Self::Film(_) => "",
+            Self::Project(i) => crate::extend::project_picture(i),
         }
     }
 }
@@ -290,9 +297,12 @@ pub enum Action {
     MessagesScroll(i32),
     /// UI-GAME-11.3: switch a message kind's filter (0 military .. 3 misc).
     MessageFilter(usize),
-    /// UI-GAME-11.4: a message row: left click jumps to its field, right
-    /// click deletes it.
+    /// UI-GAME-11.4: a message row's icon: a left click marks the message
+    /// read and jumps to its field; a right click deletes it.
     MessageRow(super::game::MessageKey),
+    /// UI-GAME-11.4 (E-trace-030): a message row's text: a left click does
+    /// nothing; a right click deletes the message.
+    MessageText(super::game::MessageKey),
     DeleteMessage(super::game::MessageKey),
     /// Move the camera over a field.
     Focus(Point),
@@ -592,6 +602,8 @@ pub enum MenuAction {
     OpenPage(usize),
     /// The player changed row n of a project's page.
     Page(usize, crate::extend::menu::PageInput),
+    /// Hook W22: show part n of a project's page.
+    PagePart(usize),
 }
 
 /// The drop-downs of the free play setup (OBS-20).
@@ -981,7 +993,10 @@ impl Panel {
                 Widget::Fill { at, size, .. } => [at[0], at[1], size[0], size[1]],
                 Widget::BarButton { at, bar, .. } => [at[0], at[1], bar.size[0], bar.size[1]],
                 Widget::Picture { at, size, .. } => [at[0], at[1], *size, *size],
-                Widget::Slider { at, width, .. } => [at[0], at[1], *width, 8.0],
+                Widget::Slider { at, width, .. } => {
+                    let [w, h] = SliderArt::of(*width).size();
+                    [at[0], at[1], w, h]
+                }
                 _ => continue,
             };
             let (x0, y0, x1, y1) = (
@@ -1012,5 +1027,102 @@ impl Panel {
             } => Some((action, *at, *enabled, tooltip.as_deref())),
             _ => None,
         })
+    }
+}
+
+/// UI-GAME-6.5 (Q-1054, T61): the art of the game's two horizontal slider
+/// kinds. The economy slider (the tools, military and distribution dialogs,
+/// the headquarters' military page) is 200 x 20 with a fill; the settings
+/// slider (the settings pages, the attack dialog) 152 x 24 without one.
+/// Which kind a slider is follows from its width.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SliderArt {
+    /// The bar's picture; the slider is its size.
+    pub bar: (Atlas, Rect),
+    /// The economy slider's fill.
+    pub fill: bool,
+}
+
+/// UI-GAME-6.5 (a): the economy slider's width.
+pub const ECONOMY_SLIDER: f32 = 200.0;
+/// UI-GAME-6.5 (b): the settings slider's width.
+pub const SETTINGS_SLIDER: f32 = 152.0;
+/// UI-GAME-6.5: the knob, 20 x 20 of `uiElements0`: normal, highlighted,
+/// pressed.
+pub const SLIDER_KNOB: [Rect; 3] = [[8, 104, 20, 20], [40, 104, 20, 20], [72, 104, 20, 20]];
+/// UI-GAME-6.5 (a): a disabled slider's fill colour, (170, 170, 255) at
+/// alpha 170/255.
+pub const DISABLED_FILL: [f32; 4] = [170.0 / 255.0, 170.0 / 255.0, 1.0, 170.0 / 255.0];
+
+impl SliderArt {
+    /// The kind of a slider `width` pixels wide.
+    pub fn of(width: f32) -> Self {
+        if width >= ECONOMY_SLIDER {
+            Self {
+                bar: (Atlas::Elements2, [0, 0, 200, 20]),
+                fill: true,
+            }
+        } else {
+            Self {
+                bar: (Atlas::Elements0, [264, 344, 152, 24]),
+                fill: false,
+            }
+        }
+    }
+
+    /// The slider's size: its bar's.
+    pub fn size(self) -> [f32; 2] {
+        [self.bar.1[2] as f32, self.bar.1[3] as f32]
+    }
+
+    /// The knob's left edge from the slider's left at value `v`:
+    /// 2 + v x (width - 23), its top at the slider's top.
+    pub fn knob_left(self, v: f32) -> f32 {
+        2.0 + v.clamp(0.0, 1.0) * (self.size()[0] - 23.0)
+    }
+
+    /// The economy slider's fill at value `v`: `uiElements2` (0, y, 200 v,
+    /// 20) from the slider's left edge, cut, not stretched; y 56 from 0.65,
+    /// 104 from 0.3, else 80. None for the settings slider or an empty fill.
+    pub fn fill_rect(self, v: f32) -> Option<Rect> {
+        let v = v.clamp(0.0, 1.0);
+        let width = (200.0 * v) as u32;
+        let y = if v >= 0.65 {
+            56
+        } else if v >= 0.3 {
+            104
+        } else {
+            80
+        };
+        (self.fill && width > 0).then_some([0, y, width, 20])
+    }
+}
+
+#[cfg(test)]
+mod slider_tests {
+    use super::*;
+
+    // UI-GAME-6.5 T61: the economy slider at 0.5: bar (0, 0, 200 x 20) of
+    // uiElements2, fill (0, 104, 100 x 20), the knob's left at 2 + 88.5; at
+    // 0.2 the fill row 80, 40 px wide; the settings slider at 1.0: its bar
+    // (264, 344, 152 x 24) of uiElements0, no fill, the knob's left at 131.
+    // spec: UI-GAME-6.5 (T61)
+    #[test]
+    fn t61_the_sliders_art() {
+        let economy = SliderArt::of(ECONOMY_SLIDER);
+        assert_eq!(economy.bar, (Atlas::Elements2, [0, 0, 200, 20]));
+        assert_eq!(economy.size(), [200.0, 20.0]);
+        assert_eq!(economy.fill_rect(0.5), Some([0, 104, 100, 20]));
+        assert!((economy.knob_left(0.5) - 90.5).abs() < 1e-4);
+        assert_eq!(economy.fill_rect(0.2), Some([0, 80, 40, 20]));
+        assert!((economy.knob_left(0.2) - 37.4).abs() < 1e-4);
+        assert_eq!(economy.fill_rect(0.7), Some([0, 56, 140, 20]));
+        assert_eq!(economy.fill_rect(0.0), None);
+        let settings = SliderArt::of(SETTINGS_SLIDER);
+        assert_eq!(settings.bar, (Atlas::Elements0, [264, 344, 152, 24]));
+        assert_eq!(settings.size(), [152.0, 24.0]);
+        assert_eq!(settings.fill_rect(1.0), None);
+        assert!((settings.knob_left(1.0) - 131.0).abs() < 1e-4);
+        assert_eq!(SLIDER_KNOB[0], [8, 104, 20, 20]);
     }
 }

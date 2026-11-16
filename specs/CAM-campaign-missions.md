@@ -47,7 +47,9 @@ is engine driven, keyed by one global step index.
     settler kind in it (a soldier kind occupies a military building).
   - `createShip(player, x, y)`: creates a ship at the field, loaded with 1 + 4 + 6 units of three
     goods (ids 0xdd2daebe, 0xcd6ec133, 0x55e952d3), switches its expedition mode on and explores
-    around it (2026-11-05, E-ship-004: the same expedition switch as SHIP-5.5).
+    around it (2026-11-05, E-ship-004: the same expedition switch as SHIP-5.5). The new ship's last
+    port position is the first land neighbour of its field (`SHIP-ships-expeditions.md` SHIP-2.7;
+    2026-11-16 night, Q-1060, E-ship-005), so it can found a harbour where SHIP-7.1 allows.
   - `createStreet(player, x1, y1, x2, y2)`: builds a road along the pathfinder route between the
     two flags.
   - `setLanguage`, `setVideoVoiceStream`: not used by the shipped scripts.
@@ -200,7 +202,17 @@ is engine driven, keyed by one global step index.
   - target 1: the player's "enemies destroyed" count equals the enemy count;
   - target 2: the territory percentages of the player's team (the player and allies) sum to more
     than 74 (i.e. at least 75 % of the map);
-  - target 3: the coins in the team's depots sum to more than 99 (at least 100);
+  - target 3 (corrected 2026-11-16 day, Q-1063; E-cam-017, code reading, high): the **coins produced
+    so far** of the team's players sum to more than 99 (at least 100). A player's figure is the running
+    total of coins his mints have made since the game's start: +1 each time one of his mints finishes
+    a work cycle (`UI-ingame.md` UI-GAME-8.5e, counter 10; the total that statistics series 5
+    samples; it is saved, `FMT-savegame.md`). It is **not** the stock: coins in a warehouse or a
+    military building, coins from the start stock, from the `GiveMeSomeMore` cheat or from a
+    conquered building add nothing, and coins spent on promotions or sent anywhere take nothing away.
+    The result system copies each player's total into its record every tick before the test. So the
+    look of E-trace-031 (106 cheat coins in the headquarters, no mint, no victory in about 2 300 ticks)
+    is what the rule gives. The end screen's text "You have enough Coins in your depots!" (3.6) stays
+    as the game words it;
   - targets 0 and 4: never by this test.
 - **CAM-3.4** When a player wins: all team members are marked won, all other living players are
   marked lost with reason "Mission not completed", the tick is recorded for each. If the human is
@@ -255,6 +267,43 @@ is engine driven, keyed by one global step index.
   defeat's own code makes no other test (no network check was found; the earlier "not a network
   game" reading is withdrawn). Confidence: high for the buttons' places and texts, the two result
   lines, the rows' start, spacing and columns, and the disabled CONTINUE; the frame high (E-cam-012).
+  **The name column (2026-11-16 night, Q-1057; E-cam-016, code reading and the original's saves).**
+  The name is the player's own name, set once at the game's start:
+  - the human player: the setup row's name, which is the profile's name (`default` when the
+    profile has none);
+  - **every computer player: the interface text `!AI`** (English "AI", from `controls.txt`),
+    whatever its setup row showed. The same holds in a campaign mission.
+  - Only players made at the game's start have a row: a slot left closed makes no player, so it
+    has no row. The rows close up (the next row is 25 px lower only after a drawn row), while
+    each row keeps its slot's number (`Player #n` with n the slot index + 1), so a gap shows as a
+    missing number.
+  The rows run over the 8 slots in order. Seen in the original's saves: a four-player game on
+  Keyhole names its players `default`, `AI`, `AI`, `AI`, and slots 5 to 8 have no player.
+  Confidence: high for the texts; medium for "a closed slot makes no player" in a free game
+  (the start makes a player only for a slot whose kind is not "none"; the lobby's closed slot was
+  taken to hand over that kind).
+  **Seen, a free game's victory (2026-11-16 day, E-trace-032, Keyhole (`MP_4P_Fight`) with three
+  Hard computer players, won with `INeedSomeHelp`, 2560 x 1440).** The end screen opened within
+  about six seconds of the cheat line, centred, over the running world (not dimmed), on the
+  parchment scroll frame with a red wax seal at its top right. Every place of 3.6a measured in the
+  picture (dialog origin = screen centre minus (364, 284)) agrees to within 1 px:
+  - title `KEYHOLE` (the map's display name, in capitals) centred at the top;
+  - `VICTORY` centred on (374, 110); 25 px lower **"You have defeated all enemies!"** (the key
+    `!You have destroyed all enemies!`, whose English text says "defeated");
+  - four rows from (140, 190), 25 px apart: `Player #1:` .. `Player #4:` (with a colon), **each
+    label in its player's colour** (blue, red, green, orange), the names `Look` (the profile) and
+    `AI` three times, `Team 1` .. `Team 4` at x 400;
+  - the result column at x 500 showed **`DEFEAT` only for player 3**, a computer player another
+    computer player had beaten during the game (in the olive defeated colour); **our own row showed
+    no `VICTORY`**, nor did the two computer players still alive. So the cheat ends the map with
+    the victory text but does not mark the human player won (medium: one game, the cheat only);
+  - the buttons `Statistics`, `Exit map`, `CONTINUE` one under the other, centred on x 376,
+    y 456, 478 and 500 (3.6a's tops 445, 467, 489 plus half of 22).
+  **Statistics** opened the ordinary statistics window (UI-GAME-8.5a: the players' portraits with
+  their colour squares, the graph, the span `15 minutes` and the series `Size of territory`) over the
+  end screen's left half; the end screen stayed behind it, its `Exit map` and `CONTINUE` still
+  reachable under the window, and the window's close button returned to the end screen. **Exit map**
+  went straight to the main menu (as 3.6: any target but 4). Test T20b.
 - **CAM-3.6c The defeat screen's layout (2026-11-15 day; E-cam-015, code reading).** The defeat
   screen ("You have lost the Map!", 3.6) is made on the book dialog (1.3c: the same `uiBriefing`
   frame, 728 x 568, centred, the same title from the map's name). The defeat screen changes the
@@ -282,7 +331,14 @@ is engine driven, keyed by one global step index.
   the map state of `campaign<nn>` is completed (CAM-3.5), for n = 1 .. 9 in order (the first
   incomplete mission stops the chain). Buttons sit on the campaign picture at (300,187), (465,187),
   (594,309), (551,490), (455,589), (200,510), (150,333), (322,460), (345,302), (457,379) in the
-  1024 x 768 space, drawn offset by (-22, -75); hovering shows `campaign<nn>_dsc`.
+  1024 x 768 space, drawn offset by (-22, -75); hovering shows `campaign<nn>_dsc`. **Seen with a
+  mission won (2026-11-16 night, E-trace-031, a fresh profile, campaign01 won with `INeedSomeHelp`,
+  2560 x 1440):** before the win only island I has a marker, a **silver** SPQR eagle; after it island
+  I's marker is a **gold** SPQR eagle (won) and island II has the silver eagle (open); every other
+  island has none. Hovering an open mission shows its description as text in the box at the map's
+  lower left (campaign02: "The mysterious portal has transported the settlers to an unknown
+  location..."), not as a tooltip. The victory book's EXIT MAP led back to this map. Confidence: high
+  (pictures).
 - **CAM-4.3** Starting mission n: map kind 1, name `campaign<nn>`; setup: slot 0 human, slots 1 to
   7 computer players (the map's own player types decide which exist), the human's name from the
   profile (default "default"). Nothing carries over from the previous mission: resources, locks and
@@ -441,15 +497,18 @@ is engine driven, keyed by one global step index.
      the second ship but is never shown (step 1 above).
   4. **0x0b** `T04_BuildPort_SelectIcon`: the expected widget is `!Construct harbor.`; its click
      sends `found-harbour` for the shown ship (the second one) and advances; the step
-     advances whether or not SHIP-7.1 accepts the command.
+     advances whether or not SHIP-7.1 accepts the command. **It is accepted** (2026-11-16 night,
+     Q-1060, E-ship-005; seen in E-trace-030): the second ship's last port position is (128, 36),
+     its first land neighbour (SHIP-2.7), whose continent's spot (129, 34) is 3 fields away, so the
+     button shows and a harbour site of the player appears on (129, 34) (`SHIP-ships-expeditions.md`
+     T16).
   5. **0x0c** `T04_BuildPort_CloseDialog`: the window's close button closes it and advances to
      0x0d.
   At each of 0x09 to 0x0c any other button of the window shows `T01_ERROR_SelectMarkedButton`
   and does not advance. Steps 10 to 13 are the steps CAM-5.4 exempts, since the camera is then at
   the second ship, far from the castle. Confidence: high for the steps' widgets and effects;
-  medium for "never shown" (the placing calls were listed, none in the ship window) and for
-  whether the second ship's harbour order is accepted (it depends on its last port position,
-  SHIP-7.1, which `createShip` was not read for; one play of step 0x0b in the original settles it).
+  medium for "never shown" (the placing calls were listed, none in the ship window); high for the
+  second ship's harbour order being accepted (code reading and a picture).
 - **CAM-5.3b Which steps move the camera (added 2026-11-05, Q-1004; E-cam-005).** When the steps below begin (each right
   after the previous step was done), the game places the map pointer on the new step's field and
   starts a **scripted camera move** to that field (`GFX-world-view.md` GFX-VIEW-3.6 e). New step
@@ -519,6 +578,9 @@ Pointer fields: 0x01 (104,56), 0x04 (103,60), 0x08 (101,63), 0x0a (127,35), 0x0f
 | T19a | 1.3c (missing key): the book of tutorial lesson 2 (map `tutorial02`) opens with the English texts | the book's title | TUTORIAL02 (the map name itself, no key `tutorial02` in `controls.txt`); lesson 1 shows TUTORIAL 1 (its key gives `Tutorial 1`); campaign01 MISSION 1 |
 | T19b | 5.3c (Q-100 b, the other dialogs): lesson 4 at step 5 with the harbour window open; then lesson 3 at step 0x1a with the tools page open | highlights, clicks, errors | harbour: the expedition tab highlighted; a click on the goods tab shows "Select the highlighted flag." (`T01_ERROR_SelectStreetIcon`) and nothing advances; the expedition tab: the expedition page, step 6, its start button highlighted; the start button: `prepare-expedition` sent, step 7, the close button highlighted; the close button: step 8. Tools page at 0x1a: the military tab highlighted; a click on the distribution tab shows `T01_ERROR_SelectStreetIcon`; the military tab: the military page opens at step 0x1b with its close button highlighted; its close button: the dialog closes, step 0x1c |
 | T20a | 3.6a, 3.6c: a free game with three players lost by the human; then a campaign mission lost | the end screen; the defeat screen | end screen: DEFEAT at (374, 110), `Castle destroyed!` 25 px lower; rows at y 190, 215, 240 with `Player #1` at x 140, the name at 230, `Team n` at 400, the result at 500; CONTINUE greyed; Statistics and EXIT MAP work. Defeat screen: the book frame and title, DEFEAT at (260, 90), `You have lost the Map!` in the text box, the lost picture, only EXIT MAP at (190, 465), no page arrows |
+| T20b | 3.6, 3.6a: a free game on Keyhole with three computer players, one of them beaten by another; the human sends `INeedSomeHelp`; then Statistics, its close button, Exit map | the end screen, the statistics window, the menu | end screen: `KEYHOLE`, `VICTORY` at (374, 110), "You have defeated all enemies!" 25 px lower; rows `Player #1:` .. `Player #4:` in the players' colours at x 140, y 190 + 25 k, names `Look`, `AI`, `AI`, `AI`, `Team 1` .. `Team 4` at x 400, `DEFEAT` only in the beaten player's row, nothing in the human's row; Statistics opens the statistics window over the end screen (15 minutes, Size of territory), its close returns to the end screen; Exit map opens the main menu |
+| T20b | 3.6a (Q-1057): a free game on a four-player map, the human in slot 1 with profile name `Anna`, computer players in slots 2 and 4, slot 3 closed; the human wins | the end screen's rows | three rows: `Player #1` `Anna` `Team 1` VICTORY; `Player #2` `AI` ...; `Player #4` `AI` ...; no row for slot 3, so the three rows stand at y 190, 215 and 240; in a German game the computer players' name is the German text of `!AI` |
+| T21 | 3.3 target 3 (Q-1063): a free game with "Collect 100 gold coins", the human alone on his team | (a) `GiveMeSomeMore` until the headquarters holds 106 coins, no mint; (b) then a mint of his finishes its 100th coin cycle (coins spent on promotions meanwhile); (c) the same with two allied players whose mints made 60 and 40 | (a) no victory, the briefing panel reads `(0/100)`; (b) victory at the next tick's test with the target 3 text, whatever the stock; (c) victory for both once 60 + 40 is reached, each panel showing its own figure (60/100 and 40/100) |
 
 ## Evidence
 
@@ -540,6 +602,10 @@ Pointer fields: 0x01 (104,56), 0x04 (103,60), 0x08 (101,63), 0x0a (127,35), 0x0f
 | E-cam-013 | code reading | (session 2026-11-15 day) | 1.3c: the book's title is set from the map's name through the interface texts' lookup, which returns the key itself for a missing key (and stores it) and an empty text for an empty key |
 | E-cam-014 | code reading | (session 2026-11-15 day) | 5.3c: the building window's, harbour window's, attack dialog's, tools page's and military page's step checks, highlights, commands and error keys |
 | E-cam-015 | code reading | (session 2026-11-15 day) | 3.6a: the end screen's row columns (0, 90, 260, 360 from (140, 190)), the defeat branch disabling CONTINUE; 3.6c: the defeat screen built on the book (hidden arrows, label and CONTINUE, the DEFEAT label, the text, the picture, EXIT MAP moved) |
+| E-cam-016 | code reading, saves of the original | (session 2026-11-16 night) | 3.6a: the name column is the player's name; computer players are named `!AI` at the game's start; only players made at the start have a row, and the rows close up; the original's Keyhole saves name their players `default`, `AI`, `AI`, `AI` |
+| E-cam-017 | code reading | S2DNG.exe: the result record's per-tick update (target 3 copies the statistics' coins-produced total), the mint's statistics count, the briefing panel's coin line | CAM-3.3 target 3, T21; UI-GAME-2.4 |
+| E-trace-031 | pictures of the original | (session 2026-11-16 night) | 4.2: the campaign map before and after mission 1 won (markers, the description box); 3.3: a coins game not ended by 106 coins in the headquarters |
+| E-trace-032 | pictures of the original | (session 2026-11-16 day) | 3.6a: a free game's victory end screen after `INeedSomeHelp`, its Statistics window and Exit map |
 
 ## Open questions
 

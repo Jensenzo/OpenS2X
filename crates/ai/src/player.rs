@@ -673,6 +673,15 @@ impl AiPlayer {
                 _ => {}
             }
         }
+        // Hook W25: a project's paving and recipe rules (none in the
+        // original's rules: nothing runs).
+        let project = &lent.config.project_rules;
+        if (project.paving.is_some() || !project.recipes.is_empty())
+            && due(c, slot, crate::project::PROJECT_PERIOD)
+        {
+            self.project_rules(&mut lent.ctx(view));
+            view.issue(lent.out);
+        }
         // AI-CON-1.1c (T52): the resource map's squares, and every 16 counts
         // a cell coordinate, after all computer players have thought (each
         // player reads only its own copy, so refreshing it after its own

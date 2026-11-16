@@ -327,6 +327,26 @@ locksmith's tools need, AI-CON-10.2, which has no consumer). Stages advance once
   cases (code only; the planting good is read from the type, not checked
   against a trace).
 
+- **AI-CON-2.5b A cell ties needs and productions (2026-11-16 night, item 5 of the attack line; E-ai-068,
+  code reading, and the R6 recording's heap dumps).** A need and a production of one player are tied to
+  each other (the need's production, the production's need) through their common cell, from either side:
+  - **A need given a cell** (3.3, 3.4) is tied to the first production in that cell's production list
+    whose good is the need's good, or belongs to it as its group (a fish, bread or meat production for a
+    food need), and that has no need yet, **placed or not**. (3.3 said "an unplaced production": too
+    narrow.)
+  - **A production given a cell** is tied to the first need in that cell's need list whose good is the
+    production's good, or whose good's group is that good, and that has no production yet. Every producer's
+    production is given its building's cell when the building is announced (2.5, SIM-START-4.4 b),
+    **whatever order placed it**: the cell system's own woodcutter or stone pit, a military producer.
+  - A cell's need list holds its needs in the order they were given that cell. Its production list holds
+    its productions in the order they were added.
+  - So a producer that no need ordered still becomes the producer of a waiting need of its good in its
+    cell. That decides, for one, which building the route optimizer takes as the need's producer
+    (8.3 b).
+  - Confidence: high for the two ties and their tests (code); medium for the list order, read from the
+    append calls. Whether a needs-construction order's own need (4.3) is tied first, before the cell's
+    first matching need, was not read. Test T102.
+
 ### AI-CON-3 Needs arrangement (every 13 ticks): giving a need a cell
 
 Two passes, each stopping at the first need that is changed.
@@ -420,10 +440,9 @@ Two passes, each stopping at the first need that is changed.
   smithy is placed on (137, 55) in trace tick 3199; taking the cells by position
   row by row gave (8, 2) and a smithy on (137, 45) in 3182). The same list order
   holds for 3.4 and the other passes over the player's cells. The need gets the cell and
-  is linked to an unplaced production of its good there if one exists (a need
-placed again after its producer's tear-down is linked to a placed free production
-as well, AI-CON-9.3, T84; whether the plain link also takes placed ones is not
-measured). If no
+  is linked to a free production of its good there if one exists, **placed or not**
+(2.5b, corrected 2026-11-16 night; a need placed again after its producer's
+tear-down is the case AI-CON-9.3, T84 measured). If no
   cell accepts it and this source's own target slot is empty (whatever the
   other sources hold or the expansion system works on; corrected 2026-10-26
   night, E-eco-019: "no expansion target is pending"), an expansion
@@ -1590,6 +1609,7 @@ Multiplicative factors, starting at 1; v = 0 means unusable.
 | T99 | 8.3c (the direct variant, G without a route): E-trace-019 (R6, MP_4P_Fight), player 1's route task on the building 15189 (47, 62) (flag (47, 61)), partner the castle (flag (52, 55)). After the route variant's runs X holds (50, 61), (53, 57), (53, 61) (counter 3509; `ai_route`); in 3546 the route cost is above 4 x 8 and the run takes the direct variant at w = 0: Fn = (47, 61); G = (53, 61), flag 15625, a lone flag then (no roads, its own ware network) | the run of 3546 and the next | 3546: no road, X = [(47, 61)], w 1; 3583: w 2; 3620: the road (50, 61) - (47, 61) (15675, the plan cost 18) and k = 1 (recorded). Counting no route as too long asks the road (47, 61) -> (53, 61) at 3546 and takes k = 1 there: object numbers shift from 3620 and the Fight game against R6 differs from settlers 3663. With the rule (experiment build, with the Fight rules before it): settlers 3663 -> 4452, buildings 4125 -> 4676, generator 3725 -> 4698; every pair of the fidelity set unchanged |
 | T100 | 10.4 step 0 (the order of "first found", the end state): E-trace-013 (R3, the Hard game), player 1, the goods arrangement run of counter 45647; finished storehouses with planks: the castle 90180 (139, 51) 45, 92510 (130, 33) 1, 93353 (120, 59), 94007 (138, 26) and 94359 (146, 36) none (`stocks.csv`); every one has a plank record with both flags clear from step 1 | the plank flags after the run (`goodflags.csv`, stop:out) | 0 + 40 < 45: the castle 1:1, the harbour 90366 and 92510, 93353, 94007 1:0, 94359 0:0: the first storehouse with the smallest stock in cell-list order is 94359 (in the experiment build's cell list the storehouses' cells come as (8, 3), (8, 2), (9, 2), (7, 3), (8, 1)). Sorting by field (row, then column) takes 94007 (138, 26); skipping the "clear stop" step because the record was already clear leaves every storehouse stopped, so the plank of T59 in `TRN-carriers-transport.md` finds no warehouse: the Hard game against R3 differs from settlers 45670 (experiment build); with both fixed and T59, settlers 45723, buildings 46985 |
 | T101 | 8.3 a (state kept, E-ai-066): R6 player 2, route task on its hunter's hut (k 0, i 3, t 2, X ending on (51, 20)); the hut torn down at counter 6631; next record building 14678 on (58, 24), flag on (58, 23) | the runs of 6649 and 6686 | 6649: cursor moved to 14678, nothing else changed (i 3, t 2, X kept); 6686: 14678 taken up with that state; the direct variant asks the road from (58, 23) to the flag on (51, 20) and it is built: "58,23 58,22 57,21 57,20 56,19 56,18 55,17 55,16 54,16 53,16 52,17 52,18 51,19 51,20"; after the run k 1, i 0, t 0, X empty. Clearing the state at the take-up builds no road there |
+| T102 | 2.5b, 8.3 b: E-trace-019 (R6, the fight game), player 3. Its sawmill site (25, 22) of counter 322 makes a wood need (2.5), which gets the home cell and the square (4, 4) before counter 500 and no production (heap 500: need 14258, production none). The cell system's own woodcutter order places a woodcutter on (30, 22) at counter 622 | the woodcutter's announcement; the route optimizer's run of 6829 on the sawmill | the woodcutter's production is tied to the sawmill's wood need (heap 1000: need 14258, production 14315 of the woodcutter 14314). The sawmill's k = 2 partner at 6829 is that woodcutter, flag (30, 21), not the later woodcutter (26, 19) of counter 1786; the route task's rows from 6792 to 6903 follow (E-ai-067's emulation). Experiment build with both ties: the fight game's generator is equal to 8340 (was 8205); the Hard game's generator to 49 218 (was 48 043), its settlers to 49 500 and buildings to 50 700 (were 48 200); the Weak, one-player and two-player 40 000 games unchanged (no regression) |
 
 ## Evidence
 

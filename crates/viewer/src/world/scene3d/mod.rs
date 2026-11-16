@@ -140,12 +140,15 @@ pub struct Evader {
 }
 
 /// GFX-ANIM-4.3 Evading: the offsets after `dt` seconds. Each offset
-/// decays by 0.75 units a second toward 0; two settlers heading toward
-/// each other (dot product of their directions <= 0) within R = evadeStart
-/// x scale get (1 - d^2 / R^2) x scale x evadeRadiusScale, half each when
-/// both walk, all to the one that walks when the other stands; the side is
-/// the one it already leans to (its right when it does not lean yet, so
-/// both pass the same way, OBS-5). An offset already larger is kept.
+/// decays by 0.75 units a second toward 0; then for each pair within R =
+/// evadeStart x scale, with f = (1 - d^2 / R^2) x scale x evadeRadiusScale
+/// and each settler's lean its offset so far (Q-207 g): a walker passing a
+/// stander adds the full f, positive unless his own lean is negative, the
+/// stander nothing, whatever the directions; two walkers toward each other
+/// (dot product of their directions <= 0) add f / 2 each with one sign,
+/// negative when the sum of their leans is, else positive (facing opposite
+/// ways, they pass on opposite sides); two going the same way, or two
+/// standing, nothing. The pairs add up.
 pub fn evade(evaders: &[Evader], start: f32, radius_scale: f32, scale: f32, dt: f32) -> Vec<f32> {
     let decay = 0.75 * dt;
     let mut out: Vec<f32> = evaders
@@ -157,6 +160,7 @@ pub fn evade(evaders: &[Evader], start: f32, radius_scale: f32, scale: f32, dt: 
         return out;
     }
     let dir = |h: f32| [h.sin(), h.cos()];
+    let sign = |lean: f32| if lean < 0.0 { -1.0 } else { 1.0 };
     for i in 0..evaders.len() {
         for j in i + 1..evaders.len() {
             let (a, b) = (&evaders[i], &evaders[j]);
@@ -168,25 +172,18 @@ pub fn evade(evaders: &[Evader], start: f32, radius_scale: f32, scale: f32, dt: 
             if d2 >= r * r {
                 continue;
             }
-            let (da, db) = (dir(a.heading), dir(b.heading));
-            if da[0] * db[0] + da[1] * db[1] > 0.0 {
-                continue;
-            }
             let full = (1.0 - d2 / (r * r)) * scale * radius_scale;
-            let share = |me: &Evader, other: &Evader| match (me.moving, other.moving) {
-                (true, true) => full / 2.0,
-                (true, false) => full,
-                _ => 0.0,
-            };
-            for (k, me, other) in [(i, a, b), (j, b, a)] {
-                let want = share(me, other);
-                if want > out[k].abs() {
-                    let side = if out[k] < 0.0 || me.offset < 0.0 {
-                        -1.0
-                    } else {
-                        1.0
-                    };
-                    out[k] = side * want;
+            match (a.moving, b.moving) {
+                (true, false) => out[i] += sign(a.offset) * full,
+                (false, true) => out[j] += sign(b.offset) * full,
+                _ => {
+                    let (da, db) = (dir(a.heading), dir(b.heading));
+                    if da[0] * db[0] + da[1] * db[1] > 0.0 {
+                        continue;
+                    }
+                    let side = sign(a.offset + b.offset);
+                    out[i] += side * full / 2.0;
+                    out[j] += side * full / 2.0;
                 }
             }
         }

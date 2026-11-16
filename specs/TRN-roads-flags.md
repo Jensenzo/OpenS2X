@@ -107,6 +107,11 @@ general site and flag site as in `ECO-building-placement.md` ECO-PLACE-2.
   excludes flags). Confidence: high for the state (three saves, one heap dump);
   medium for the moment it is set and cleared (with the road's own fields, by
   inference).
+- **TRN-ROAD-3.1a No automatic flags (2026-11-16 night, Q-032 a; E-ui-006 road creation, code
+  reading).** Building a road places no flag between its ends: the inner fields get the road only, so
+  a long road has one carrier until the player sets flags on it. A flag is added only at the road's
+  end, and only when that end lies on another road where a flag may stand (that road is split,
+  TRN-ROAD-4). Confidence: high.
 - **TRN-ROAD-3.2** A building's footprint may not contain a Street field
   (ECO-PLACE-3.6). A flag may (TRN-ROAD-4).
 - **TRN-ROAD-3.3 A land road evens the ground along it (2026-10-25 night, from Q-271).**

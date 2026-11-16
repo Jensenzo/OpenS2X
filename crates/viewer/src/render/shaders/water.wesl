@@ -26,6 +26,10 @@ struct WaterParams {
     // GFX-WATER-2.6, 4.3: x 1 while the mirror image is bound, y the
     // reflection factor, z and w the reflection noise.
     mirror: vec4<f32>,
+    // Hook W18 (a project's, not the original's): the shore foam's colour
+    // and strength (w, 0 none), and its reach (x of foam_reach).
+    foam: vec4<f32>,
+    foam_reach: vec4<f32>,
 };
 
 @group(3) @binding(0) var<uniform> params: WaterParams;
@@ -206,6 +210,16 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let s = saturate(pow(max(dot(h, n), 0.0), 16.0));
     colour += s * (1.0 - colour);
     alpha += 0.35 * s;
+
+    // Hook W18: a project's shore foam where the ground lies less than
+    // the reach below the water level (the depth term: 1 at the waterline,
+    // 0 about 2900 raw units down); none by default (strength 0).
+    if params.foam.w > 0.0 {
+        let below = (1.0 - depth) * 2900.0;
+        let f = saturate(1.0 - below / params.foam_reach.x) * params.foam.w;
+        colour = mix(colour, params.foam.rgb, f);
+        alpha = max(alpha, f);
+    }
 
     // GFX-WATER-4.6: fog of war.
     let visible = texel.r;

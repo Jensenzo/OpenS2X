@@ -364,3 +364,88 @@ fn orders_need_a_flag_and_queue_up() {
     );
     assert_eq!(world.requests(P0).len(), 2);
 }
+
+// ECO-SPC T7, 2.2a: a spot another specialist walks to or works at is
+// marked: two geologists at one flag never choose the same field while the
+// first is on his way to it or working there.
+// spec: ECO-SPC-2.2a (ECO-SPC T7), ECO-SPC-2.2
+#[test]
+fn t7_two_geologists_never_share_a_spot() {
+    let mut world = game(&stock(2));
+    mining_ground(&mut world);
+    for _ in 0..2 {
+        world.submit(Command::OrderGeologist {
+            player: P0,
+            at: FLAG,
+        });
+    }
+    let mut both = false;
+    for _ in 0..4000 {
+        world.step();
+        let spots: Vec<Point> = world
+            .settlers()
+            .filter_map(|(_, s)| match s.job {
+                SettlerJob::Specialist {
+                    step: SpecialistStep::ToSpot { spot } | SpecialistStep::Work { spot },
+                    ..
+                } => Some(spot),
+                _ => None,
+            })
+            .collect();
+        if spots.len() == 2 {
+            both = true;
+            assert_ne!(spots[0], spots[1], "tick {}", world.tick());
+        }
+    }
+    assert!(both, "the two never worked at once");
+}
+
+// ECO-SPC T8, 2.2b: a geologist at a flag with no diggable field within
+// his radius goes home at once from the flag, no spot, no sign; one whose
+// candidates run out after a spot goes home from that spot (TRN-FREE-6.4).
+// spec: ECO-SPC-2.2b (ECO-SPC T8), ECO-SPC-2.5, TRN-FREE-6.4
+#[test]
+fn t8_no_spot_sends_him_home_at_once() {
+    for one_field in [false, true] {
+        let mut world = game(&stock(1));
+        let spot = (16, 9);
+        if one_field {
+            world.set_bits(spot, state::FOR_BUILDING, false);
+            world.set_bits(spot, state::FOR_MINING, true);
+        }
+        world.submit(Command::OrderGeologist {
+            player: P0,
+            at: FLAG,
+        });
+        let mut reached = false;
+        let mut returned = false;
+        for _ in 0..2000 {
+            world.step();
+            for (_, s) in world.settlers() {
+                if s.profession != GEOLOGIST {
+                    continue;
+                }
+                reached |= s.walker.at == FLAG;
+                if let SettlerJob::Specialist {
+                    step: SpecialistStep::Return { .. },
+                    ..
+                } = s.job
+                {
+                    returned = true;
+                }
+            }
+        }
+        assert!(reached, "he reached the flag");
+        // At the flag with no spot: home over the roads at once, no walk
+        // of a specialist's at all. After a spot, off the roads, going home
+        // is TRN-FREE-6.4 step 3's free walk to the nearest flag of his
+        // home's network (here the order's flag too), not told apart here.
+        assert!(one_field || !returned, "no walk back to the order's flag");
+        assert_eq!(world.signs().count(), usize::from(one_field));
+        assert_eq!(
+            world.warehouse(HQ).unwrap().count(GEOLOGIST),
+            1,
+            "home again ({one_field})"
+        );
+    }
+}

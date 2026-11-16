@@ -26,6 +26,9 @@ pub fn message_kind(text: &str) -> u8 {
         | "Ship finished."
         | "Ship constructed"
         | "Ship waiting for Orders" => 4,
+        // Hook W24: a project's message of finished work, as "Building
+        // constructed".
+        t if crate::extend::messages::is_project_text(t) => 4,
         _ => 7,
     }
 }
@@ -93,14 +96,25 @@ pub fn message_window<T>(listed: &[T], scroll: usize) -> &[T] {
     &listed[end.saturating_sub(MESSAGE_ROWS)..end]
 }
 
-/// UI-GAME-11.1: a row's text: the translated text, and the building's
-/// name in brackets for the messages that name one.
+/// UI-GAME-11.1: a row's text: the translated text, and in brackets the
+/// ship's name for a message naming a ship (UI-GAME-4.5 c, "Ship is
+/// awaiting orders (Aurora)"), else the building's for the messages that
+/// name one.
 pub(crate) fn message_text(ctx: &Ctx, m: &s2_sim::Message) -> String {
-    let text = ctx.t(&format!("!{}", m.text));
+    // Hook W24: a project's text as given.
+    let text = if crate::extend::messages::is_project_text(m.text) {
+        m.text.to_owned()
+    } else {
+        ctx.t(&format!("!{}", m.text))
+    };
+    let ship = m.ship.map(|s| ship_name(ctx, s as usize));
+    if let Some(name) = ship.filter(|n| !n.is_empty()) {
+        return format!("{text} ({name})");
+    }
+    // E-trace-032 (seen): "No resources found (Fisherman's Hut)" names its
+    // building too; a geologist's find stands on no building.
     match m.building {
-        Some(b) if m.text != "No resources found." && !m.text.starts_with("Found ") => {
-            format!("{text} ({})", title_of(ctx, b))
-        }
+        Some(b) if !m.text.starts_with("Found ") => format!("{text} ({})", title_of(ctx, b)),
         _ => text,
     }
 }
@@ -162,12 +176,24 @@ pub fn messages(ctx: &Ctx, ui: &GameUi) -> Panel {
             Action::MessageRow(key),
             true,
         );
+        // UI-GAME-11.4 (E-trace-030): a message read by a click on its icon
+        // shows the teal frame with the tick over the icon (`uiElements3`
+        // (168, 344)) and its text in grey (the interface's disabled grey);
+        // a left click on the text does nothing.
+        let read = ui.read_messages.contains(&key);
+        if read {
+            p.sprite(Atlas::Elements3, [168, 344, 28, 28], [36.0, y]);
+        }
         p.widgets.push(Widget::TextButton {
             text: message_text(ctx, m),
             font: Font::Outlined,
             at: [68.0, y + 6.0],
-            colour: [255, 255, 255],
-            action: Action::MessageRow(key),
+            colour: if read {
+                [120, 120, 120]
+            } else {
+                [255, 255, 255]
+            },
+            action: Action::MessageText(key),
             enabled: true,
         });
     }
@@ -208,18 +234,22 @@ pub fn messages(ctx: &Ctx, ui: &GameUi) -> Panel {
     p
 }
 
-/// UI-GAME-2.5: the minimap dialog. The frame rectangle is read as 336
-/// wide (the spec's 168 would cut the art in half) and the map centred in
-/// it (the spec's (-30, 36) is Q-184); the picture is the terrain with the
-/// owners' colours.
+/// UI-GAME-2.5: the minimap dialog at (screenWidth - 326, 10). The frame
+/// rectangle is read as 336 wide (the spec's 168 would cut the art in half;
+/// the original's picture shows a dialog about 325 wide to the screen's
+/// edge, E-trace-028); the map 265 x 265 at (+30, +36) of the frame (seen:
+/// the spec's -30 reads as +30); the picture is the terrain with the
+/// owners' colours. The borders button centred at (w - 28, 292) and the
+/// close cross at (w - 17, 31), as measured in the original (E-trace-030,
+/// 2560 x 1440; they supersede the spec's earlier places, Q-1058 a).
 pub fn minimap(ctx: &Ctx, borders: bool) -> Panel {
-    let origin = [ctx.screen[0] - 336.0 - 6.0, 10.0];
+    let origin = [ctx.screen[0] - 326.0, 10.0];
     let mut p = Panel::new(PanelId::Minimap, origin);
     p.sprite(Atlas::Game, [688, 320, 336, 320], [0.0, 0.0]);
     p.text(ctx.t("!Map"), Font::Big, [128.0, 21.0], WHITE);
     p.widgets.push(Widget::Picture {
         picture: crate::ui::widgets::Picture::Minimap,
-        at: [35.0, 36.0],
+        at: [30.0, 36.0],
         size: 265.0,
     });
     p.widgets.push(Widget::Button {
@@ -227,7 +257,10 @@ pub fn minimap(ctx: &Ctx, borders: bool) -> Panel {
         rect: [440, 296, 48, 48],
         hover: Hover::Swap([440, 352]),
         pressed: Hover::None,
-        at: [336.0 - 50.0 - 6.0, 225.0 + 80.0],
+        // UI-GAME-2.5 (measured, E-trace-030): the round button centred at
+        // (w - 28, 292) on the 1440 px screen: its 48 x 48 top-left at
+        // (w - 52, 268), so (274, 258) from the frame at (w - 326, 10).
+        at: [274.0, 258.0],
         size: None,
         tooltip: Some(ctx.t("!Show/Hide Borders.")),
         action: Action::Hud(20),
@@ -238,7 +271,10 @@ pub fn minimap(ctx: &Ctx, borders: bool) -> Panel {
         Atlas::Elements3,
         [415, 32, 24, 24],
         Hover::None,
-        [336.0 - 27.0, 0.0],
+        // UI-GAME-2.5 (measured, E-trace-030): the close cross centred at
+        // (w - 17, 31): its 24 x 24 top-left at (w - 29, 19), (297, 9) from
+        // the frame.
+        [297.0, 9.0],
         Some(ctx.t("!Close this dialog.")),
         Action::Hud(5),
         true,
@@ -246,12 +282,10 @@ pub fn minimap(ctx: &Ctx, borders: bool) -> Panel {
     p
 }
 
-/// UI-GAME-4.5: a ship's window: the porthole (the ship model behind the
-/// mask stands in as the porthole art alone, Q-184), the jump buttons, the
-/// goods on board, and the expedition buttons (which button is which is
-/// medium in the spec: stop, found a harbour, and the six directions of
-/// `sail-expedition`). The ship's name input is not
-/// drawn: ships have no names in the simulation.
+/// UI-GAME-4.5: a ship's window: the ship in the porthole (a), the jump
+/// buttons and the two separators (b), the name and fleet arrows (c, d), the twelve
+/// cargo slots (e) and in expedition mode Cancel, Build harbour where one
+/// can be founded and the six compass buttons around the porthole (f).
 pub fn ship_window(ctx: &Ctx, index: usize) -> Option<Panel> {
     let ship = ctx.world.ships().get(index)?;
     let size = [362.0, 452.0];
@@ -317,10 +351,17 @@ pub fn ship_window(ctx: &Ctx, index: usize) -> Option<Panel> {
             other.is_some(),
         );
     }
+    // UI-GAME-4.5 (b): the two separators, the other windows' separator
+    // line cut 350 wide (Q-1059).
+    p.sprite(Atlas::Elements3, [0, 432, 350, 8], [2.0, 232.0]);
+    p.sprite(Atlas::Elements3, [0, 432, 350, 8], [2.0, 376.0]);
+    // UI-GAME-4.5 (e): the label at (16, 248), twelve slots from (16, 255),
+    // six per row 56 px apart, the second row 63 px lower, each amount
+    // centred at (+24, +53); no click action.
     p.text(
         ctx.t("!Goods on board"),
         Font::Heading,
-        [16.0, 245.0],
+        [16.0, 248.0],
         HEADING,
     );
     let mut goods: Vec<(u32, u32)> = Vec::new();
@@ -338,66 +379,89 @@ pub fn ship_window(ctx: &Ctx, index: usize) -> Option<Panel> {
             None => goods.push((g, n)),
         }
     }
-    for (i, (g, n)) in goods.iter().take(8).enumerate() {
-        slot(
-            &mut p,
-            ctx,
-            [16.0 + 41.0 * i as f32, 262.0],
-            Some(*g),
-            Some(*n),
-        );
+    for i in 0..12 {
+        let at = [16.0 + 56.0 * (i % 6) as f32, 255.0 + 63.0 * (i / 6) as f32];
+        let entry = goods.get(i).copied();
+        slot(&mut p, ctx, at, entry.map(|(g, _)| g), None);
+        if let Some((_, n)) = entry {
+            p.centred_text(
+                n.to_string(),
+                Font::Body,
+                [at[0] + 24.0, at[1] + 53.0],
+                WHITE,
+            );
+        }
     }
     let id = index as u32;
     let player = ctx.player;
+    // UI-GAME-4.5 (f): in expedition mode, Cancel at (8, 176); Build harbour
+    // at (305, 176) exactly while a harbour can be founded where the ship
+    // waits (SHIP-7.1; a ship a mission's script made has a last port
+    // position from its creation, SHIP-2.7, so it is no exception); while
+    // it waits for orders, the six compass buttons around the porthole,
+    // each enabled when a landing place lies that way.
     if ship.vessel.expedition {
         p.button(
             Atlas::Elements5,
-            [448, 88, 48, 48],
-            Hover::Swap([448, 184]),
-            [16.0, 330.0],
+            [448, 40, 48, 48],
+            Hover::Swap([448, 136]),
+            [8.0, 176.0],
             Some(ctx.t("!Cancel expedition mode.")),
             Action::Command(Command::ExpeditionStop { player, ship: id }),
             true,
         );
-        p.button(
-            Atlas::Elements3,
-            [272, 32, 32, 32],
-            Hover::None,
-            [80.0, 338.0],
-            Some(ctx.t("!Construct harbor.")),
-            Action::Command(Command::ExpeditionBuildHarbor { player, ship: id }),
-            true,
-        );
-        for d in 0..6u8 {
+        if ctx.world.can_found_harbour(player, index) {
             p.button(
-                Atlas::Elements0,
-                [136, 152, 24, 24],
-                Hover::None,
-                [140.0 + 32.0 * f32::from(d), 342.0],
-                // No text key names these arrows (Q-191 b).
-                None,
-                Action::Command(Command::ExpeditionGo {
-                    player,
-                    ship: id,
-                    direction: d,
-                }),
-                ship.vessel.options[usize::from(d)].is_some(),
+                Atlas::Elements5,
+                [352, 88, 48, 48],
+                Hover::Swap([352, 184]),
+                [305.0, 176.0],
+                Some(ctx.t("!Construct harbor.")),
+                Action::Command(Command::ExpeditionBuildHarbor { player, ship: id }),
+                true,
             );
         }
+        if ship.vessel.step().next.is_none() {
+            for (d, (key, x, at)) in COMPASS.iter().enumerate() {
+                p.widgets.push(Widget::Button {
+                    atlas: Atlas::Elements5,
+                    rect: [*x, 0, 40, 40],
+                    hover: Hover::Swap([x + 240, 0]),
+                    pressed: Hover::None,
+                    at: *at,
+                    size: None,
+                    tooltip: Some(ctx.t(key)),
+                    action: Action::Command(Command::ExpeditionGo {
+                        player,
+                        ship: id,
+                        direction: d as u8,
+                    }),
+                    enabled: ship.vessel.options[d].is_some(),
+                    selected: false,
+                });
+            }
+        }
     }
+    // UI-GAME-4.5 (b): Jump to port, enabled while the ship has a port, else
+    // disabled with `!Ship has no target port.`; Jump to ship.
+    let port = ship.vessel.port;
     p.button(
         Atlas::Elements5,
         [400, 40, 48, 48],
-        Hover::None,
+        Hover::Swap([400, 136]),
         [8.0, 392.0],
-        Some(ctx.t("!Jump to port.")),
-        Action::Focus(ship.vessel.port.unwrap_or(ship.at)),
-        true,
+        Some(ctx.t(if port.is_some() {
+            "!Jump to port."
+        } else {
+            "!Ship has no target port."
+        })),
+        port.map_or(Action::None, Action::Focus),
+        port.is_some(),
     );
     p.button(
         Atlas::Elements5,
         [352, 40, 48, 48],
-        Hover::None,
+        Hover::Swap([352, 136]),
         [304.0, 392.0],
         Some(ctx.t("!Jump to ship.")),
         Action::Focus(ship.position()),
@@ -405,6 +469,18 @@ pub fn ship_window(ctx: &Ctx, index: usize) -> Option<Panel> {
     );
     Some(p)
 }
+
+/// UI-GAME-4.5 (f): the compass buttons in direction order 0 .. 5: their
+/// tooltip key, the x of their picture in `uiElements5` (row 0, 40 x 40;
+/// highlighted 240 further right) and their place in the window.
+pub const COMPASS: [(&str, u32, [f32; 2]); 6] = [
+    ("!East", 120, [278.0, 118.0]),
+    ("!SouthEast", 200, [240.0, 192.0]),
+    ("!SouthWest", 160, [104.0, 192.0]),
+    ("!West", 80, [67.0, 118.0]),
+    ("!NorthWest", 0, [104.0, 46.0]),
+    ("!NorthEast", 40, [240.0, 46.0]),
+];
 
 /// UI-GAME-4.5: where the ship view lies in the ship window, and its size.
 pub const SHIP_VIEW_AT: [f32; 2] = [113.0, 61.0];
@@ -518,6 +594,20 @@ pub fn map_tooltip_at(cursor: [f32; 2], size: [f32; 2], screen: [f32; 2]) -> [f3
         .min(screen[0] - size[0])
         .max(0.0);
     let y = (cursor[1] - 0.02 * screen[1] - size[1]).max(20.0);
+    [x, y]
+}
+
+/// UI-GAME-2.2 (seen, E-trace-030): a control's tooltip box (the bar's
+/// buttons, the build menu's cells and tabs, a window's buttons), 32 px
+/// high, its top-left corner at the pointer + (25, -45), moved left to end
+/// at the screen's right edge (and kept on the screen).
+pub const CONTROL_TOOLTIP_HEIGHT: f32 = 32.0;
+
+/// UI-GAME-2.2 (seen, E-trace-030): where a control's tooltip box of `size`
+/// goes for the pointer at `cursor`.
+pub fn control_tooltip_at(cursor: [f32; 2], size: [f32; 2], screen: [f32; 2]) -> [f32; 2] {
+    let x = (cursor[0] + 25.0).min(screen[0] - size[0]).max(0.0);
+    let y = (cursor[1] - 45.0).max(0.0);
     [x, y]
 }
 

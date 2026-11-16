@@ -705,7 +705,12 @@ pub fn sync_movers(
                 // The first clip is chosen before the parts are spawned
                 // (their materials are those of its pose).
                 let mut visual = crate::animation::settler_anim::SettlerVisual::new();
-                choose_clip(&mut visual, &mover.anim, library);
+                choose_clip(
+                    &mut visual,
+                    &mover.anim,
+                    library,
+                    Some((&model, mover.at[1])),
+                );
                 let first = match &mover.anim {
                     MoverAnim::Clip(c) => c.clone(),
                     MoverAnim::Unique(f) => Some((f.clone(), false)),
@@ -803,7 +808,8 @@ pub fn sync_movers(
             // GFX-ANIM-3.1, 3.2: the tick's clip choice.
             state.anim = mover.anim.clone();
             state.at = mover.at;
-            let changed = choose_clip(&mut state.visual, &mover.anim, library);
+            let swim = state.model.as_ref().map(|m| (m, mover.at[1]));
+            let changed = choose_clip(&mut state.visual, &mover.anim, library, swim);
             if changed {
                 state.idle = None;
             }
@@ -927,6 +933,10 @@ pub fn sync_movers(
                 (*id, evader)
             })
             .collect();
+        // The pairs' offsets add up (Q-207 g): in one order every run, so
+        // the sums are the same to the last bit.
+        let mut walkers = walkers;
+        walkers.sort_by_key(|(id, _)| *id);
         let settings = &library.tables.character_settings;
         let evaders: Vec<_> = walkers.iter().map(|(_, e)| *e).collect();
         let offsets = crate::world::scene3d::evade(
@@ -1131,11 +1141,14 @@ pub(crate) fn log_still_builders(
 }
 
 /// GFX-ANIM-3.1, 3.2: a settler's (or donkey's) clip choice of the tick;
-/// true when the clip changed.
+/// true when the clip changed. With its model and its base point's height
+/// (`swim`), the in-water test is GFX-ANIM-3.1's (Q-180 g): the middle of
+/// the body at or below the water level.
 pub(crate) fn choose_clip(
     visual: &mut crate::animation::settler_anim::SettlerVisual,
     anim: &crate::world::scene3d::MoverAnim,
     library: &crate::render::models3d::ModelLibrary,
+    swim: Option<(&crate::render::models3d::LoadedModel, f32)>,
 ) -> bool {
     let crate::world::scene3d::MoverAnim::Settler {
         state,
@@ -1157,8 +1170,13 @@ pub(crate) fn choose_clip(
     } else {
         library.animations.entries.as_slice()
     };
+    let mut state = state.clone();
+    if let Some((model, foot)) = swim {
+        let height = model.bounds[1][1] - model.bounds[0][1];
+        state.under = crate::world::scene3d::swims(foot, height);
+    }
     visual.tick(
-        state,
+        &state,
         entries,
         good.as_deref(),
         profession.as_deref(),

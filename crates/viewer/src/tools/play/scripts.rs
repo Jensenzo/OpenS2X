@@ -1963,7 +1963,8 @@ pub fn tutorial_three() -> Vec<Step> {
             "T03_Misc_CloseDialog: its close button (CAM-5.3)",
             0x1b,
             "the close button",
-            |_, _, a, _| matches!(a, Action::CloseGlobal | Action::CloseContext),
+            // CAM-5.3c (T19b): the economy dialog's close.
+            |_, _, a, _| matches!(a, Action::CloseGlobal),
         ),
         step(
             "T03_End: the lesson's last step (CAM-5.3)",
@@ -1979,9 +1980,9 @@ pub fn tutorial_three() -> Vec<Step> {
 /// CAM-5, T8: lesson 4 as a person plays it: a ship, an expedition, a harbour
 /// on the far shore (CAM-5.1: the script's harbour, shipyard and two ships).
 pub fn tutorial_four() -> Vec<Step> {
-    let close = |_: &PlayView, _: &Named, a: &Action, _: Option<&str>| {
-        matches!(a, Action::CloseGlobal | Action::CloseContext)
-    };
+    // CAM-5.3c (T19b): the building, harbour or ship window's close.
+    let close =
+        |_: &PlayView, _: &Named, a: &Action, _: Option<&str>| matches!(a, Action::CloseContext);
     let mut steps = start_lesson(
         "TUTORIAL opens the lesson page for lesson 4 (UI-MENU-1.6)",
         "the fourth lesson's button starts map tutorial04 (UI-MENU-1.6, CAM-5.1)",

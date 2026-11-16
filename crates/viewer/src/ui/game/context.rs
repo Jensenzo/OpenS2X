@@ -206,6 +206,11 @@ pub(crate) const FLAG_ICON: Rect = [0, 0, 80, 80];
 /// index, military types among the others and never the headquarters, the
 /// flag button first. A field that takes only a flag opens the road menu
 /// instead (3.3).
+/// UI-GAME-3.2 (seen, E-trace-030): a build menu cell's tooltip.
+pub(crate) fn build_cell_tooltip(name: &str, count: usize) -> String {
+    format!("{name} ({count})")
+}
+
 pub fn build_menu(ctx: &Ctx, field: Point, tab: u8) -> Panel {
     let class = ctx.world.placement_at(field);
     let tabs = build_tabs(class);
@@ -239,6 +244,16 @@ pub fn build_menu(ctx: &Ctx, field: Point, tab: u8) -> Panel {
     flag_button(&mut p, ctx, field, cell(0));
     for (i, b) in listed.iter().enumerate() {
         let at = cell(i + 1);
+        // UI-GAME-3.2, ECO-PLACE-6.3: a military type (one with a
+        // territory range) within 4 fields of a military building or site
+        // is greyed first, then a type the map forbids (CAM-1.3).
+        let refused = if ctx.world.counts_as_military(b.id) && ctx.world.military_near(field) {
+            Some("!Too close to other military buildings.")
+        } else if ctx.world.is_locked(ctx.player, b.id) {
+            Some("!Building not allowed")
+        } else {
+            None
+        };
         p.widgets.push(Widget::Button {
             atlas: Atlas::Elements3,
             rect: BUILD_SLOT,
@@ -246,21 +261,35 @@ pub fn build_menu(ctx: &Ctx, field: Point, tab: u8) -> Panel {
             pressed: Hover::None,
             at,
             size: None,
-            tooltip: Some(ctx.texts.name(&b.name).to_owned()),
+            // UI-GAME-3.2 (seen, E-trace-030): the type's name and, in
+            // brackets, how many the player has of it ("Woodcutter's Hut
+            // (0)"; the count's meaning taken, medium: sites counted too);
+            // a greyed cell's reason in its place (E-trace-031).
+            tooltip: Some(match refused {
+                Some(key) => ctx.t(key),
+                None => build_cell_tooltip(
+                    ctx.texts.name(&b.name),
+                    ctx.world
+                        .buildings()
+                        .filter(|x| x.owner == ctx.player && x.building_type == b.id)
+                        .count(),
+                ),
+            }),
             action: Action::Command(Command::PlaceBuilding {
                 player: ctx.player,
                 building: b.id,
                 at: field,
             }),
-            enabled: true,
+            enabled: refused.is_none(),
             selected: false,
         });
         match b.icon {
-            Some((u, v)) => p.sized(
+            Some((u, v)) => p.icon(
                 Atlas::Buildings(ctx.tribe()),
                 [80 * u, 80 * v, 80, 80],
                 at,
                 [80.0, 80.0],
+                refused.is_some(),
             ),
             None => p.sized(
                 Atlas::Elements3,
@@ -400,6 +429,26 @@ pub(crate) fn road_menu_rows(ctx: &Ctx, field: Point) -> Vec<Portrait> {
                 at: field,
             }),
             true,
+        ));
+    }
+    // Hook W19 (a project's, docs/extending.md "Paved roads"): with a paving
+    // rule, the road menu has a pave button (the flag-with-hammer picture),
+    // usable while the command would be accepted.
+    if ctx.world.paving_rule().is_some()
+        && ctx
+            .world
+            .road_at(field)
+            .is_some_and(|r| r.owner == ctx.player && !r.water)
+    {
+        rows.push((
+            [368, 160],
+            [416, 160],
+            "Pave the road.",
+            Action::Command(Command::PaveRoad {
+                player: ctx.player,
+                at: field,
+            }),
+            ctx.world.can_pave(ctx.player, field),
         ));
     }
     rows

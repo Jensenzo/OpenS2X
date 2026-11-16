@@ -393,7 +393,7 @@ fn node_size(assets: &mut UiAssets, images: &mut Assets<Image>, w: &Widget) -> O
                 .text_image(*font, text, colour, images)
                 .map(|(_, size)| size)
         }
-        Widget::Slider { width, .. } => Some([*width, 8.0]),
+        Widget::Slider { width, .. } => Some(super::widgets::SliderArt::of(*width).size()),
         Widget::Picture { picture, size, .. } => {
             let made = match picture {
                 super::widgets::Picture::Minimap => assets.minimap.is_some(),
@@ -426,10 +426,26 @@ pub struct UiButton {
 pub struct UiSlider {
     kind: super::widgets::SliderKind,
     value: f32,
-    width: f32,
+    /// UI-GAME-6.5: its kind's art.
+    art: super::widgets::SliderArt,
     enabled: bool,
     was_pressed: bool,
     knob: Entity,
+    /// UI-GAME-6.5 (a): the economy slider's fill.
+    fill: Option<Entity>,
+}
+
+/// A slider's part at `left` from its left edge, at its top, unrounded
+/// (UI-GAME-6.5: the knob's left is 2 + 177 v).
+fn slider_node(left: f32, size: [f32; 2]) -> Node {
+    Node {
+        position_type: PositionType::Absolute,
+        left: Val::Px(left),
+        top: Val::Px(0.0),
+        width: Val::Px(size[0]),
+        height: Val::Px(size[1]),
+        ..default()
+    }
 }
 
 /// The root of a panel.
@@ -773,39 +789,89 @@ fn spawn_panel(
                 kind,
                 enabled,
             } => {
-                // A stand-in (Q-1054): the original's slider pictures (a dark
-                // bar, a cyan fill up to the knob, an orange square knob) are
-                // not named; a flat bar and knob take their place.
-                let knob = commands
-                    .spawn((
-                        abs_node([value.clamp(0.0, 1.0) * (width - 8.0), -3.0], [8.0, 14.0]),
-                        BackgroundColor(if *enabled {
-                            Color::srgb(0.95, 0.78, 0.35)
-                        } else {
-                            Color::srgb(0.4, 0.4, 0.4)
-                        }),
-                        FocusPolicy::Pass,
-                    ))
-                    .id();
-                let e = commands
-                    .spawn((
-                        abs_node(*at, [*width, 8.0]),
-                        BackgroundColor(Color::srgba(0.02, 0.1, 0.1, 0.9)),
-                        FocusPolicy::Block,
-                        Interaction::default(),
-                        RelativeCursorPosition::default(),
-                        UiSlider {
-                            kind: *kind,
-                            value: *value,
-                            width: *width,
-                            enabled: *enabled,
-                            was_pressed: false,
-                            knob,
-                        },
-                    ))
-                    .id();
-                commands.entity(e).add_child(knob);
-                e
+                // UI-GAME-6.5 (T61): the bar, the economy slider's fill cut to
+                // 200 v from its left edge (tinted while disabled), and the
+                // 20 x 20 knob at 2 + v (width - 23), all from the game's
+                // pictures; without them a flat bar and knob stand in.
+                let art = super::widgets::SliderArt::of(*width);
+                let size = art.size();
+                let pictures = atlas(assets, art.bar.0).zip(atlas(assets, Atlas::Elements0));
+                if let Some((bar, elements0)) = pictures {
+                    let fill = art.fill.then(|| {
+                        let rect = art.fill_rect(*value).unwrap_or([0, 104, 0, 20]);
+                        let mut image =
+                            atlas_image(rect, atlas(assets, Atlas::Elements2).unwrap_or_default());
+                        if !*enabled {
+                            let [r, g, b, a] = super::widgets::DISABLED_FILL;
+                            image.color = Color::srgba(r, g, b, a);
+                        }
+                        commands
+                            .spawn((
+                                slider_node(0.0, [rect[2] as f32, 20.0]),
+                                image,
+                                FocusPolicy::Pass,
+                            ))
+                            .id()
+                    });
+                    let knob = commands
+                        .spawn((
+                            slider_node(art.knob_left(*value), [20.0, 20.0]),
+                            atlas_image(super::widgets::SLIDER_KNOB[0], elements0),
+                            FocusPolicy::Pass,
+                        ))
+                        .id();
+                    let e = commands
+                        .spawn((
+                            abs_node(*at, size),
+                            atlas_image(art.bar.1, bar),
+                            FocusPolicy::Block,
+                            Interaction::default(),
+                            RelativeCursorPosition::default(),
+                            UiSlider {
+                                kind: *kind,
+                                value: *value,
+                                art,
+                                enabled: *enabled,
+                                was_pressed: false,
+                                knob,
+                                fill,
+                            },
+                        ))
+                        .id();
+                    if let Some(fill) = fill {
+                        commands.entity(e).add_child(fill);
+                    }
+                    commands.entity(e).add_child(knob);
+                    e
+                } else {
+                    let knob = commands
+                        .spawn((
+                            abs_node([art.knob_left(*value), 0.0], [20.0, size[1]]),
+                            BackgroundColor(Color::srgb(0.95, 0.78, 0.35)),
+                            FocusPolicy::Pass,
+                        ))
+                        .id();
+                    let e = commands
+                        .spawn((
+                            abs_node(*at, size),
+                            BackgroundColor(Color::srgba(0.02, 0.1, 0.1, 0.9)),
+                            FocusPolicy::Block,
+                            Interaction::default(),
+                            RelativeCursorPosition::default(),
+                            UiSlider {
+                                kind: *kind,
+                                value: *value,
+                                art,
+                                enabled: *enabled,
+                                was_pressed: false,
+                                knob,
+                                fill: None,
+                            },
+                        ))
+                        .id();
+                    commands.entity(e).add_child(knob);
+                    e
+                }
             }
             Widget::Fill { at, size, rgba } => commands
                 .spawn((
@@ -927,6 +993,7 @@ pub fn interact(
     mut buttons: Query<(&Interaction, &mut UiButton, &mut ImageNode)>,
     mut sliders: Query<(&Interaction, &RelativeCursorPosition, &mut UiSlider)>,
     mut knobs: Query<&mut Node>,
+    mut parts: Query<&mut ImageNode, Without<UiButton>>,
     minimap: Query<&Interaction, With<MinimapNode>>,
     mut tooltip: Local<Option<(String, Entity)>>,
     mut commands: Commands,
@@ -1024,7 +1091,7 @@ pub fn interact(
     }
     // UI-GAME-11.4: a right click on a message row deletes it.
     if mouse.just_released(MouseButton::Right) {
-        if let Some(Action::MessageRow(key)) = &under {
+        if let Some(Action::MessageRow(key) | Action::MessageText(key)) = &under {
             events.actions.push(Action::DeleteMessage(*key));
             events.sounds.push("uiRemove");
         }
@@ -1075,6 +1142,28 @@ pub fn interact(
     for (interaction, cursor, mut s) in &mut sliders {
         over |= *interaction != Interaction::None;
         let pressed = *interaction == Interaction::Pressed && s.enabled;
+        // UI-GAME-6.5: the knob normal, highlighted under the pointer, and
+        // pressed while held.
+        let dragged = events.dragging.is_some_and(|(kind, _)| kind == s.kind);
+        let look = if pressed || dragged {
+            2
+        } else if *interaction == Interaction::Hovered && s.enabled {
+            1
+        } else {
+            0
+        };
+        if let Ok(mut image) = parts.get_mut(s.knob) {
+            let r = super::widgets::SLIDER_KNOB[look];
+            let want = Rect::new(
+                r[0] as f32,
+                r[1] as f32,
+                (r[0] + r[2]) as f32,
+                (r[1] + r[3]) as f32,
+            );
+            if image.rect.is_some() && image.rect != Some(want) {
+                image.rect = Some(want);
+            }
+        }
         if let Some((kind, value)) = events.dragging.as_mut() {
             if *kind == s.kind {
                 if let (true, Some(n)) = (mouse.pressed(MouseButton::Left), cursor.normalized) {
@@ -1082,7 +1171,22 @@ pub fn interact(
                 }
                 s.value = *value;
                 if let Ok(mut node) = knobs.get_mut(s.knob) {
-                    node.left = Val::Px(s.value * (s.width - 8.0));
+                    node.left = Val::Px(s.art.knob_left(s.value));
+                }
+                // UI-GAME-6.5 (a): the fill follows, cut to 200 v.
+                if let Some(fill) = s.fill {
+                    let rect = s.art.fill_rect(s.value).unwrap_or([0, 104, 0, 20]);
+                    if let Ok(mut node) = knobs.get_mut(fill) {
+                        node.width = Val::Px(rect[2] as f32);
+                    }
+                    if let Ok(mut image) = parts.get_mut(fill) {
+                        image.rect = Some(Rect::new(
+                            rect[0] as f32,
+                            rect[1] as f32,
+                            (rect[0] + rect[2]) as f32,
+                            (rect[1] + rect[3]) as f32,
+                        ));
+                    }
                 }
             }
         }
@@ -1118,7 +1222,11 @@ pub fn interact(
                 screen,
             ))
         } else {
-            c + Vec2::splat(16.0)
+            Vec2::from(super::game::control_tooltip_at(
+                c.to_array(),
+                size.to_array(),
+                screen,
+            ))
         }
     };
     let is_map = map_tip.is_some();
@@ -1134,14 +1242,20 @@ pub fn interact(
                     assets.text_image(Font::Body, text, [255, 255, 255], &mut images)
                 {
                     // UI-GAME-9.3: the map's box is 32 px of a 768 layout.
+                    // UI-GAME-2.2 (seen): a control's box 32 px high with a
+                    // thin light frame, its width fitted to the text.
                     let box_size = if is_map {
                         [
                             size[0] + 12.0,
                             super::game::map_tooltip_height(screen[1]).max(size[1]),
                         ]
                     } else {
-                        size
+                        [
+                            size[0] + 12.0,
+                            super::game::CONTROL_TOOLTIP_HEIGHT.max(size[1]),
+                        ]
                     };
+                    let frame = if is_map { 0.0 } else { 1.0 };
                     let at = place(c, Vec2::from(box_size), is_map);
                     let e = commands
                         .spawn((
@@ -1149,8 +1263,10 @@ pub fn interact(
                             Node {
                                 justify_content: JustifyContent::Center,
                                 align_items: AlignItems::Center,
+                                border: UiRect::all(Val::Px(frame)),
                                 ..abs_node([at.x, at.y], box_size)
                             },
+                            BorderColor::all(Color::srgb(0.75, 0.75, 0.75)),
                             BackgroundColor(Color::srgba(0.0, 0.05, 0.05, 0.85)),
                             GlobalZIndex(z_of(PanelId::Tooltip)),
                             FocusPolicy::Pass,
@@ -1238,7 +1354,7 @@ mod tests {
         match w {
             Widget::BarButton { bar, .. } => Some(bar.size),
             Widget::TextButton { .. } => Some([50.0, 10.0]),
-            Widget::Slider { width, .. } => Some([*width, 8.0]),
+            Widget::Slider { width, .. } => Some(crate::ui::widgets::SliderArt::of(*width).size()),
             Widget::Picture { size, .. } => Some([*size, *size]),
             _ => None,
         }
@@ -1267,9 +1383,10 @@ mod tests {
                 [100.0, 100.0],
                 vec![
                     bar_button([0.0, 0.0], load(), true),
+                    // UI-GAME-6.5: an economy slider, 200 x 20.
                     Widget::Slider {
                         at: [0.0, 40.0],
-                        width: 100.0,
+                        width: 200.0,
                         value: 0.5,
                         kind: SliderKind::Defenders,
                         enabled: true,
@@ -1326,7 +1443,7 @@ mod tests {
         // A text button's rectangle starts at its line box.
         assert!(matches!(at(400.0, 105.0), Some(Hit::Button { .. })));
         assert_eq!(
-            at(125.0, 142.0),
+            at(150.0, 142.0),
             Some(Hit::Slider {
                 kind: SliderKind::Defenders,
                 fraction: 0.25,
@@ -1513,9 +1630,10 @@ mod tests {
             id: PanelId::Minimap,
             at: [0.0, 0.0],
             widgets: vec![
+                // UI-GAME-6.5: an economy slider, 200 x 20.
                 Widget::Slider {
                     at: [0.0, 0.0],
-                    width: 100.0,
+                    width: 200.0,
                     value: 0.5,
                     kind: SliderKind::Defenders,
                     enabled: true,
@@ -1528,7 +1646,7 @@ mod tests {
             ],
             tooltips: Vec::new(),
         }];
-        let mut app = clicks_app(panels.clone(), Vec2::new(25.0, 4.0));
+        let mut app = clicks_app(panels.clone(), Vec2::new(50.0, 4.0));
         mouse(&mut app, |m| m.press(MouseButton::Left));
         app.update();
         mouse(&mut app, |m| m.release(MouseButton::Left));

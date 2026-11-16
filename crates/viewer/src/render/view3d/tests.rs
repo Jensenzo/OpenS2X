@@ -67,6 +67,18 @@ fn lying_tree_box_heights() {
     }
 }
 
+/// Hook W17: a project's factor multiplies the profile's map size (at most
+/// 8192 texels), and shadows off stay off; no factor is the profile's size.
+// spec: none (hook W17, docs/extending.md "The game with extensions"; the size is GFX-VIEW-2.5 d's)
+#[test]
+fn a_projects_factor_scales_the_profiles_shadow_map() {
+    assert_eq!(scaled_shadow_map(Some(2048), None), Some(2048));
+    assert_eq!(scaled_shadow_map(Some(1024), Some(2)), Some(2048));
+    assert_eq!(scaled_shadow_map(Some(2048), Some(8)), Some(8192));
+    assert_eq!(scaled_shadow_map(Some(512), Some(0)), Some(512));
+    assert_eq!(scaled_shadow_map(None, Some(2)), None);
+}
+
 /// GFX-VIEW-2.5 d (Run D): the map's size by `SHADOW QUALITY`.
 #[test]
 fn shadow_map_sizes() {
@@ -979,4 +991,137 @@ fn the_camera_speed_is_the_profiles() {
     assert_eq!(camera::camera_speed(&menu), 0.25);
     menu.settings.cfg.user.scroll_speed = 0.5;
     assert_eq!(camera::camera_speed(&menu), 0.5);
+}
+
+/// GFX-OBJ-8.3c: a clip's particle entry starts once per play: at 0.5 s of
+/// the leveller's shovel play, not again in the play's later loops (its
+/// clock runs on), and at 0 s on the play's first frame (the forester).
+// spec: GFX-OBJ-8.3c
+#[test]
+fn a_clip_particle_starts_once_per_play() {
+    // The play's frames: 0, 0.3, 0.6, ... (clip seconds); the clip is
+    // 2 s long, so it loops three times in 6 s.
+    let frames: Vec<f32> = (0..20).map(|i| i as f32 * 0.3).collect();
+    let starts = |start: f32| {
+        let mut last = frames[0] - 1e-4;
+        let mut n = 0;
+        for &now in &frames {
+            if clip_particle_starts(start, last, now) {
+                n += 1;
+            }
+            last = now;
+        }
+        n
+    };
+    assert_eq!(starts(0.5), 1);
+    assert_eq!(starts(0.0), 1);
+    // A settler that joins a play after the entry's time starts none.
+    assert!(!clip_particle_starts(0.5, 2.9999, 3.0));
+}
+
+/// GFX-OBJ-8.3b: the shipped table's two settler clips with a particle:
+/// the leveller's shovel (`StoneDust` at 0.5 s) and the forester's
+/// planting (`StoneDust` at 0 s); the builder's and the woodcutter's clips
+/// have none. Skipped without `S2_GAME_DIR`.
+// spec: GFX-OBJ-8.3b
+#[test]
+fn the_settler_clips_with_particles() {
+    let Ok(dir) = std::env::var("S2_GAME_DIR") else {
+        eprintln!("skipped: S2_GAME_DIR is not set");
+        return;
+    };
+    let mut library = crate::render::models3d::ModelLibrary::new(
+        Some(std::path::Path::new(&dir)),
+        Default::default(),
+    );
+    library.index_clip_sounds();
+    assert_eq!(
+        library.particles_of_entry("WorkLoop0Bulldozer"),
+        [("StoneDust".to_owned(), 0.5)]
+    );
+    assert_eq!(
+        library.particles_of_entry("WorkLoop0Forester"),
+        [("StoneDust".to_owned(), 0.0)]
+    );
+    assert!(library
+        .particles_of_entry("WorkLoop0Constructor")
+        .is_empty());
+    assert!(library.particles_of_entry("WorkLoop0Axe").is_empty());
+    let mut names: Vec<&String> = library.entry_particles.keys().collect();
+    names.sort();
+    assert_eq!(names, ["WorkLoop0Bulldozer", "WorkLoop0Forester"]);
+}
+
+/// Play test F15 (GFX-ANIM-6.1a b, MIL-SOL-6.2): the soldier the
+/// headquarters sends to a new barracks holds the headquarters' door open
+/// while he steps from its field out to its flag (the door's pairing is the
+/// building and its own flag, the neighbour the building faces, GFX-OBJ-2.1):
+/// a soldier is among the walkers the doors read.
+// spec: GFX-ANIM-6.1a, MIL-SOL-6.2
+#[test]
+fn a_soldier_walking_out_holds_the_door_open() {
+    use crate::animation::object_anim::{door_triggers, Stepper, ENTER_DISTANCE, LEAVE_DISTANCE};
+    use s2_ai::fixture::{world, BARRACKS, SOLDIER};
+    let p0 = s2_sim::PlayerId(0);
+    let hq = (20, 20);
+    let mut world = world(&[0]);
+    let barracks = (25, 22);
+    world.submit(s2_sim::Command::PlaceBuilding {
+        player: p0,
+        building: BARRACKS,
+        at: barracks,
+    });
+    world.step();
+    // Its flag joined to the headquarters' by a road (the soldier's way).
+    let flag = world.terrain().neighbour(hq, 1).expect("the flag");
+    let site_flag = world.terrain().neighbour(barracks, 1).expect("its flag");
+    world.submit(s2_sim::Command::BuildRoad {
+        player: p0,
+        from: flag,
+        to: site_flag,
+    });
+    world.step();
+    assert_eq!(world.last_results()[0].outcome, Ok(()));
+    let shortfall = world.site(barracks).expect("a site").shortfall();
+    world.submit(s2_sim::Command::DebugSupplySite {
+        player: p0,
+        at: barracks,
+        wares: shortfall,
+        workers: true,
+    });
+    let doors: std::collections::HashMap<_, _> = [(hq, flag)].into();
+    let mut held_by_soldier = false;
+    for _ in 0..6000 {
+        world.step();
+        let steppers: Vec<Stepper> = world
+            .settler_views()
+            .iter()
+            .filter(|v| SOLDIER.contains(&v.profession))
+            .filter_map(|v| match v.id {
+                s2_sim::view::SettlerRef::Settler(n) => Some(Stepper {
+                    id: n as u64,
+                    at: v.walk.at,
+                    next: v.walk.next,
+                    progress: v.walk.fraction(),
+                }),
+                _ => None,
+            })
+            .collect();
+        if door_triggers(&doors, &steppers, ENTER_DISTANCE, LEAVE_DISTANCE).contains(&hq) {
+            held_by_soldier = true;
+            break;
+        }
+    }
+    let soldiers: Vec<_> = world
+        .settler_views()
+        .iter()
+        .filter(|v| SOLDIER.contains(&v.profession))
+        .map(|v| (v.walk.at, v.walk.next))
+        .collect();
+    assert!(
+        held_by_soldier,
+        "no soldier stepped out of the headquarters' door: barracks {:?}, soldiers {soldiers:?}, tick {}",
+        world.building_at(barracks).map(|b| b.under_construction),
+        world.tick()
+    );
 }

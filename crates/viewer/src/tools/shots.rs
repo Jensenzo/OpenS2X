@@ -63,6 +63,20 @@ pub(crate) enum CompareShot {
     Saved,
 }
 
+/// `--still`: no pointer over the window for the interface and the map
+/// (no hover, no tooltip), whatever the desktop's pointer does, so that two
+/// runs draw the same pixels. Nothing is warped: a position of none moves
+/// no pointer.
+pub(crate) fn forget_pointer(
+    mut windows: Query<&mut bevy::window::Window, With<bevy::window::PrimaryWindow>>,
+) {
+    for mut window in &mut windows {
+        if window.physical_cursor_position().is_some() {
+            window.set_physical_cursor_position(None);
+        }
+    }
+}
+
 /// A captured frame that is not one flat colour (the window has drawn).
 pub(crate) fn drawn(image: &Image) -> bool {
     let Some(data) = image.data.as_ref() else {
@@ -127,5 +141,24 @@ pub(crate) fn automatic_shot(
             });
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::ecs::system::RunSystemOnce;
+
+    // spec: none (the golden pictures' --still: no hover depends on the desktop's pointer)
+    #[test]
+    fn a_still_window_forgets_the_pointer() {
+        let mut world = World::new();
+        let mut window = bevy::window::Window::default();
+        window.set_physical_cursor_position(Some(bevy::math::DVec2::new(460.0, 340.0)));
+        world.spawn((window, bevy::window::PrimaryWindow));
+        world.run_system_once(forget_pointer).unwrap();
+        let mut windows = world.query::<&bevy::window::Window>();
+        let window = windows.single(&world).unwrap();
+        assert_eq!(window.cursor_position(), None);
     }
 }
