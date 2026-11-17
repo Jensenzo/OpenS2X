@@ -1163,6 +1163,40 @@ fn prom_t6_t7_orders_to_the_stock_limit() {
     assert_eq!(world.orders.iter().filter(|o| o.good == COIN).count(), 1);
 }
 
+// PROM T13 (MIL-PROM-3.2 clarified, E-mil-023): "no open order" is the
+// building's own order list empty; a served order stays on it until its ware
+// is delivered (ECO-REQ-5.3f). While its coins are on their way (with the
+// warehouse helper, then on the roads) the barracks orders none at its next
+// checks, although none has arrived; it orders again only when all are in.
+// spec: MIL-PROM-3.2 (PROM T13), ECO-REQ-5.3f
+#[test]
+fn prom_t13_a_coin_on_its_way_still_counts() {
+    let mut world = quiet_game();
+    let at = barracks_with(&mut world, &[0]);
+    road_between(&mut world, HQ, at);
+    world.warehouses.get_mut(&HQ).unwrap().stock = vec![(COIN, 10), (HELPER, 5)];
+    let open = |w: &World| w.orders.iter().filter(|o| o.target.at == at).count();
+    // The first check orders the stock limit's coins; then they are served.
+    let mut served = false;
+    for _ in 0..300 {
+        world.step();
+        if open(&world) == 0 && world.orders_filed_for(at) > 0 {
+            served = true;
+            break;
+        }
+    }
+    assert!(served, "the coins are on their way");
+    let filed = world.orders_filed_for(at);
+    // The next checks (every 33 ticks) order nothing while any is on its way.
+    for _ in 0..70 {
+        world.step();
+        if coins_in(&world, at) > 0 || world.orders_filed_for(at) < filed {
+            break;
+        }
+        assert_eq!(open(&world), 0, "tick {}", world.tick());
+    }
+}
+
 // T8
 // spec: MIL-PROM-2.1, MIL-SOL-6.4 (PROM T8)
 #[test]

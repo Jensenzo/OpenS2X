@@ -138,7 +138,9 @@ impl SiteEnv<'_> {
         let harbour = t.size == BuildingSize::Harbor;
         let military = t.territory_range > 0 && t.soldier_limit > 0;
         // AI-CON-6.1 (Q-075): the first harbour-pavement field in the rings
-        // outward from p needs an own building near it.
+        // outward from p needs an own harbour near it. T103 (Q-082): the
+        // game's harbour list, every building whose type is a harbour, in
+        // any state (a site counts); no other building counts.
         if !harbour {
             let r = if large { 2 } else { 1 };
             let reach = if large { 4 } else { 3 };
@@ -146,7 +148,13 @@ impl SiteEnv<'_> {
                 .into_iter()
                 .find(|&f| terrain.has(f, state::FOR_HARBOR));
             if let Some(f) = pavement {
-                if !self.own.iter().any(|b| dist(b.at, f) <= reach) {
+                let near = self.own.iter().any(|b| {
+                    dist(b.at, f) <= reach
+                        && world
+                            .building_type(b.building_type)
+                            .is_some_and(|k| k.size == BuildingSize::Harbor)
+                });
+                if !near {
                     return 0.0;
                 }
             }
@@ -263,16 +271,18 @@ impl SiteEnv<'_> {
                 1.0
             };
         }
+        // AI-CON-6.3 (T105): the depot test walks the game's warehouse list,
+        // filled when a building is placed: an own warehouse in any state
+        // within 10 (a storehouse's or harbour's site included) gives 0.
         if t.warehouse && !harbour {
             let near = self.nearest(
                 at,
                 self.own
                     .iter()
                     .filter(|b| {
-                        !b.under_construction
-                            && world
-                                .building_type(b.building_type)
-                                .is_some_and(|o| o.warehouse)
+                        world
+                            .building_type(b.building_type)
+                            .is_some_and(|o| o.warehouse)
                     })
                     .map(|b| b.at),
             );

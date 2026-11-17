@@ -125,6 +125,9 @@ What an older game shows, by format:
 
 | Saved in | What it shows when loaded |
 |---|---|
+| 84 (before 2026-11-17 day, exact c) | An attacker walking to the meeting field an interception gave him at the save walks on as one paired at the target's door (MIL-ATK-6.1a before T26): arriving there he makes his draw and his step off the point at once, two updates earlier than one sent after the load. |
+| 83 (before 2026-11-17 day, exact b) | An attacker out at the save is off his home building's soldier list (sent before MIL-ATK-2.3's correction, Q-1070): he is put back at the end of its list, in settler order, so the home counts him again (it may cancel a replacement request or let a soldier go in its next pass, MIL-SOL-4.4) and he comes back to it when his attack ends. |
+| 82 (before 2026-11-17 day, exact) | A computer player's needs that hold a cell at the save do not know their place in its need list (AI-CON-2.5b, `celled` 0): they count as given it first, among themselves by need id, and a producer announced after the load is tied to the first of them that has no production. Needs given a cell after the load join the list's end. |
 | 81 (before 2026-11-17 night) | Nothing different: no game of that format has a ware order or settler request attached to a harbour (SHIP-4.1, Q-063: the need of a harbour came from no rule then); the open ones attach at their next turn when the land cannot serve them. |
 | 80 (before 2026-11-16 day b) | A "Ship waiting for Orders" message posted before the load names no ship: its row shows the text without the ship's name in brackets. Those posted after the load name it. |
 | 79 (before 2026-11-16 day) | Nothing different: no game of that format has a command refused for the military clearance (ECO-PLACE-6.2, the result `TooCloseToMilitary`); a military site placed within 4 fields of another military building stays as it was. |

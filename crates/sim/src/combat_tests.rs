@@ -95,6 +95,43 @@ fn atk_t1_available_attackers() {
     assert_eq!(world.attack_available(P1, TARGET), 0);
 }
 
+// T23 (MIL-ATK-1.1 item 7, corrected 2026-11-17 day, E-mil-020): a
+// building's share is trunc((n - 1) x attackStrength x f(d)), f(d) =
+// min(36 - d, 24) / 24: full up to 12 fields, 1/24 less per field beyond.
+// R6's first attack: d 12 with 2 soldiers -> 1, d 17 with 6 -> trunc(5 x
+// 19/24) = 3, d 22 with 3 -> trunc(2 x 14/24) = 1: 5 available, 5 sent by
+// distance (MIL-ATK-2.1), five records and five draws (8 without the
+// factor).
+// spec: MIL-ATK-1.1 (T23), MIL-ATK-1.2, MIL-ATK-2.1, MIL-ATK-2.3
+#[test]
+fn atk_t23_the_share_falls_with_the_distance() {
+    let mut world = scene();
+    fill(&mut world, P1, BARRACKS, TARGET, &privates(1));
+    fill(&mut world, P0, GUARD, (38, 20), &privates(2));
+    fill(&mut world, P0, TOWER, (33, 20), &privates(6));
+    fill(&mut world, P0, GUARD, (28, 20), &privates(3));
+    assert_eq!(world.attack_available(P0, TARGET), 5);
+    let draws = world.rng.draws();
+    attack(&mut world, 8, false);
+    let homes: Vec<Point> = attackers(&world).into_iter().map(|a| a.0).collect();
+    assert_eq!(
+        homes,
+        vec![(38, 20), (33, 20), (33, 20), (33, 20), (28, 20)]
+    );
+    assert!(world.rng.draws() >= draws + 5);
+    // The factor alone: 13/24 at d 23, and a hair above each fraction.
+    for (d, n, k) in [
+        (12, 25, 24),
+        (13, 25, 23),
+        (23, 25, 13),
+        (17, 6, 3),
+        (22, 3, 1),
+    ] {
+        let f = (36u32 - d).min(24) as f32 * (1.0f32 / 24.0);
+        assert_eq!(((n as f64 - 1.0) * f64::from(f)) as u32, k, "d {d}");
+    }
+}
+
 // T1 (ring): without a field of ours on the ring around the target nothing
 // can be sent, however close the building.
 // spec: MIL-ATK-1.2 (T1)
@@ -130,6 +167,7 @@ fn atk_t2_weak_attack_strength_sends_nobody() {
 
 // MIL-ATK-1.1 (3, 5, 7): the headquarters, buildings out of reach and a
 // lone soldier send nobody.
+// spec: MIL-ATK-1.1
 #[test]
 fn atk_1_1_who_cannot_send() {
     let mut world = scene();
@@ -141,7 +179,9 @@ fn atk_1_1_who_cannot_send() {
     assert_eq!(crate::grid::distance((27, 20), TARGET), 23);
     assert_eq!(crate::grid::distance((26, 20), TARGET), 24);
     // The headquarters stands within 40 of nothing here, but never sends.
-    assert_eq!(world.attack_available(P0, TARGET), 3);
+    // Item 7's distance factor (T23): at 23 the tower's share is
+    // trunc(3 x 13/24) = 1.
+    assert_eq!(world.attack_available(P0, TARGET), 1);
 }
 
 // T3
@@ -198,21 +238,335 @@ fn atk_t6_strong_first() {
     assert_eq!(sent, vec![(4, 7), (2, 5), (2, 2)]);
 }
 
-// MIL-ATK-2.3: the soldier is unlinked from its building, and one random
-// number per record is drawn.
+// MIL-ATK-2.3 (corrected 2026-11-17 night, Q-1070): the soldier sent stays
+// on his home building's soldier list, where he counts but is not present
+// (MIL-SOL-2.4), and one random number per record is drawn.
+// spec: MIL-ATK-2.3, MIL-SOL-2.4
 #[test]
-fn atk_2_3_sending_unlinks_and_draws_once() {
+fn atk_2_3_sending_keeps_him_on_his_homes_list_and_draws_once() {
     let mut world = standard(4, 1);
     let before = world.rng.clone();
+    let listed = world.military_at((40, 20)).unwrap().soldiers.clone();
     attack(&mut world, 2, false);
     let m = world.military_at((40, 20)).unwrap();
-    assert_eq!(m.soldiers.len(), 2);
+    assert_eq!(m.soldiers, listed, "nobody leaves the list");
     assert_eq!(world.attack_records().len(), 2);
+    let sent: Vec<usize> = world.attack_records().iter().map(|r| r.soldier).collect();
+    assert!(sent.iter().all(|s| listed.contains(s)));
+    assert_eq!(world.present_soldiers((40, 20)), 2);
+    let away: Vec<usize> = world
+        .garrison((40, 20))
+        .iter()
+        .filter(|s| !s.present)
+        .map(|s| s.id)
+        .collect();
+    assert_eq!(away.len(), 2);
+    assert!(away.iter().all(|s| sent.contains(s)));
     // The commands of a step come first: one draw per record.
     let mut expected = before;
     for r in world.attack_records() {
         assert_eq!(u64::from(r.counter), u64::from(expected.draw()) % 2);
     }
+}
+
+fn military_requests(world: &World) -> usize {
+    world
+        .requests(P0)
+        .iter()
+        .filter(|r| matches!(r.requester, crate::requests::Requester::Military(_)))
+        .count()
+}
+
+/// The building on `at` lists the settler `id` among its soldiers.
+fn listed(world: &World, at: Point, id: usize) -> bool {
+    world
+        .military_at(at)
+        .is_some_and(|m| m.soldiers.contains(&id))
+}
+
+// MIL-SOL-4.2 with MIL-ATK-2.3: the attackers out still count in S, so
+// their home asks for no replacement while they are away (was: unlinked at
+// the sending, a request in each pass).
+// spec: MIL-SOL-4.2, MIL-SOL-4.3, MIL-ATK-2.3
+#[test]
+fn sol_4_2_attackers_out_count_and_bring_no_replacement() {
+    let mut world = standard(3, 1);
+    assert_eq!(world.wanted_soldiers((40, 20)), 3);
+    attack(&mut world, 2, false);
+    // The passes in ticks 20, 41 and 62.
+    crate::military_tests::run_to(&mut world, 63);
+    assert_eq!(world.attack_records().len(), 2);
+    assert_eq!(world.military_at((40, 20)).unwrap().soldiers.len(), 3);
+    assert_eq!(military_requests(&world), 0);
+}
+
+// MIL-SOL-4.4 step 2 (Q-142, Q-1070; E-mil-018): a building with one
+// soldier too many releases a soldier that is not present first, in list
+// order, so an attacker out goes before anyone inside. He keeps his errand;
+// when it ends (here: his target gone) he has no home and goes to a
+// warehouse (MIL-ATK-4.4, TRN-FREE-6.4). The one still kept walks back and
+// is present again on arrival, with no test of the wanted number.
+// spec: MIL-SOL-4.4, MIL-ATK-2.3, MIL-ATK-4.4, MIL-SOL-2.4
+#[test]
+fn sol_4_4_an_attacker_out_is_released_and_goes_to_a_warehouse() {
+    let home = (40, 20);
+    let mut world = standard(3, 1);
+    // A second enemy building near, so that the guard house still wants 3
+    // when the target is gone (MIL-SOL-3.2); with one soldier it sends no
+    // interceptor (MIL-ATK-3.1).
+    fill(&mut world, P1, GUARD, (56, 20), &privates(1));
+    attack(&mut world, 2, false);
+    let sent: Vec<usize> = world.attack_records().iter().map(|r| r.soldier).collect();
+    let list = world.military_at(home).unwrap().soldiers.clone();
+    // One soldier more than the 3 wanted.
+    let extra = garrison(&mut world, home, 0, 3);
+    let first_out = *list.iter().find(|s| sent.contains(s)).unwrap();
+    let kept = *sent.iter().find(|&&s| s != first_out).unwrap();
+    crate::military_tests::run_to(&mut world, 21);
+    assert!(!listed(&world, home, first_out), "released by step 2");
+    assert!(listed(&world, home, kept));
+    assert!(listed(&world, home, extra), "nobody inside goes");
+    assert_eq!(world.present_soldiers(home), 2);
+    // He fights on: still an attacker with his record.
+    assert!(matches!(
+        world.settlers[first_out].as_ref().unwrap().job,
+        SettlerJob::Attack { .. }
+    ));
+    assert!(world
+        .attack_records()
+        .iter()
+        .any(|r| r.soldier == first_out));
+    // The target goes: their errands end (MIL-ATK-4.4).
+    world.submit(Command::RemoveBuilding {
+        player: P1,
+        at: TARGET,
+    });
+    let job = |world: &World, id: usize| world.settlers[id].as_ref().map(|s| s.job.clone());
+    let mut gone = false;
+    for _ in 0..800 {
+        world.step();
+        match job(&world, first_out) {
+            Some(SettlerJob::Attack {
+                step: AttackStep::Home,
+                ..
+            })
+            | Some(SettlerJob::Garrison { .. }) => panic!("the released one went back"),
+            Some(SettlerJob::Attack { .. }) => {}
+            _ => {
+                gone = true;
+                break;
+            }
+        }
+    }
+    assert!(gone, "the released one goes to a warehouse");
+    assert!(!listed(&world, home, first_out));
+    // The kept one is back inside and present, now one more than wanted.
+    for _ in 0..800 {
+        if matches!(job(&world, kept), Some(SettlerJob::Garrison { .. })) {
+            break;
+        }
+        world.step();
+    }
+    assert!(matches!(
+        job(&world, kept),
+        Some(SettlerJob::Garrison { .. })
+    ));
+    assert!(listed(&world, home, kept));
+    assert!(!listed(&world, home, first_out));
+}
+
+// MIL-SOL-4.4 step 2 (Q-1070 c): a defender out in a fight is not present
+// either: released, he fights on, and when his fight ends he goes to a
+// warehouse instead of back to the building.
+// spec: MIL-SOL-4.4, MIL-SOL-2.4, MIL-ATK-6.6
+#[test]
+fn sol_4_4_a_released_defender_fights_on_then_goes_to_a_warehouse() {
+    let (mut world, attacker, defender, _) = pair_on_field(0, 1, 4, 7);
+    // The barracks (wanted 2) lists one soldier inside and the defender:
+    // a third one makes one too many.
+    let extra = garrison(&mut world, TARGET, 0, 3);
+    let inside = world.military_at(TARGET).unwrap().soldiers[0];
+    crate::military_tests::run_to(&mut world, 21);
+    assert!(!listed(&world, TARGET, defender), "released by step 2");
+    assert!(listed(&world, TARGET, inside) && listed(&world, TARGET, extra));
+    let mut ended = None;
+    for _ in 0..3000 {
+        if world.settlers[attacker].is_none() {
+            ended = Some(world.tick());
+            break;
+        }
+        assert!(
+            matches!(
+                world.settlers[defender].as_ref().unwrap().job,
+                SettlerJob::Defend { .. }
+            ),
+            "he fights on"
+        );
+        world.step();
+    }
+    assert!(ended.is_some(), "the attacker fell");
+    world.step();
+    let job = &world.settlers[defender].as_ref().unwrap().job;
+    assert!(
+        !matches!(job, SettlerJob::Defend { .. } | SettlerJob::Garrison { .. }),
+        "to a warehouse, not back: {job:?}"
+    );
+    assert!(!listed(&world, TARGET, defender));
+}
+
+// MIL-ATK-2.3 (Q-1070), docs/snapshot.md: a game saved before format 84
+// had its attackers out off their homes' lists; loaded, each is put back at
+// the end of its list, so his home counts him and he comes back to it.
+// spec: MIL-ATK-2.3, MIL-SOL-4.2
+#[test]
+fn atk_2_3_an_older_games_attackers_go_back_on_their_lists() {
+    let mut world = standard(4, 1);
+    attack(&mut world, 2, false);
+    let sent: Vec<usize> = world.attack_records().iter().map(|r| r.soldier).collect();
+    let mut older = world.clone();
+    let list = &mut older.military.get_mut(&(40, 20)).unwrap().soldiers;
+    list.retain(|s| !sent.contains(s));
+    let inside = list.clone();
+    older.attackers_back_on_their_lists();
+    let mut expected = inside;
+    let mut by_id = sent.clone();
+    by_id.sort_unstable();
+    expected.extend(by_id);
+    assert_eq!(older.military_at((40, 20)).unwrap().soldiers, expected);
+    // A game of this format is read as it was.
+    let loaded = World::from_snapshot(&world.snapshot()).unwrap();
+    assert_eq!(
+        loaded.military_at((40, 20)).unwrap().soldiers,
+        world.military_at((40, 20)).unwrap().soldiers
+    );
+}
+
+// MIL-SOL-4.4 (Q-1071 b; E-mil-019): an attacker released while still
+// inside, waiting to walk out, no longer waits for his home's release
+// cooldown: he walks out in his next update and sets none.
+// spec: MIL-SOL-4.4, MIL-ATK-4.1
+#[test]
+fn sol_4_4_released_inside_he_walks_out_without_the_cooldown() {
+    let home = (40, 20);
+    let mut world = standard(4, 1);
+    world.submit(Command::MilitaryDefenders {
+        player: P1,
+        thousandths: 0,
+    });
+    world.step();
+    attack(&mut world, 3, false);
+    for _ in 0..3 {
+        world.step();
+    }
+    let step_of = |world: &World, id: usize| match world.settlers[id].as_ref().unwrap().job {
+        SettlerJob::Attack { step, .. } => Some(step),
+        _ => None,
+    };
+    let waiting: Vec<usize> = world
+        .attack_records()
+        .iter()
+        .map(|r| r.soldier)
+        .filter(|&id| step_of(&world, id) == Some(AttackStep::Leaving))
+        .collect();
+    assert_eq!(waiting.len(), 2, "one walked out, two wait");
+    let cooldown = world.military_at(home).unwrap().cooldown;
+    assert!(cooldown > 0);
+    // Released, as MIL-SOL-4.4 step 2 does: off the list.
+    let id = waiting[1];
+    world
+        .military
+        .get_mut(&home)
+        .unwrap()
+        .soldiers
+        .retain(|&s| s != id);
+    world.step();
+    assert_eq!(step_of(&world, id), Some(AttackStep::Walking));
+    assert_eq!(step_of(&world, waiting[0]), Some(AttackStep::Leaving));
+    assert!(
+        world.military_at(home).unwrap().cooldown <= cooldown,
+        "none set"
+    );
+}
+
+// MIL-SOL-4.4 (Q-1071 c; E-mil-019): when a soldier's home building goes,
+// an interceptor in a fight loses only his home link: he fights on, and
+// when his fight is over and the building he defends has no attackers left
+// he goes to a warehouse (was: sent home at once).
+// spec: MIL-SOL-4.4, MIL-ATK-4.4, MIL-ATK-3.4
+#[test]
+fn sol_4_4_a_defender_whose_home_goes_fights_on() {
+    let (mut world, attacker, defender, _) = pair_on_field(0, 1, 4, 7);
+    let d_at = (56, 20);
+    fill(&mut world, P1, GUARD, d_at, &privates(1));
+    let target = world.target_of(TARGET).unwrap();
+    let d = world.target_of(d_at).unwrap();
+    world
+        .military
+        .get_mut(&TARGET)
+        .unwrap()
+        .soldiers
+        .retain(|&s| s != defender);
+    world
+        .military
+        .get_mut(&d_at)
+        .unwrap()
+        .soldiers
+        .push(defender);
+    if let SettlerJob::Defend {
+        home,
+        intercept,
+        defends,
+        ..
+    } = &mut world.settlers[defender].as_mut().unwrap().job
+    {
+        *home = d;
+        *intercept = true;
+        *defends = Some(target);
+    }
+    world.submit(Command::RemoveBuilding {
+        player: P1,
+        at: d_at,
+    });
+    world.step();
+    assert!(world.building_at(d_at).is_none_or(|b| b.serial != d.serial));
+    let fights = |world: &World| {
+        matches!(
+            world.settlers[defender].as_ref().unwrap().job,
+            SettlerJob::Defend { opponent: Some(a), .. } if a == attacker
+        )
+    };
+    assert!(fights(&world), "he fights on");
+    for _ in 0..3000 {
+        if world.settlers[attacker].is_none() {
+            break;
+        }
+        assert!(fights(&world));
+        world.step();
+    }
+    assert!(world.settlers[attacker].is_none(), "the attacker fell");
+    world.step();
+    let job = &world.settlers[defender].as_ref().unwrap().job;
+    assert!(
+        !matches!(job, SettlerJob::Defend { .. } | SettlerJob::Garrison { .. }),
+        "to a warehouse: {job:?}"
+    );
+}
+
+// MIL-ATK-2.3, MIL-ATK-6.6: an attacker who falls leaves his home's list.
+// spec: MIL-ATK-2.3, MIL-ATK-6.6
+#[test]
+fn atk_2_3_a_fallen_attacker_leaves_his_homes_list() {
+    let (mut world, attacker, _, _) = pair_on_field(0, 1, 4, 7);
+    assert!(listed(&world, (40, 20), attacker));
+    for _ in 0..3000 {
+        if world.settlers[attacker].is_none() {
+            break;
+        }
+        world.step();
+    }
+    assert!(world.settlers[attacker].is_none(), "the attacker fell");
+    assert!(!listed(&world, (40, 20), attacker));
+    assert_eq!(world.military_at((40, 20)).unwrap().soldiers.len(), 2);
 }
 
 // T7
@@ -326,6 +680,329 @@ fn atk_t13_departures_every_40_ticks() {
     assert_eq!(left, vec![1, 41, 81]);
 }
 
+// T24 (MIL-ATK-4.1a, E-mil-021): attackers and interceptors walk out
+// through their own building's flag: one step from the building's field to
+// the flag at progress 0 in the tick they leave; on its point, in that
+// arrival tick, the next walk starts from the flag (the attacker towards the
+// target or his meeting field, the interceptor to his meeting field).
+// spec: MIL-ATK-4.1a (T24), MIL-ATK-4.1, MIL-ATK-4.2, MIL-ATK-3.3
+#[test]
+fn atk_t24_out_through_the_own_flag() {
+    let mut world = standard(3, 4);
+    attack(&mut world, 1, false);
+    let attacker = world.attack_records()[0].soldier;
+    let interceptor = interceptors(&world)[0];
+    let soldiers = [(attacker, (40, 20)), (interceptor, TARGET)];
+    // Per soldier: seen leaving, seen walking on from the flag.
+    let mut seen = [(false, false); 2];
+    for _ in 0..200 {
+        world.step();
+        for (i, &(id, home)) in soldiers.iter().enumerate() {
+            let flag = world.flag_of(home);
+            let k = world.settlers[id].as_ref().unwrap().walker.clone();
+            if !seen[i].0 && k.is_walking() {
+                // Leaving: the walk is the one step to the flag, at 0.
+                assert_eq!(k.at, home, "{id}");
+                assert_eq!(k.destination(), flag, "{id}: to his own flag first");
+                assert_eq!(k.progress(), 0.0, "{id}");
+                seen[i].0 = true;
+            } else if seen[i].0 && !seen[i].1 && k.at == flag {
+                // On the flag, in the arrival tick: the next walk, from
+                // the flag, at progress 0.
+                assert!(k.is_walking(), "{id}: walks on in the arrival tick");
+                assert_ne!(k.destination(), flag, "{id}");
+                assert_eq!(k.progress(), 0.0, "{id}");
+                seen[i].1 = true;
+            }
+        }
+        if seen.iter().all(|s| s.1) {
+            break;
+        }
+    }
+    assert_eq!(seen, [(true, true); 2]);
+}
+
+// T25 (MIL-ATK-3.3, 4.3, E-mil-022): both searches test their start field
+// first, then first in, first out, a field's neighbours in the ring order of
+// MAP-GRID-3.2 (directions 5, 0, 1, 2, 3, 4). A target that defends itself
+// meets its first attacker on its direction-5 neighbour when that is free
+// (in the order 0 .. 5 it would be the direction-0 neighbour); the next pair
+// gets the first free field from there, in the same order.
+// spec: MIL-ATK-3.3 (T25), MIL-ATK-4.3, MAP-GRID-3.2
+#[test]
+fn atk_t25_the_searches_go_in_ring_order() {
+    let mut world = standard(3, 4);
+    attack(&mut world, 2, false);
+    let ring = crate::grid::ring(TARGET, 1, 100, 50);
+    let first = ring[0];
+    assert!(world.flag_at(first).is_none());
+    let fields: Vec<Point> = world
+        .attack_records()
+        .iter()
+        .map(|r| r.field.unwrap())
+        .collect();
+    assert_eq!(fields[0], first, "the direction-5 neighbour");
+    // The second: the free-field search from the same best field, taken
+    // ring by ring from it: its own direction-5 neighbour first.
+    let next = crate::grid::ring(first, 1, 100, 50)
+        .into_iter()
+        .find(|&f| {
+            world.flag_at(f).is_none() && !world.terrain().has(f, crate::movement::NOT_WALKABLE)
+        })
+        .unwrap();
+    assert_eq!(fields[1], next);
+}
+
+// T27 (MIL-ATK-4.1a, 5.3): the target's own defender, paired with an
+// attacker at its door, leaves through his building's flag as well: one
+// step to the flag at progress 0, and on its point, in that tick, his walk
+// to the attacker's waiting field from there.
+// spec: MIL-ATK-4.1a (T27), MIL-ATK-5.3
+#[test]
+fn atk_t27_the_targets_defender_out_through_his_flag() {
+    let mut world = standard(3, 2);
+    // No interceptors: the defender comes out when the attacker is at the
+    // door.
+    world.submit(Command::MilitaryDefenders {
+        player: P1,
+        thousandths: 0,
+    });
+    world.step();
+    attack(&mut world, 1, false);
+    let flag = world.flag_of(TARGET);
+    let defender = |w: &World| {
+        w.settlers().find_map(|(id, s)| {
+            matches!(
+                s.job,
+                SettlerJob::Defend {
+                    intercept: false,
+                    ..
+                }
+            )
+            .then_some(id)
+        })
+    };
+    let mut seen = (false, false);
+    for _ in 0..800 {
+        world.step();
+        let Some(id) = defender(&world) else {
+            continue;
+        };
+        let k = world.settlers[id].as_ref().unwrap().walker.clone();
+        if !seen.0 && k.is_walking() {
+            assert_eq!(k.at, TARGET);
+            assert_eq!(k.destination(), flag, "to his own flag first");
+            assert_eq!(k.progress(), 0.0);
+            seen.0 = true;
+        } else if seen.0 && !seen.1 && k.at == flag {
+            assert!(k.is_walking(), "walks on in the arrival tick");
+            assert_ne!(k.destination(), flag);
+            assert_eq!(k.progress(), 0.0);
+            seen.1 = true;
+            break;
+        }
+    }
+    assert_eq!(seen, (true, true));
+}
+
+// T28 (MIL-ATK-5.3, 6.1, E-mil-025): a defender's walk ends on the waiting
+// field's point in one update (A); his arrival (the pair fighting) counts in
+// his next update (A + 1), when his job sees the movement stopped.
+// spec: MIL-ATK-5.3 (T28), MIL-ATK-6.1
+#[test]
+fn atk_t28_the_defenders_arrival_counts_in_his_next_update() {
+    let mut world = standard(3, 2);
+    world.submit(Command::MilitaryDefenders {
+        player: P1,
+        thousandths: 0,
+    });
+    world.step();
+    attack(&mut world, 1, false);
+    let defender = |w: &World| {
+        w.settlers().find_map(|(id, s)| {
+            matches!(
+                s.job,
+                SettlerJob::Defend {
+                    intercept: false,
+                    ..
+                }
+            )
+            .then_some(id)
+        })
+    };
+    let step = |w: &World, id: usize| match w.settlers[id].as_ref().unwrap().job {
+        SettlerJob::Defend { step, .. } => step,
+        ref job => panic!("{job:?}"),
+    };
+    let mut ended = None;
+    for _ in 0..800 {
+        world.step();
+        let Some(id) = defender(&world) else {
+            continue;
+        };
+        let r = world
+            .attack_records()
+            .iter()
+            .find(|r| r.opponent == Some(id))
+            .cloned();
+        let Some(field) = r.and_then(|r| r.field) else {
+            continue;
+        };
+        let k = &world.settlers[id].as_ref().unwrap().walker;
+        if k.at == field && !k.is_walking() {
+            ended = Some(id);
+            break;
+        }
+    }
+    let id = ended.expect("his walk ends on the waiting field");
+    assert_eq!(step(&world, id), DefendStep::Out, "A: not arrived yet");
+    world.step();
+    assert_eq!(step(&world, id), DefendStep::Waiting, "A + 1: arrived");
+}
+
+// T29 (MIL-ATK-6.1a, E-mil-025): during his step off the waiting field's
+// point the attacker's field (as the views show it) stays the waiting
+// field; from the update the step ends it is the field his sample
+// truncates to.
+// spec: MIL-ATK-6.1a (T29), MAP-GRID-4.3
+#[test]
+fn atk_t29_the_attackers_field_after_his_step() {
+    let mut world = standard(3, 4);
+    attack(&mut world, 1, false);
+    let attacker = world.attack_records()[0].soldier;
+    let field = world.attack_records()[0].field.unwrap();
+    let view = |w: &World| {
+        w.settler_view(crate::view::SettlerRef::Settler(attacker))
+            .expect("the attacker")
+    };
+    let mut during = false;
+    for _ in 0..800 {
+        world.step();
+        let v = view(&world);
+        let Some(f) = v.fine else {
+            continue;
+        };
+        if f.step.next.is_some() {
+            assert_eq!(v.walk.at, field, "during the step: the waiting field");
+            during = true;
+        } else if during {
+            assert_eq!(
+                v.walk.at,
+                crate::grid::sample_field_truncating(f.step.at),
+                "the step ended: his sample's field"
+            );
+            return;
+        }
+    }
+    panic!("no step off the point seen (during: {during})");
+}
+
+// T30 (MIL-ATK-3.4, E-mil-025): an attacker pairing with a waiting
+// interceptor only links the two; the interceptor's walk to the attacker's
+// field starts in the interceptor's own update, not inside the attacker's.
+// spec: MIL-ATK-3.4 (T30), MIL-ATK-5.1
+#[test]
+fn atk_t30_the_pairing_only_links_the_waiting_interceptor() {
+    let mut world = scene();
+    fill(&mut world, P1, BARRACKS, TARGET, &[(0, 3)]);
+    fill(&mut world, P0, GUARD, (40, 20), &[(0, 3), (0, 3)]);
+    let target = world.target_of(TARGET).unwrap();
+    let interceptor = garrison(&mut world, TARGET, 0, 3);
+    let wait = (52, 21);
+    {
+        let s = world.settlers[interceptor].as_mut().unwrap();
+        s.walker = Walker::new(wait);
+        s.job = SettlerJob::Defend {
+            home: target,
+            health: 3,
+            step: DefendStep::Waiting,
+            opponent: None,
+            intercept: true,
+            defends: Some(target),
+        };
+    }
+    let field = (48, 20);
+    let attacker = world.add_settler(Settler {
+        number: 0,
+        player: P0,
+        profession: crate::military_tests::RANK[0],
+        list: crate::SettlerList::Soldiers,
+        walker: Walker::new(field),
+        job: SettlerJob::Attack {
+            home: world.target_of((40, 20)).unwrap(),
+            health: 3,
+            step: AttackStep::Waiting,
+        },
+        timer: 0,
+        carrying: None,
+    });
+    world
+        .military
+        .get_mut(&(40, 20))
+        .unwrap()
+        .soldiers
+        .push(attacker);
+    world.attackers.push(crate::AttackRecord {
+        soldier: attacker,
+        target,
+        counter: 0,
+        field: Some(field),
+        opponent: None,
+        hit: false,
+        offset: None,
+    });
+    // The attacker (made after him, so updated after him in a tick) pairs
+    // in his waiting check: the interceptor is linked, not walking yet.
+    world.step();
+    assert_eq!(world.attack_records()[0].opponent, Some(interceptor));
+    let k = world.settlers[interceptor].as_ref().unwrap().walker.clone();
+    assert!(!k.is_walking(), "no walk inside the attacker's update");
+    world.step();
+    let k = world.settlers[interceptor].as_ref().unwrap().walker.clone();
+    assert!(k.is_walking(), "his own update starts it");
+    assert_eq!(k.destination(), field);
+}
+
+// T26 (MIL-ATK-6.1a, E-mil-024): an attacker walking to the meeting field
+// an interception gave him is not in his wait job: arriving (A) he only
+// becomes waiting (no step); in A + 1 the checks of MIL-ATK-4.4 pair him
+// (his wait job starts); in A + 2 the draw and his step off the point. (One
+// paired at the door steps on arrival, T19.)
+// spec: MIL-ATK-6.1a (T26), MIL-ATK-4.4, MIL-ATK-3.3
+#[test]
+fn atk_t26_the_interceptions_attacker_steps_two_updates_after_arriving() {
+    let mut world = standard(3, 4);
+    attack(&mut world, 1, false);
+    let record = |w: &World| w.attack_records()[0].clone();
+    let attacker = record(&world).soldier;
+    let field = record(&world).field.expect("a meeting field");
+    assert!(record(&world).opponent.is_some(), "the interceptor linked");
+    let step = |w: &World| match w.settlers[attacker].as_ref().unwrap().job {
+        SettlerJob::Attack { step, .. } => step,
+        ref job => panic!("{job:?}"),
+    };
+    let mut arrived = None;
+    for _ in 0..400 {
+        world.step();
+        let s = world.settlers[attacker].as_ref().unwrap();
+        if s.walker.at == field && !s.walker.is_walking() {
+            arrived = Some(world.tick());
+            break;
+        }
+    }
+    arrived.expect("on the meeting field");
+    assert_eq!(step(&world), AttackStep::Arrived, "A: only waiting");
+    assert!(record(&world).offset.is_none(), "A: no step");
+    world.step();
+    assert_eq!(step(&world), AttackStep::Waiting, "A + 1: his wait job");
+    assert!(record(&world).offset.is_none(), "A + 1: no step yet");
+    world.step();
+    assert!(
+        record(&world).offset.is_some(),
+        "A + 2: the draw and the step"
+    );
+}
+
 // ---- The duel, set up by hand ----
 
 /// An attacker of rank `ra` (home: the guard house) and a defender of rank
@@ -350,6 +1027,13 @@ fn pair_on_field(ra: usize, ha: u32, rd: usize, hd: u32) -> (World, usize, usize
         timer: 0,
         carrying: None,
     });
+    // MIL-ATK-2.3: he stays on his home's list.
+    world
+        .military
+        .get_mut(&(40, 20))
+        .unwrap()
+        .soldiers
+        .push(attacker);
     let target = world.target_of(TARGET).unwrap();
     world.attackers.push(crate::AttackRecord {
         soldier: attacker,
@@ -749,7 +1433,7 @@ fn atk_runs_are_deterministic() {
 // stays among the target's; the pair stands on the record's field and
 // fights its next round there at once: counter 3 is odd, so the defender
 // strikes and the pending hit costs him his point first (MIL-ATK-6.3 step 1).
-// spec: FMT-SAV-3.7a (T17), MIL-ATK-6.2, MIL-ATK-6.3
+// spec: FMT-SAV-3.7a (T17), MIL-ATK-6.2, MIL-ATK-6.3, MIL-ATK-2.3
 #[test]
 fn a_saves_fights_go_on_where_they_stood() {
     let mut world = standard(2, 2);
@@ -844,8 +1528,9 @@ fn a_saves_fights_go_on_where_they_stood() {
             (b, TARGET, 9, Some(waiting), None, false),
         ]
     );
-    assert!(!world.military[&home].soldiers.contains(&a));
-    assert!(!world.military[&home].soldiers.contains(&b));
+    // MIL-ATK-2.3 (Q-1070): the attackers stay on their home's list.
+    assert!(world.military[&home].soldiers.contains(&a));
+    assert!(world.military[&home].soldiers.contains(&b));
     assert!(world.military[&TARGET].soldiers.contains(&d));
     let job = |world: &World, id: usize| {
         let s = world.settlers[id].as_ref().unwrap();

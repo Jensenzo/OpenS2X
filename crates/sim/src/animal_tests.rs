@@ -2,7 +2,7 @@
 
 use crate::grid::{self, Point};
 use crate::test_support::*;
-use crate::{AnimalKind, AnimalState, BuildingSize, BuildingType, Rng, Rules, World};
+use crate::{AnimalKind, AnimalState, BuildingSize, BuildingType, Command, Rng, Rules, World};
 
 const DEER: u32 = 1;
 const RABBIT: u32 = 2;
@@ -287,6 +287,59 @@ fn food_t47_a_reserved_waiting_animal_keeps_its_counter() {
     world.step();
     assert_eq!(state(&world, id), AnimalState::Waiting { left: 544 });
     assert_eq!(world.rng.draws(), draws, "no draw");
+}
+
+// ECO-FOOD T62 (5.7, released while standing): an animal reserved by a
+// hunter's hut and standing at its hunted walk's end is waiting with 0 in
+// the tick its hut is removed (here by a computer player's command, the
+// last part of tick R, AI-2.1a), choosing with ticket -1 in R + 1 and 0 in
+// R + 2, and with no other animal choosing it chooses and walks in R + 3,
+// drawing; it spends no update in the hunted state first (R6: player 2's
+// hut torn down at 6631, its deer walking to (57, 18) at 6634).
+// spec: ECO-FOOD-5.7 (T62), ECO-FOOD-5.8, ECO-FOOD-5.9
+#[test]
+fn food_t62_released_while_standing_waits_with_0_at_once() {
+    let mut world = animal_world();
+    let hut = (21, 20);
+    building(&mut world, SMALL, hut).unwrap();
+    let id = world.add_animal(DEER, (5, 5));
+    let target = world.target_of(hut);
+    {
+        let a = world.animals[id].as_mut().unwrap();
+        a.state = AnimalState::Hunted;
+        a.hunted_by = target;
+    }
+    world.hunted.insert(hut, id);
+    world.step();
+    assert_eq!(state(&world, id), AnimalState::Hunted);
+    world.step_then(|_, _, _, _| {
+        vec![Command::TearDown {
+            player: P0,
+            at: hut,
+        }]
+    });
+    assert!(world.building_at(hut).is_none());
+    assert_eq!(state(&world, id), AnimalState::Waiting { left: 0 }, "R");
+    world.step();
+    assert_eq!(
+        state(&world, id),
+        AnimalState::Choosing { ticket: -1 },
+        "R + 1"
+    );
+    world.step();
+    assert_eq!(
+        state(&world, id),
+        AnimalState::Choosing { ticket: 0 },
+        "R + 2"
+    );
+    let draws = world.rng.draws();
+    world.step();
+    assert!(
+        matches!(state(&world, id), AnimalState::Walking { .. }),
+        "R + 3: {:?}",
+        state(&world, id)
+    );
+    assert!(world.rng.draws() > draws, "the choice draws");
 }
 
 // Determinism with roaming animals.

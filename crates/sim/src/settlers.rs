@@ -10,6 +10,10 @@ use crate::{Building, ConstructionSite, PlayerId, Target, World};
 /// TRN-CARRY-7.1: a settler that cannot reach a warehouse dies after this
 /// many ticks (the settler dying time).
 const DYING_TICKS: u32 = 28;
+/// T47 (TRN-FREE-6.4b): the start tick of a removed site's builder's
+/// leaving step while the approach's back leg he walks on has not arrived:
+/// the step waits for its timer's end, the arrival tick, and counts from it.
+const BACK_LEG_HOLD: u64 = u64::MAX;
 /// MAP-GRID-1.6: the flag of a building is its neighbour in this direction.
 const FLAG_DIRECTION: u8 = 1;
 /// TRN-FREE-6.4 step 3: the warehouse search's field distance.
@@ -947,15 +951,15 @@ impl World {
                                 // going home has nothing left to walk: he
                                 // stands in his arrival tick A and in A + 1
                                 // (the step after A, as 6.4a's (b) after an
-                                // empty (a)), and walks home in A + 2.
-                                // The walk's end step is held back until
-                                // the tick after the timer's last count,
-                                // one tick later than after the out leg.
-                                let at = if back_leg {
-                                    (self.tick + u64::from(timer)).saturating_sub(1)
-                                } else {
-                                    at
-                                };
+                                // empty (a)), and walks home in A + 2. The
+                                // walk's end step is held until A, the tick
+                                // the timer's last count falls in, one tick
+                                // later than after the out leg; A is taken
+                                // from the timer, so a removal before the
+                                // settlers' part of its tick (a command) and
+                                // one after it (a computer player's, AI-2.1a)
+                                // are alike.
+                                let at = if back_leg { BACK_LEG_HOLD } else { at };
                                 s.job = SettlerJob::Leaving {
                                     step,
                                     at,
@@ -981,10 +985,11 @@ impl World {
             let Some(settler) = self.settlers[id].as_ref() else {
                 continue;
             };
+            // MIL-SOL-4.4 (Q-1071 c): a soldier out as a defender loses only
+            // his home link and goes on (`World::defend_job`).
             if let SettlerJob::Worker { target, .. }
             | SettlerJob::ToMilitary { target, .. }
-            | SettlerJob::Garrison { target, .. }
-            | SettlerJob::Defend { home: target, .. } = settler.job
+            | SettlerJob::Garrison { target, .. } = settler.job
             {
                 if target.at == building.at && target.serial == building.serial {
                     // TRN-FREE-6.4a: home after the going-home steps, T
@@ -1402,6 +1407,15 @@ impl World {
                 if !arrived {
                     return true;
                 }
+                // TRN-FREE-6.4b (T47b): his walk home cut by a removed road
+                // ended short of the warehouse, which still stands: he
+                // chooses his way home again in this, his arrival tick.
+                let door = self.door_field(target.at);
+                let short = settler.walker.at != door && settler.walker.at != target.at;
+                if settler.timer == 0 && short && self.target_building(target).is_some() {
+                    self.home_again_now(settler);
+                    return true;
+                }
                 // ECO-REQ-5.3c, ECO-WORK-3.8b: it stands on the door field
                 // in its arrival tick and is gone in the next (the timer,
                 // set to 2 on arrival, reads 1 after the next tick's
@@ -1525,6 +1539,19 @@ impl World {
                         settler.job = SettlerJob::Leaving {
                             step: LeavingStep::Finish,
                             at,
+                            stand,
+                            health,
+                        };
+                    }
+                    return true;
+                }
+                // T47 (TRN-FREE-6.4b, the back leg): held until the walk's
+                // arrival tick A, which then counts as the step's start.
+                if matches!(step, LeavingStep::Finish) && at == BACK_LEG_HOLD {
+                    if settler.timer == 0 {
+                        settler.job = SettlerJob::Leaving {
+                            step,
+                            at: self.tick,
                             stand,
                             health,
                         };
@@ -1722,6 +1749,38 @@ impl World {
             carrier,
             step: next,
         };
+    }
+
+    /// TRN-FREE-6.4b (T47b, E-trn-040): a settler whose walk home a removed
+    /// road cut chooses his way home again at once, by TRN-FREE-6.4's tries
+    /// 1 to 3, as at the end of any walk home: on a flag or road, over the
+    /// roads; off them, a free walk to the warehouse's network flag nearest
+    /// to him (the warehouse chosen from the field south-east, else the
+    /// nearest), ordered at progress 0 now, and on that flag, in its arrival
+    /// tick, the road walk on (`LeavingStep::ToFlag`).
+    fn home_again_now(&mut self, settler: &mut Settler) {
+        let at = settler.walker.at;
+        let on_roads = self.flag_at(at).is_some() || self.road_at(at).is_some();
+        if !on_roads {
+            let flag = self
+                .home_flag_south_east(settler)
+                .or_else(|| self.home_network_flag(settler));
+            if let Some(walk) = flag.and_then(|to| self.free_walk(at, to, 0)) {
+                settler.walker.walk(walk);
+                settler.job = SettlerJob::Leaving {
+                    step: LeavingStep::ToFlag,
+                    at: self.tick,
+                    stand: None,
+                    health: carried_health(&settler.job),
+                };
+                return;
+            }
+        }
+        self.plan_home(settler);
+        if matches!(settler.job, SettlerJob::Home { .. }) {
+            settler.walker.held = false;
+            settler.timer = 0;
+        }
     }
 
     /// TRN-FREE-6.4 step 2 (corrected 2026-10-24, Q-266): when a flag, a

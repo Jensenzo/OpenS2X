@@ -1,4 +1,4 @@
-save format 2, world format 81
+save format 2, world format 84
 s2_ai::AiSystem
     counter: u64
     players: seq<Option<s2_ai::player::AiPlayer>>
@@ -132,6 +132,7 @@ s2_ai::plan::Need
     created: f32
     tied: u32
     again: bool
+    celled @83: u32
 s2_ai::plan::Plan
     needs: seq<s2_ai::plan::Need>
     prods: seq<s2_ai::plan::Production>
@@ -139,6 +140,7 @@ s2_ai::plan::Plan
     made: u32
     waiting: seq<u32>
     ties: u32
+    celled @83: u32
 s2_ai::plan::Production
     id: u32
     good: u32
@@ -896,10 +898,12 @@ s2_sim::requests::Order
     target: s2_sim::requests::Target
     stamp: u64
     made: u64
+    harbour @82: Option<(u32, u32)>
 s2_sim::requests::Request
     player: s2_sim::PlayerId
     requester: s2_sim::requests::Requester
     profession: u32
+    harbour @82: Option<(u32, u32)>
 s2_sim::requests::Requester
     0 Road { f0: usize }
     1 Site { f0: s2_sim::requests::Target }

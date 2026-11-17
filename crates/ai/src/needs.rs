@@ -4,6 +4,7 @@ use s2_sim::grid;
 use s2_sim::map::state;
 
 use crate::cells::{centre, origin, CellPos, CELL};
+use crate::config::AiConfig;
 use crate::construction::{Order, Outcome, Slot, Tag};
 use crate::expansion::{Kind, Source};
 use crate::maps::{mcell_of, threat_balance};
@@ -342,7 +343,7 @@ impl AiPlayer {
             .collect();
         match self.plain_cell(ctx, need.good, &inputs) {
             Some(cell) => {
-                self.assign_cell(id, cell, None);
+                self.assign_cell(ctx.config, id, cell, None);
                 true
             }
             None => {
@@ -374,7 +375,7 @@ impl AiPlayer {
             .collect();
         match self.plain_cell(ctx, good, &inputs) {
             Some(cell) => {
-                self.assign_cell(id, cell, None);
+                self.assign_cell(ctx.config, id, cell, None);
                 true
             }
             None => {
@@ -456,27 +457,30 @@ impl AiPlayer {
         best.map(|(_, cell)| cell)
     }
 
-    /// Give the need its cell and square, and link it to an unplaced
-    /// production of its good in the cell without a need if there is one;
-    /// a need placed again after its producer's tear-down takes a placed
-    /// one as well (AI-CON-9.3, T84).
-    pub(crate) fn assign_cell(&mut self, id: NeedId, cell: CellPos, square: Option<(Square, u8)>) {
-        let Some((good, again)) = self.plan.need(id).map(|n| (n.good, n.again)) else {
+    /// Give the need its cell and square (it joins the end of the cell's
+    /// need list). AI-CON-2.5b (T102), 3.3 (corrected): it is tied to the
+    /// first production in the cell's production list (the order they were
+    /// added) whose good is the need's good or has it as its group, and that
+    /// has no need yet, placed or not (a need placed again after its
+    /// producer's tear-down, AI-CON-9.3 T84, is one case).
+    pub(crate) fn assign_cell(
+        &mut self,
+        config: &AiConfig,
+        id: NeedId,
+        cell: CellPos,
+        square: Option<(Square, u8)>,
+    ) {
+        let Some(good) = self.plan.need(id).map(|n| n.good) else {
             return;
         };
         let free = self
             .plan
             .prods
             .iter()
-            .find(|p| {
-                p.cell == cell
-                    && p.good == good
-                    && (p.building.is_none() || again)
-                    && p.need.is_none()
-            })
+            .find(|p| p.cell == cell && config.supplies(p.good, good) && p.need.is_none())
             .map(|p| p.id);
+        self.plan.give_cell(id, cell);
         if let Some(n) = self.plan.need_mut(id) {
-            n.cell = Some(cell);
             n.square = square;
             n.production = free;
             n.again = false;
@@ -588,7 +592,7 @@ impl AiPlayer {
         }
         match best {
             Some((_, cell, sq, kind)) => {
-                self.assign_cell(id, cell, Some((sq, kind)));
+                self.assign_cell(ctx.config, id, cell, Some((sq, kind)));
                 true
             }
             None => {
@@ -884,18 +888,18 @@ impl AiPlayer {
     pub(crate) fn average_productivity(&self, ctx: &Ctx, good: u32) -> f32 {
         let mut sum = 0.0f32;
         let mut count = 0u32;
-        // AI-CON-4.2 (T78): sites count, with the 0.5 their placement gave
-        // them (ECO-OUT-3.11).
-        for b in ctx.snapshot.of(self.id) {
-            if ctx
-                .world
-                .building_type(b.building_type)
-                .is_some_and(|t| t.product == Some(good))
-            {
-                // AI-MIL T24: the float32 statistics value.
-                sum += f32::from_bits(b.productivity_bits).max(0.0);
-                count += 1;
-            }
+        // AI-CON-4.2 (T107, E-ai-075): over exactly the production records
+        // A(g) counts, in their order, each with its own building's value; a
+        // building of the good with no record (the hunter's hut, AI-CON-2.5a)
+        // does not count. T78: sites count, with the 0.5 their placement
+        // gave them (ECO-OUT-3.11).
+        for p in self.plan.prods.iter().filter(|p| p.good == good) {
+            let Some(b) = p.building.and_then(|at| ctx.snapshot.building(self.id, at)) else {
+                continue;
+            };
+            // AI-MIL T24: the float32 statistics value.
+            sum += f32::from_bits(b.productivity_bits).max(0.0);
+            count += 1;
         }
         if count == 0 {
             1.0

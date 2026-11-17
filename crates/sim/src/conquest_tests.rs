@@ -45,6 +45,8 @@ fn waiting_attacker(world: &mut World, home: Point, field: Point) -> usize {
         timer: 0,
         carrying: None,
     });
+    // MIL-ATK-2.3: he stays on his home's list.
+    world.military.get_mut(&home.at).unwrap().soldiers.push(id);
     world.attackers.push(AttackRecord {
         soldier: id,
         target,
@@ -123,7 +125,7 @@ fn con_t2_walking_in_does_not_count() {
 }
 
 // T3: the whole way, from the order to the taken building.
-// spec: MIL-CON-1.1, MIL-CON-1.2, MIL-CON-2.2, MIL-CON-2.3 (T3)
+// spec: MIL-CON-1.1, MIL-CON-1.2, MIL-CON-2.2, MIL-CON-2.3 (T3), MIL-ATK-2.3
 #[test]
 fn con_t3_conquest() {
     let mut world = scene();
@@ -148,8 +150,9 @@ fn con_t3_conquest() {
     assert!(world.military_at(TARGET).unwrap().applied);
     assert_eq!(world.field_owner((59, 20)), Some(P0));
     assert!(world.is_explored(P0, (62, 20)));
-    // The taker went in.
+    // The taker went in, and left the guard house's list (MIL-ATK-2.3).
     assert_eq!(world.military_at(TARGET).unwrap().soldiers.len(), 1);
+    assert_eq!(world.military_at((40, 20)).unwrap().soldiers.len(), 1);
     assert_eq!(world.present_soldiers(TARGET), 1);
     assert!(world.attack_records().is_empty());
     // It has the creation defaults.

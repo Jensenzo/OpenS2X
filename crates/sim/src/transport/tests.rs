@@ -1327,12 +1327,20 @@ fn a_carrier_stands_two_ticks_in_the_building_it_delivers_to() {
 }
 
 // TRN-CARRY-3.3 (TRN-CARRY T60, Q-230 c): the building removed while the
-// carrier walks a ware into it. The walk in goes on to its field; in the
-// hand-over tick nothing is delivered and the ware stays in his hands (the
-// road counts the trip); he walks back out to the flag, puts the ware down
-// there like any ware (drop and pickup actions, from his arrival tick),
-// where it lies without a destination; he is not sent home, nothing is lost.
-// spec: TRN-CARRY-3.3 (TRN-CARRY T60), ECO-REQ-5.5
+// carrier walks a ware into it. The walk in goes on to its field (A); in the
+// hand-over tick, A + 1, nothing is delivered and the ware stays in his
+// hands (the road counts the trip), and the walk back out is ordered at
+// progress 0 in that tick: one standing row, the first move in A + 2 (R6:
+// carrier 16778, Stand 0 on the site's field at trace tick 8414, Walk 0 at
+// 8415, moving from 8416). He puts the ware down at the flag like any ware
+// (drop and pickup actions, from his arrival tick), where it lies without a
+// destination; he is not sent home, nothing is lost. TRN-CARRY-3.3a (the
+// put-down of a ware a building did not take): back on the flag in A he
+// stands, and from A + 1 he puts it down as at the end of a carrying walk:
+// standing in A + 1, the drop-time action A + 2 .. A + 5, the ware lying at
+// the flag from A + 6 (R6: Stand at trace ticks 8453 and 8454, PutDown 8455
+// .. 8458, the ware at the flag from 8459).
+// spec: TRN-CARRY-3.3 (TRN-CARRY T60), TRN-CARRY-3.3a, ECO-REQ-5.5
 #[test]
 fn t60_a_ware_for_a_building_removed_meanwhile_comes_back_out() {
     let (mut world, a, _, b) = two_step_road();
@@ -1362,9 +1370,8 @@ fn t60_a_ware_for_a_building_removed_meanwhile_comes_back_out() {
         steps += 1;
         assert!(steps < 600, "never reached the field");
     }
-    // A, A + 1 standing with it; A + 2 no delivery: the ware stays his, the
-    // trip counted, the walk out ordered at progress 0.
-    world.step();
+    // A standing with it; A + 1 the hand-over tick: no delivery, the ware
+    // stays his, the trip counted, the walk out ordered at progress 0.
     world.step();
     let c = world.carriers[0].clone();
     assert_eq!(c.ware, Some(ware));
@@ -1375,6 +1382,11 @@ fn t60_a_ware_for_a_building_removed_meanwhile_comes_back_out() {
         trips + 1
     );
     assert_eq!((c.walker.at, c.walker.progress()), (at, 0.0));
+    assert!(c.walker.has_walk(), "the walk out ordered");
+    // A + 2: the first move.
+    world.step();
+    let c = world.carriers[0].clone();
+    assert!(c.walker.at != at || c.walker.progress() > 0.0, "moving");
     // Back on the flag: the put-down, then the ware lies there, no
     // destination; the carrier keeps his road.
     while world.carriers[0].walker.at != b || world.carriers[0].walker.is_walking() {
@@ -1382,15 +1394,32 @@ fn t60_a_ware_for_a_building_removed_meanwhile_comes_back_out() {
         steps += 1;
         assert!(steps < 900, "never back on the flag");
     }
-    assert!(matches!(
-        world.carriers[0].task,
-        CarrierTask::PutDown { second: false, .. }
-    ));
-    while world.ware(ware).unwrap().location != WareLocation::Flag(b) {
+    let task = |world: &World| world.carriers[0].task;
+    assert!(
+        matches!(task(&world), CarrierTask::Out { .. }),
+        "A: standing"
+    );
+    world.step();
+    assert!(
+        matches!(task(&world), CarrierTask::Stop { exchange: None, .. }),
+        "A + 1: standing, {:?}",
+        task(&world)
+    );
+    world.step();
+    assert!(
+        matches!(task(&world), CarrierTask::PutDown { second: false, .. }),
+        "A + 2: the drop-time action"
+    );
+    for _ in 0..3 {
         world.step();
-        steps += 1;
-        assert!(steps < 1000, "never put down");
+        assert_eq!(world.ware(ware).unwrap().location, WareLocation::Carried(0));
     }
+    world.step();
+    assert_eq!(
+        world.ware(ware).unwrap().location,
+        WareLocation::Flag(b),
+        "A + 6"
+    );
     assert_eq!(world.ware(ware).unwrap().destination, None);
     assert_eq!(world.carriers[0].road, road);
     assert!(!matches!(world.carriers[0].task, CarrierTask::Retired));

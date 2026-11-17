@@ -37,7 +37,7 @@ pub const MAGIC: &[u8; 8] = b"s2-snap\0";
 /// The format this build writes, of the world and of the computer players.
 /// Changed whenever the bytes or the meaning of any of their types change
 /// (`docs/snapshot.md`, "Changing the format").
-pub const VERSION: u32 = 82;
+pub const VERSION: u32 = 85;
 /// The oldest format this build reads: the first whose saves every later
 /// version loads. Never raised.
 pub const OLDEST: u32 = 65;
@@ -693,6 +693,10 @@ impl World {
         // GFX-OBJ-1.4a: the doodads removed, from the fields as they stand.
         if format < 71 {
             world.doodads_removed_from_state();
+        }
+        // MIL-ATK-2.3 (Q-1070): the attackers out back on their homes' lists.
+        if format < 84 {
+            world.attackers_back_on_their_lists();
         }
         Ok(world)
     }

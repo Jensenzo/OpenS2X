@@ -1,4 +1,4 @@
-save format 2, world format 82
+save format 2, world format 85
 s2_ai::AiSystem
     counter: u64
     players: seq<Option<s2_ai::player::AiPlayer>>
@@ -132,6 +132,7 @@ s2_ai::plan::Need
     created: f32
     tied: u32
     again: bool
+    celled @83: u32
 s2_ai::plan::Plan
     needs: seq<s2_ai::plan::Need>
     prods: seq<s2_ai::plan::Production>
@@ -139,6 +140,7 @@ s2_ai::plan::Plan
     made: u32
     waiting: seq<u32>
     ties: u32
+    celled @83: u32
 s2_ai::plan::Production
     id: u32
     good: u32
@@ -414,6 +416,8 @@ s2_sim::combat::AttackStep
     1 Walking
     2 Waiting
     3 Home
+    4 Meeting
+    5 Arrived
 s2_sim::combat::DefendStep
     0 Leaving
     1 Out

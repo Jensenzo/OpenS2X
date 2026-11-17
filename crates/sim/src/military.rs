@@ -118,6 +118,17 @@ fn due(counter: &mut u32, top: u32) -> bool {
     }
 }
 
+/// MIL-SOL-4.4 step 2: how a soldier on a building's list is away from it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Away {
+    /// Walking to it (MIL-SOL-4.7).
+    Coming,
+    /// Going home after a short walk, still linked (TRN-FREE-6.3a).
+    GoingHome,
+    /// Out on an attack or in a fight (MIL-ATK-2.3, MIL-ATK-3, 5).
+    Errand,
+}
+
 /// What a building with a territory range or explore radius keeps
 /// (TER-2.1, MIL-SOL-2, MIL-PROM-3).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,9 +267,10 @@ impl World {
                 let rank = self.soldier_rank(s.profession)?;
                 let (health, present) = match s.job {
                     SettlerJob::Garrison { health, .. } => (health, true),
-                    SettlerJob::ToMilitary { health, .. } | SettlerJob::Defend { health, .. } => {
-                        (health, false)
-                    }
+                    // MIL-ATK-2.3: an attacker out stays listed, not present.
+                    SettlerJob::ToMilitary { health, .. }
+                    | SettlerJob::Defend { health, .. }
+                    | SettlerJob::Attack { health, .. } => (health, false),
                     _ => return None,
                 };
                 Some(SoldierView {
@@ -375,6 +387,29 @@ impl World {
         self.check_occupation(at);
     }
 
+    /// MIL-PROM-3.2 (T13), ECO-REQ-5.3f: the orders on the list of the
+    /// building on `at`, whatever their good: those open, and those served
+    /// whose ware is on its way (filed with the ware on a flag or with a
+    /// carrier, or with the warehouse helper carrying it out).
+    pub(crate) fn orders_filed_for(&self, at: Point) -> usize {
+        let open = self.orders.iter().filter(|o| o.target.at == at).count();
+        let on_roads = self
+            .wares
+            .iter()
+            .flatten()
+            .filter(|w| w.order.is_some_and(|o| o.target.at == at))
+            .count();
+        let carried_out = self
+            .settlers
+            .iter()
+            .flatten()
+            .filter(|s| {
+                matches!(s.job, SettlerJob::CarryOut { order: Some(o), .. } if o.target.at == at)
+            })
+            .count();
+        open + on_roads + carried_out
+    }
+
     /// MIL-PROM-3.1, 3.2
     fn coin_check(&mut self, at: Point, serial: u32) {
         let Some(coin) = self.roles.coin else { return };
@@ -396,11 +431,11 @@ impl World {
             }
             return;
         }
-        let open = self
-            .orders
-            .iter()
-            .any(|o| o.target.at == at && o.good == coin);
-        if open {
+        // T13 (E-mil-023): "no open order" is the building's own order list
+        // empty, whatever the good; a served order stays on it until its
+        // ware is delivered (ECO-REQ-5.3f), so no coin is ordered while one
+        // is on its way.
+        if self.orders_filed_for(at) > 0 {
             return;
         }
         let building = self.building_at(at).expect("a building");
@@ -952,31 +987,44 @@ impl World {
                 d += 1;
             }
             if d < 0 {
-                // Not present first: walking to it, or going home after a
-                // short walk still linked (TRN-FREE-6.3a), in list order.
-                let walking: Vec<(usize, bool)> = {
+                // Step 2: the soldiers not present (MIL-SOL-2.4), in list
+                // order: walking to it, going home after a short walk still
+                // linked (TRN-FREE-6.3a), and (Q-142, Q-1070; E-mil-018)
+                // those out on an attack or in a fight.
+                let away: Vec<(usize, Away)> = {
                     let m = &self.military[&at];
-                    // Soldiers out fighting stay (MIL-ATK).
                     m.soldiers
                         .iter()
                         .copied()
                         .filter_map(|id| {
                             let s = self.settlers[id].as_ref()?;
-                            let home = self.linked_home.get(&s.number) == Some(&target);
-                            (home || matches!(s.job, SettlerJob::ToMilitary { .. }))
-                                .then_some((id, home))
+                            if self.linked_home.get(&s.number) == Some(&target) {
+                                return Some((id, Away::GoingHome));
+                            }
+                            match s.job {
+                                SettlerJob::Garrison { .. } => None,
+                                SettlerJob::ToMilitary { .. } => Some((id, Away::Coming)),
+                                _ => Some((id, Away::Errand)),
+                            }
                         })
                         .collect()
                 };
-                for (id, home) in walking {
+                for (id, away) in away {
                     if d >= 0 {
                         break;
                     }
-                    if home {
+                    match away {
                         // 6.3a: unlinked; he walks on home.
-                        self.unlink_home(id);
-                    } else {
-                        self.release_soldier(at, id);
+                        Away::GoingHome => self.unlink_home(id),
+                        Away::Coming => self.release_soldier(at, id),
+                        // He keeps his attack or fight and, with no link
+                        // left when it ends, goes to a warehouse
+                        // (MIL-ATK-4.4).
+                        Away::Errand => {
+                            if let Some(m) = self.military.get_mut(&at) {
+                                m.soldiers.retain(|&s| s != id);
+                            }
+                        }
                     }
                     d += 1;
                 }

@@ -10,7 +10,7 @@ use crate::cells::{cell_of, CellPos};
 use crate::config::{AiConfig, Mode};
 use crate::construction::{Order, Outcome, Slot, Tag};
 use crate::expansion::{Kind, Source};
-use crate::maps::{mcell_of, morigin, threat_balance, MPos};
+use crate::maps::{mcell_of, morigin, threat_balance, MPos, MilitaryMap};
 use crate::player::Category;
 use crate::player::{AiPlayer, Ctx};
 use crate::resources::{square_of, UNDERGROUND};
@@ -62,8 +62,6 @@ const CATAPULT_GRID_DIVISOR: u32 = 600;
 const CATAPULT_STONE: u32 = 20;
 const CATAPULT_RADIUS: u32 = 8;
 const MILITARY_WEIGHT: u32 = 20;
-/// AI-MIL-4.4: the reach of the upgrade search in point mode.
-const UPGRADE_REACH: u32 = 6;
 
 /// AI-MIL-5: what the attack system remembers.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -163,6 +161,119 @@ pub fn castle_reserve(d: u32) -> u32 {
 /// AI-MIL-5.2: the attack target value of a cell for an enemy player.
 pub fn target_value(construction_threat: f32, score: f32, balance: f32, c: f32, a: f32) -> f32 {
     (construction_threat + 2.0 * score - balance) / (c + 1.0 + a)
+}
+
+/// AI-MIL-5.2 (T31): whether a cell is looked at for an attack: one of
+/// its eight neighbouring cells (the cell itself not; cells off the grid
+/// count nothing) holds a nonzero threat in the attacking player's own map.
+pub fn next_to_own_threat(own: &MilitaryMap, cell: MPos) -> bool {
+    (-1i64..=1).any(|dx| {
+        (-1i64..=1).any(|dy| {
+            let (x, y) = (i64::from(cell.0) + dx, i64::from(cell.1) + dy);
+            (dx, dy) != (0, 0) && x >= 0 && y >= 0 && own.get((x as u32, y as u32)).threat != 0
+        })
+    })
+}
+
+/// AI-MIL-5.2: the target cell and player. The cells next to the player's
+/// own military presence ([`next_to_own_threat`]) are visited column by
+/// column (x from 0, and for each x every y from 0), and for each the alive
+/// enemy players 0 to 7 in order whose score in the cell is not 0; value =
+/// (their threat under construction + 2 x their score - the balance) /
+/// (C + 1 + A). The highest value above -100 wins, a later one only when
+/// strictly greater. `counters` gives the cell's C and A.
+pub fn attack_target(
+    maps: &[MilitaryMap],
+    alive: &[bool],
+    player: PlayerId,
+    enemy: impl Fn(PlayerId) -> bool,
+    balance: impl Fn(MPos) -> f32,
+    counters: impl Fn(MPos) -> (f32, f32),
+) -> Option<(f32, MPos, PlayerId)> {
+    let own = maps.get(usize::from(player.0))?;
+    let mut best: Option<(f32, MPos, PlayerId)> = None;
+    for x in 0..own.cols {
+        for y in 0..own.rows {
+            let cell = (x, y);
+            if !next_to_own_threat(own, cell) {
+                continue;
+            }
+            let balance = balance(cell);
+            let (c, a) = counters(cell);
+            for (slot, m) in maps.iter().enumerate() {
+                let p = PlayerId(slot as u8);
+                if !alive.get(slot).copied().unwrap_or(false) || p == player || !enemy(p) {
+                    continue;
+                }
+                let them = m.get(cell);
+                if them.score == 0 {
+                    continue;
+                }
+                let value = target_value(
+                    them.threat_building as f32,
+                    them.score as f32,
+                    balance,
+                    c,
+                    a,
+                );
+                if value > MIN_TARGET_VALUE && best.is_none_or(|(v, ..)| value > v) {
+                    best = Some((value, cell, p));
+                }
+            }
+        }
+    }
+    best
+}
+
+/// AI-MIL-5.4, 5.5: what a run does with its candidates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttackDecision {
+    /// The first candidate attacked, with how many soldiers.
+    Attack { at: Point, count: u32 },
+    /// None attacked; the last candidate that reached the need test, if any
+    /// did (the position of 5.5's expansion target).
+    NotAttacked { last: Option<Point> },
+}
+
+/// AI-MIL-5.4, 5.5 (T30): the candidates in 5.3's order, each with the
+/// soldiers wanted against it and those the player can send against it.
+/// In mode Safe one whose want is above the soldiers in stock is skipped
+/// and is no last candidate; every other reaches the need test (need =
+/// max(1, want) + C) and is attacked when [`attack_count`] allows; the
+/// first attack ends the run.
+pub fn decide_attack(
+    mode: Mode,
+    candidates: &[(Point, u32, u32)],
+    in_stock: u32,
+    c: f32,
+) -> AttackDecision {
+    let mut last = None;
+    for &(at, want, available) in candidates {
+        if mode == Mode::Safe && want > in_stock {
+            continue;
+        }
+        let need = want.max(1) as f32 + c;
+        if let Some(count) = attack_count(mode, need, available) {
+            return AttackDecision::Attack { at, count };
+        }
+        last = Some(at);
+    }
+    AttackDecision::NotAttacked { last }
+}
+
+/// AI-MIL-5.5 (T30): C and A are whole numbers; halving drops the
+/// remainder (3 becomes 1, 1 becomes 0).
+fn halved(counter: f32) -> f32 {
+    (counter / 2.0).floor()
+}
+
+/// AI-MIL-5.3: whether an attackable enemy building can be a candidate: it
+/// is in the player's explored map, or its enemy distance is at most 12,
+/// a signed test that -1 passes: an enemy headquarters always holds -1
+/// (MIL-SOL-3.1 never updates it), as does a military building made since
+/// the last update (T31).
+pub fn candidate_seen(explored: bool, enemy_distance: Option<i32>) -> bool {
+    explored || enemy_distance.is_some_and(|d| d <= 12)
 }
 
 /// AI-MIL-5.4: the soldiers wanted against a building with `defenders`
@@ -280,8 +391,13 @@ impl AiPlayer {
             }
         }
         // 2.2: near and medium allocation, a countdown of 50 runs gates it.
-        if self.settings_countdown > 0 {
-            self.settings_countdown -= 1;
+        // T29: every run first lowers it by 1 and tests only when it is 0 or
+        // below, so two changes are 50 runs apart; a run without a change
+        // leaves it at 0 or below and the next run tests again. Signed, as a
+        // saved value below 0 reads as a u32 (FMT-SAV-3.10h).
+        let left = (self.settings_countdown as i32).saturating_sub(1);
+        self.settings_countdown = left.max(0) as u32;
+        if left > 0 {
             return;
         }
         let soldiers = self.soldiers_in_stock(ctx);
@@ -468,18 +584,7 @@ impl AiPlayer {
                 )
             }
         };
-        let site = match area {
-            Area::Point { at, .. } => at,
-            Area::Cell(c) => crate::cells::origin(c),
-        };
-        let d = enemy_distance(ctx.world, self.id, site);
-        let stone_over_40 = self.econ.stock(ctx.config.names.stone) > 40;
-        let lv = level(
-            d,
-            self.underground_near(site, ctx.config.names.fish),
-            stone_over_40,
-            None,
-        );
+        let lv = self.creation_level(ctx, area);
         let Some(building) = building_for(ctx.config, lv.max(0)) else {
             self.drop_target(source, mcell, true);
             return;
@@ -500,6 +605,21 @@ impl AiPlayer {
         self.build.issue(order);
         // AI-MIL-4.1: the run that makes an order remembers the target.
         self.expansion.remembered = true;
+    }
+
+    /// AI-MIL-4.3 (creation): the level at an order's place, the point in
+    /// point mode and the cell's origin in cell mode, as things stand now.
+    fn creation_level(&self, ctx: &Ctx, area: Area) -> i32 {
+        let site = match area {
+            Area::Point { at, .. } => at,
+            Area::Cell(c) => crate::cells::origin(c),
+        };
+        level(
+            enemy_distance(ctx.world, self.id, site),
+            self.underground_near(site, ctx.config.names.fish),
+            self.econ.stock(ctx.config.names.stone) > 40,
+            None,
+        )
     }
 
     /// AI-MIL-4.4: the target is given up; the penalty of the cell rises.
@@ -555,17 +675,7 @@ impl AiPlayer {
         if level >= self.upgrade_level(ctx, b.at) {
             return None;
         }
-        let kind = ctx.world.building_type(next)?;
-        let mut needed: Vec<(u32, u32)> = Vec::new();
-        for &(good, count) in kind.frame_costs.iter().chain(&kind.costs) {
-            match needed.iter_mut().find(|(g, _)| *g == good) {
-                Some((_, c)) => *c += count,
-                None => needed.push((good, count)),
-            }
-        }
-        needed
-            .iter()
-            .all(|&(good, count)| self.econ.stock(good) >= 2 * count)
+        self.costs_in_stock(ctx, next, 2)
             .then_some(Command::UpgradeBuilding {
                 player: self.id,
                 at: b.at,
@@ -604,32 +714,80 @@ impl AiPlayer {
         }
     }
 
-    /// AI-MIL-4.4: upgrade the first own military building in the order's
-    /// area that can be; true if one was.
+    /// AI-MIL-4.4, 4.4a (T32): upgrade instead, in the order's area: the
+    /// cell's 16 x 16 fields row by row from its first row (cell mode), or
+    /// the fields around the point in ring order up to the order's own
+    /// radius (point mode), fields off the map skipped; the first field
+    /// whose building is the player's own, has a territory range, can be
+    /// upgraded (MIL-UPG-1.2) and whose next type's costs are in stock
+    /// **once** (MIL-UPG-1.4) is upgraded. No level test, unlike the 37-tick
+    /// run (4.5). True if one was.
     fn upgrade_in(&self, ctx: &mut Ctx, area: Area) -> bool {
-        let found = ctx.snapshot.of(self.id).iter().find_map(|b| {
-            let inside = match area {
-                Area::Cell(c) => cell_of(b.at) == c,
-                Area::Point { at, .. } => dist(b.at, at) <= UPGRADE_REACH,
+        let world = ctx.world;
+        let (width, height) = (world.terrain().width, world.terrain().height);
+        let fields: Vec<Point> = match area {
+            Area::Cell(c) => {
+                let (x0, y0) = crate::cells::origin(c);
+                (y0..y0 + crate::cells::CELL)
+                    .flat_map(|y| (x0..x0 + crate::cells::CELL).map(move |x| (x, y)))
+                    .filter(|&(x, y)| x < width && y < height)
+                    .collect()
+            }
+            Area::Point { at, radius } => s2_sim::grid::area(at, radius, width, height),
+        };
+        let found = fields.into_iter().find(|&f| {
+            let Some(b) = world
+                .building_at(f)
+                .filter(|b| b.at == f && b.owner == self.id)
+            else {
+                return false;
             };
-            inside.then(|| self.upgrade_command(ctx, b)).flatten()
+            let ranged = world
+                .building_type(b.building_type)
+                .is_some_and(|t| t.territory_range > 0);
+            let Ok(next) = world.upgrade_target(self.id, f) else {
+                return false;
+            };
+            ranged && self.costs_in_stock(ctx, next, 1)
         });
         match found {
-            Some(command) => {
-                ctx.out.push(command);
+            Some(at) => {
+                ctx.out.push(Command::UpgradeBuilding {
+                    player: self.id,
+                    at,
+                });
                 true
             }
             None => false,
         }
     }
 
+    /// MIL-UPG-1.4: whether `times` the full construction costs of the
+    /// type `kind` (frame and building goods, one list) are in stock
+    /// (AI-CON-1.7).
+    fn costs_in_stock(&self, ctx: &Ctx, kind: u32, times: u32) -> bool {
+        let Some(kind) = ctx.world.building_type(kind) else {
+            return false;
+        };
+        let mut needed: Vec<(u32, u32)> = Vec::new();
+        for &(good, count) in kind.frame_costs.iter().chain(&kind.costs) {
+            match needed.iter_mut().find(|(g, _)| *g == good) {
+                Some((_, c)) => *c += count,
+                None => needed.push((good, count)),
+            }
+        }
+        needed
+            .iter()
+            .all(|&(good, count)| self.econ.stock(good) >= times * count)
+    }
+
     /// AI-MIL-4.4: the handlers of military and catapult orders.
     pub(crate) fn military_order_done(&mut self, order: Order, outcome: Outcome, ctx: &mut Ctx) {
         let Tag::Military {
             attempts,
-            level: lv,
             cell,
             source,
+            ..
         } = order.tag
         else {
             return;
@@ -648,6 +806,11 @@ impl AiPlayer {
             // site.
             Outcome::NoSite | Outcome::NoMaterial => {
                 let attempts = attempts + 1;
+                // AI-MIL-4.4 (T28): the level is worked out anew at each
+                // failure, at the order's place as things stand now (enemy
+                // distance, underground resource, stone), not kept from the
+                // order's creation; the new attempt count is taken off it.
+                let lv = self.creation_level(ctx, order.area);
                 let result = lv.max(0) - attempts as i32;
                 match building_for(ctx.config, result) {
                     Some(building) => {
@@ -670,8 +833,8 @@ impl AiPlayer {
                     None if outcome == Outcome::NoMaterial => {}
                     None => {
                         // AI-MIL-4.4: below 0 the AI tries to upgrade an own
-                        // military building in the order's cell (within 6
-                        // fields in point mode). If one is upgraded the
+                        // military building in the order's cell (within the
+                        // order's radius in point mode, 4.4a). If one is upgraded the
                         // target counts as done and P is halved, else the
                         // target is cancelled and P rises by 1.
                         if self.upgrade_in(ctx, order.area) {
@@ -765,8 +928,8 @@ impl AiPlayer {
             }
             if let Some(c) = self.territory.get_mut(cell) {
                 if building.is_none() || ours {
-                    c.result /= 2.0;
-                    c.attempts /= 2.0;
+                    c.result = halved(c.result);
+                    c.attempts = halved(c.attempts);
                 } else {
                     c.result += 1.0;
                 }
@@ -774,44 +937,19 @@ impl AiPlayer {
             self.attack.target = None;
             return;
         }
-        // 5.2: a target cell and player.
-        let map = &ctx.military[usize::from(self.id.0)];
-        let mut best: Option<(f32, MPos, PlayerId)> = None;
-        for y in 0..map.rows {
-            for x in 0..map.cols {
-                let cell = (x, y);
-                if !ctx
-                    .military
-                    .iter()
-                    .enumerate()
-                    .any(|(slot, m)| ctx.alive[slot] && m.get(cell).threat > 0)
-                {
-                    continue;
-                }
-                let balance = threat_balance(world, ctx.military, ctx.alive, self.id, cell);
+        // 5.2 (T31): a target cell and player, next to the player's own
+        // military presence, column by column.
+        let best = attack_target(
+            ctx.military,
+            ctx.alive,
+            self.id,
+            |p| world.are_enemies(self.id, p),
+            |cell| threat_balance(world, ctx.military, ctx.alive, self.id, cell),
+            |cell| {
                 let t = self.territory.get(cell);
-                for (slot, m) in ctx.military.iter().enumerate() {
-                    let p = PlayerId(slot as u8);
-                    if !ctx.alive[slot] || p == self.id || !world.are_enemies(self.id, p) {
-                        continue;
-                    }
-                    let c = m.get(cell);
-                    if c.score <= 0 {
-                        continue;
-                    }
-                    let value = target_value(
-                        c.threat_building as f32,
-                        c.score as f32,
-                        balance,
-                        t.result,
-                        t.attempts,
-                    );
-                    if value > MIN_TARGET_VALUE && best.is_none_or(|(v, ..)| value > v) {
-                        best = Some((value, cell, p));
-                    }
-                }
-            }
-        }
+                (t.result, t.attempts)
+            },
+        );
         let Some((_, cell, owner)) = best else {
             return;
         };
@@ -830,10 +968,11 @@ impl AiPlayer {
             if !attackable {
                 continue;
             }
-            let seen = world.is_explored(self.id, b.at)
-                || world
-                    .military_at(b.at)
-                    .is_some_and(|m| m.enemy_distance >= 0 && m.enemy_distance < 13);
+            // 5.3 (T31): the signed enemy distance test.
+            let seen = candidate_seen(
+                world.is_explored(self.id, b.at),
+                world.military_at(b.at).map(|m| m.enemy_distance),
+            );
             if !seen {
                 continue;
             }
@@ -860,33 +999,34 @@ impl AiPlayer {
         let defend_outside = world.military_settings(owner).defenders();
         let c_value = self.territory.get(cell).result;
         let in_stock = self.soldiers_in_stock(ctx);
-        let mut last = None;
-        for (_, b) in &candidates {
-            last = Some(b.at);
-            let warehouse = world.warehouse(b.at).is_some();
-            let defenders = if warehouse {
-                WAREHOUSE_DEFENDERS
-            } else {
-                world.present_soldiers(b.at) as u32
-            };
-            let want = soldiers_wanted(ratio, defenders, defend_outside);
-            if self.profile.mode == Mode::Safe && want > in_stock {
-                continue;
-            }
-            let need = want.max(1) as f32 + c_value;
-            let available = world.attack_available(self.id, b.at);
-            if let Some(count) = attack_count(self.profile.mode, need, available) {
+        let tested: Vec<(Point, u32, u32)> = candidates
+            .iter()
+            .map(|(_, b)| {
+                let warehouse = world.warehouse(b.at).is_some();
+                let defenders = if warehouse {
+                    WAREHOUSE_DEFENDERS
+                } else {
+                    world.present_soldiers(b.at) as u32
+                };
+                let want = soldiers_wanted(ratio, defenders, defend_outside);
+                (b.at, want, world.attack_available(self.id, b.at))
+            })
+            .collect();
+        let last = match decide_attack(self.profile.mode, &tested, in_stock, c_value) {
+            AttackDecision::Attack { at, count } => {
                 ctx.out.push(Command::Attack {
                     player: self.id,
-                    target: b.at,
+                    target: at,
                     count,
                     strong_first: true,
                 });
-                self.attack.target = Some((b.at, cell));
+                self.attack.target = Some((at, cell));
                 return;
             }
-        }
-        // No candidate attacked.
+            AttackDecision::NotAttacked { last } => last,
+        };
+        // No candidate attacked: A + 1, and an expansion target at the last
+        // candidate that reached the need test (T30), if any did.
         if let Some(c) = self.territory.get_mut(cell) {
             c.attempts += 1.0;
         }

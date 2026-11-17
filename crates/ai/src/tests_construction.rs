@@ -664,9 +664,9 @@ fn t9_fisher_without_catch_is_torn_down() {
 // woodcutter that is torn down loses the production, its cell and its
 // square (the square free again) and is placed again as a new need; placed
 // in a cell with a standing woodcutter whose production has no need, it is
-// linked to that one. A plain new need is linked to unplaced productions
-// only.
-// spec: AI-CON-9.3 (AI-CON T84), AI-CON-3.4
+// linked to that one. A plain new need is too (AI-CON-2.5b, 3.3 corrected:
+// a free production placed or not).
+// spec: AI-CON-9.3 (AI-CON T84), AI-CON-3.4, AI-CON-2.5b
 #[test]
 fn t84_a_torn_down_producers_need_is_placed_again() {
     let mut world = world(&[0]);
@@ -705,17 +705,85 @@ fn t84_a_torn_down_producers_need_is_placed_again() {
     assert!(n.again);
     assert!(!p.plan.prods.iter().any(|x| x.id == pa));
     // Placed again in b's cell: linked to b's standing production.
-    p.assign_cell(need, cell_of(b), None);
+    p.assign_cell(&config(), need, cell_of(b), None);
     let n = p.plan.need(need).unwrap().clone();
     assert_eq!(
         (n.cell, n.production, n.again),
         (Some(cell_of(b)), Some(pb), false)
     );
-    // A plain new need there finds no unplaced production.
+    // A plain new need there takes the standing production as well.
     p.plan.prods.iter_mut().find(|x| x.id == pb).unwrap().need = None;
     let plain = p.plan.add_need(WOOD, None, 0.0);
-    p.assign_cell(plain, cell_of(b), None);
-    assert_eq!(p.plan.need(plain).unwrap().production, None);
+    p.assign_cell(&config(), plain, cell_of(b), None);
+    assert_eq!(p.plan.need(plain).unwrap().production, Some(pb));
+}
+
+// AI-CON T102 (AI-CON-2.5b): a cell ties needs and productions from either
+// side. A producer's production, whatever order placed its building, is
+// tied when the building is announced to the first need in its cell's need
+// list whose good it supplies and that has no production yet; the list is
+// in the order the needs were given the cell, not by id. So the route
+// optimizer's partner of the needs' consumer is that producer (R6: player
+// 3's sawmill's wood need, in the home cell from before counter 500, gets
+// the woodcutter (30, 22) that the cell system placed at 622, and the
+// sawmill's k = 2 partner at 6829 is that woodcutter, not the later one of
+// 1786). A need given a cell takes the first free production of its good
+// there, placed or not.
+// spec: AI-CON-2.5b (T102), AI-CON-3.3, AI-CON-8.3
+#[test]
+fn t102_a_cell_ties_needs_and_productions() {
+    let mut world = world(&[0]);
+    let mut ai = start(&world, 2);
+    let (sawmill, woodcutter, other) = ((30, 30), (26, 22), (14, 20));
+    let home = cell_of(ai.player_mut(P0).home);
+    assert_eq!(cell_of(woodcutter), home);
+    assert_ne!(cell_of(other), home);
+    let (older, newer) = {
+        let p = ai.player_mut(P0);
+        let older = p.plan.add_need(WOOD, Some(sawmill), 0.0);
+        let newer = p.plan.add_need(WOOD, Some(sawmill), 0.0);
+        // The newer need is given the home cell first.
+        p.assign_cell(&config(), newer, home, None);
+        p.assign_cell(&config(), older, home, None);
+        assert_eq!(p.plan.need(newer).unwrap().production, None);
+        assert_eq!(p.plan.first_need_in(home, |g| g == WOOD), Some(newer));
+        (older, newer)
+    };
+    // A woodcutter no need ordered, announced in the home cell.
+    with_building(&mut world, WOODCUTTER, woodcutter);
+    let snapshot = crate::snapshot::Snapshot::take(&world);
+    ai.update_with(&world, P0, &snapshot);
+    let p = ai.player_mut(P0);
+    let prod = p
+        .plan
+        .prods
+        .iter()
+        .find(|x| x.building == Some(woodcutter))
+        .unwrap()
+        .clone();
+    assert_eq!(prod.need, Some(newer), "the first in the cell's list");
+    assert_eq!(p.plan.need(newer).unwrap().production, Some(prod.id));
+    assert_eq!(p.plan.need(older).unwrap().production, None);
+    assert_eq!(p.related_buildings(sawmill), [woodcutter]);
+    // In another cell with no need of wood its production stays free; a
+    // need given that cell later takes it, placed as it is.
+    with_building(&mut world, WOODCUTTER, other);
+    let snapshot = crate::snapshot::Snapshot::take(&world);
+    ai.update_with(&world, P0, &snapshot);
+    let p = ai.player_mut(P0);
+    let free = p
+        .plan
+        .prods
+        .iter()
+        .find(|x| x.building == Some(other))
+        .unwrap()
+        .clone();
+    assert_eq!(free.need, None);
+    p.assign_cell(&config(), older, cell_of(other), None);
+    assert_eq!(p.plan.need(older).unwrap().production, Some(free.id));
+    // The partners in the consumer's own need list order (T51): the older
+    // need was tied to it first.
+    assert_eq!(p.related_buildings(sawmill), [other, woodcutter]);
 }
 
 // T10 (as corrected by AI-CON-9.2 and T43, 2026-10-26 night): a woodcutter
@@ -1172,6 +1240,180 @@ fn t97_the_street_cursor_moves_on_when_the_list_closes_up() {
     assert_eq!(cursor(&mut ai), 0);
 }
 
+// AI-CON T106 (AI-CON-8.1f, E-ai-074): passing on to the next flag raises
+// the street cursor by one from its current value. After the T97 move the
+// cursor already stands one place past the flag handled as a new F; when
+// that F is passed on (here a flag without a building) the cursor ends two
+// places past the old place: the flag right after F is not looked at in
+// that round, and the next run restarts with the first (the old "handled
+// flag's place plus one" took the stone pit's flag next).
+// spec: AI-CON-8.1f (AI-CON T106, T97), AI-CON-8.1d
+#[test]
+fn t106_the_street_cursor_steps_on_from_where_it_is() {
+    let mut world = world(&[0]);
+    let mut ai = start(&world, 2);
+    with_building(&mut world, STONE_PIT, (24, 22));
+    with_building(&mut world, WOODCUTTER, (21, 26));
+    world.submit(Command::PlaceFlag {
+        player: P0,
+        at: (20, 14),
+    });
+    world.step();
+    assert_eq!(world.last_results()[0].outcome, Ok(()));
+    with_building(&mut world, STONE_PIT, (25, 18));
+    let snapshot = crate::snapshot::Snapshot::take(&world);
+    ai.update_with(&world, P0, &snapshot);
+    let flags = world.flags_in_order(P0);
+    assert_eq!(flags.len(), 5);
+    assert_eq!(flags[3], (20, 14));
+    let worked = |ai: &mut AiSystem| ai.player_mut(P0).street.work.as_ref().map(|w| w.flag);
+    let cursor = |ai: &mut AiSystem| ai.player_mut(P0).street.cursor;
+    ai.player_mut(P0).street.cursor = 2;
+    ai.with_ctx(&world, P0, |p, ctx| p.street_construction(ctx));
+    assert_eq!(worked(&mut ai), Some(flags[2]));
+    world.submit(Command::RemoveFlag {
+        player: P0,
+        at: flags[1],
+    });
+    world.step();
+    assert_eq!(
+        world.flags_in_order(P0),
+        [flags[0], flags[2], flags[3], flags[4]]
+    );
+    // T97: the cursor moves to 3 and the bare flag is handled as a new F;
+    // it is passed on: the cursor rises from 3 to 4.
+    ai.with_ctx(&world, P0, |p, ctx| p.street_construction(ctx));
+    assert_eq!(worked(&mut ai), None);
+    assert_eq!(cursor(&mut ai), 4, "two places past the old place");
+    ai.with_ctx(&world, P0, |p, ctx| p.street_construction(ctx));
+    assert_eq!(worked(&mut ai), Some(flags[0]), "restarted with the first");
+    assert_eq!(cursor(&mut ai), 0);
+}
+
+// AI-CON T102a (AI-CON-2.5b, the list order is the order of giving): a
+// need that loses its cell (its producer torn down, AI-CON-9.3) and is
+// given the same cell again goes to the end of the cell's need list, behind
+// a younger need, so the next producer announced there is tied to the
+// younger one (R6 player 2: wood need 15177, given its cell again after the
+// woodcutter (56, 22) went at 5810, stands behind 15245 in the heap of
+// 8500, and the woodcutter (59, 30) of 8824 is tied to 15245).
+// spec: AI-CON-2.5b (T102a), AI-CON-9.3
+#[test]
+fn t102a_a_need_given_its_cell_again_goes_to_the_end() {
+    let mut world = world(&[0]);
+    let mut ai = start(&world, 2);
+    let (sawmill, first, second) = ((30, 30), (26, 22), (24, 26));
+    let home = cell_of(ai.player_mut(P0).home);
+    assert_eq!((cell_of(first), cell_of(second)), (home, home));
+    with_building(&mut world, WOODCUTTER, first);
+    ai.update_with(&world, P0, &crate::snapshot::Snapshot::take(&world));
+    let (old, young) = {
+        let p = ai.player_mut(P0);
+        let old = p.plan.add_need(WOOD, Some(sawmill), 0.0);
+        let young = p.plan.add_need(WOOD, Some(sawmill), 0.0);
+        p.assign_cell(&config(), old, home, None);
+        p.assign_cell(&config(), young, home, None);
+        assert!(p.plan.need(old).unwrap().production.is_some());
+        assert_eq!(p.plan.need(young).unwrap().production, None);
+        (old, young)
+    };
+    // The woodcutter goes: the old need loses its cell and is given it
+    // again, behind the young one.
+    world.submit(Command::RemoveBuilding {
+        player: P0,
+        at: first,
+    });
+    world.step();
+    ai.update_with(&world, P0, &crate::snapshot::Snapshot::take(&world));
+    let p = ai.player_mut(P0);
+    assert_eq!(p.plan.need(old).unwrap().cell, None);
+    p.assign_cell(&config(), old, home, None);
+    assert_eq!(p.plan.first_need_in(home, |g| g == WOOD), Some(young));
+    with_building(&mut world, WOODCUTTER, second);
+    ai.update_with(&world, P0, &crate::snapshot::Snapshot::take(&world));
+    let p = ai.player_mut(P0);
+    let prod = p
+        .plan
+        .prods
+        .iter()
+        .find(|x| x.building == Some(second))
+        .unwrap()
+        .id;
+    assert_eq!(p.plan.need(young).unwrap().production, Some(prod));
+    assert_eq!(p.plan.need(old).unwrap().production, None);
+}
+
+// AI-CON T101 (AI-CON-8.3 a, the state goes with the task): when the
+// current building's record is gone, the next run only moves the cursor to
+// the next record with a higher number, keeping k, i, t, w and X, and the
+// run after takes it up as B with that state (R6: player 2's hunter's hut
+// torn down at 6631; the run of 6649 moves the cursor to 14678 with i 3, t 2
+// and X kept, the run of 6686 asks the road to the flag at X's last entry).
+// A new building on the removed one's field is a new record, taken up the
+// same way. A restart and a planting building's skip clear the state.
+// spec: AI-CON-8.3 (T101)
+#[test]
+fn t101_the_route_state_goes_with_the_task() {
+    use crate::roads::RouteWork;
+    let (hut, next, older) = ((46, 20), (58, 24), (30, 30));
+    let left = RouteWork {
+        cursor: 5,
+        current: Some(hut),
+        k: 0,
+        i: 3,
+        t: 2,
+        w: 1,
+        x: vec![(50, 21), (51, 20)],
+    };
+    let mut work = left.clone();
+    // The hut's record (5) is gone; the next record is 9.
+    let records = [(2, older), (9, next)];
+    assert_eq!(work.take(&records, |_| false), None, "only the cursor");
+    assert_eq!(
+        work,
+        RouteWork {
+            cursor: 9,
+            ..left.clone()
+        }
+    );
+    assert_eq!(work.take(&records, |_| false), Some((9, next)));
+    assert_eq!(
+        work,
+        RouteWork {
+            cursor: 9,
+            current: Some(next),
+            ..left.clone()
+        },
+        "taken up with the state the hut left"
+    );
+    assert_eq!(work.take(&records, |_| false), Some((9, next)), "still B");
+    // Its record gone too, a new building on its field (12): first only
+    // the cursor, then taken up, the state still kept.
+    let records = [(2, older), (12, next)];
+    assert_eq!(work.take(&records, |_| false), None);
+    assert_eq!((work.cursor, work.i, work.t), (12, 3, 2));
+    assert_eq!(work.take(&records, |_| false), Some((12, next)));
+    assert_eq!(work.x, left.x);
+    // A planting building is skipped with the state cleared.
+    let mut work = left.clone();
+    let records = [(2, older), (9, next)];
+    assert_eq!(work.take(&records, |b| b == next), None);
+    assert_eq!(
+        work,
+        RouteWork {
+            cursor: 10,
+            ..RouteWork::default()
+        }
+    );
+    // No record at or above the cursor: a restart, the state cleared.
+    let mut work = RouteWork {
+        cursor: 20,
+        ..left.clone()
+    };
+    assert_eq!(work.take(&records, |_| false), None);
+    assert_eq!(work, RouteWork::default());
+}
+
 // AI-CON T99 (AI-CON-8.3c): in the route optimizer's direct variant, G (the
 // last flag of X) and Fn without a ware route between them do not count as
 // too long: no road is asked, and X becomes just Fn.
@@ -1196,14 +1438,17 @@ fn t99_no_ware_route_between_g_and_fn_is_not_too_long() {
     assert_eq!(ai.player_mut(P0).street.route.x, [hq_flag]);
 }
 
-// AI-CON T61, T64 (AI-CON-8.1e, Q-368): the street strategies' second legs
-// may walk over the hit road's fields, but a field a settler stands on
-// blocks every walk path but at its goal: the road's carrier waiting on its
-// idle field blocks the way across it, while the way across a field of the
-// road nobody stands on is open.
-// spec: AI-CON-8.1e (AI-CON T61, AI-CON T64)
+// AI-CON T104 (AI-CON-8.1e corrected): no settler blocks a walk path: the
+// street strategies' second legs may walk over the hit road's fields, and
+// the road's carrier waiting on its idle field does not close the way
+// across it (R6: player 2's strategy-4 leg F -> P over its idle carrier's
+// field (58, 26), L 3, L2 2, best 4; attempt 6 of 9908 removes R and builds
+// two roads). The settler test is withdrawn: T61 holds by T74's exclusion,
+// T64 by the tree, T79's worker was walking, T80's and T95's second legs
+// went over R's idle carrier.
+// spec: AI-CON-8.1e (AI-CON T104)
 #[test]
-fn t64_a_standing_settler_blocks_the_walk_paths() {
+fn t104_no_settler_blocks_the_walk_paths() {
     let rules = crate::fixture::town_rules();
     let mut world = crate::fixture::world_on(1, &[0], &Extras::default(), rules);
     let hq_flag = crate::view::flag_of(&world, (20, 20)).unwrap();
@@ -1229,7 +1474,9 @@ fn t64_a_standing_settler_blocks_the_walk_paths() {
         }
         world.step();
     }
-    assert_eq!(world.carriers()[0].walker.at, idle, "on his idle field");
+    let carrier = world.carriers()[0].clone();
+    assert_eq!(carrier.walker.at, idle, "on his idle field");
+    assert!(!carrier.walker.is_walking());
     // Two fields on either side of a road field, off the road: the only
     // 2-step way between them crosses it.
     let terrain = world.terrain();
@@ -1245,77 +1492,7 @@ fn t64_a_standing_settler_blocks_the_walk_paths() {
     let walk = |(a, b)| crate::roads::walk_path(&world, P0, a, b, &[], &path);
     let free = path[path.len() / 2 - 1];
     assert_eq!(walk(across(free)), Some(2), "nobody stands on {free:?}");
-    let blocked = walk(across(idle));
-    assert!(blocked.is_none_or(|n| n > 2), "{blocked:?}");
-}
-
-// AI-CON T79 (AI-CON-8.1e): a worker on his fine walk back from his work spot
-// to his own field (TRN-FREE-5.6) is in a step until he stands on it: he
-// never blocks the walk paths, even in a tick he shows as standing; a worker
-// in another step of his work does when he stands.
-// spec: AI-CON-8.1e (AI-CON T79)
-#[test]
-fn t79_a_worker_walking_back_from_his_spot_does_not_block() {
-    let target = s2_sim::Target {
-        at: (20, 20),
-        serial: 1,
-        storage: false,
-    };
-    let job = |work| s2_sim::SettlerJob::Worker { target, work };
-    let back = job(s2_sim::Work::Return {
-        stand: (80, 81),
-        score: 0,
-    });
-    assert!(crate::roads::in_a_step(&back));
-    assert!(!crate::roads::in_a_step(&job(s2_sim::Work::AtSpot {
-        spot: (20, 24)
-    })));
-}
-
-// AI-CON T80 (AI-CON-8.1e): a field on which a road's donkey stands idle
-// does not block the walk paths, even with the road's carrier standing on it
-// too; the carrier alone blocks it, and a donkey walking does not free it.
-// spec: AI-CON-8.1e (AI-CON T80)
-#[test]
-fn t80_a_field_with_an_idle_donkey_does_not_block() {
-    let rules = crate::fixture::town_rules();
-    let mut world = crate::fixture::world_on(1, &[0], &Extras::default(), rules);
-    let hq_flag = crate::view::flag_of(&world, (20, 20)).unwrap();
-    world.submit(Command::PlaceFlag {
-        player: P0,
-        at: (25, 19),
-    });
-    world.step();
-    world.submit(Command::BuildRoad {
-        player: P0,
-        from: hq_flag,
-        to: (25, 19),
-    });
-    world.step();
-    for _ in 0..1500 {
-        let c = world.carriers().first();
-        if c.is_some_and(|c| matches!(c.task, s2_sim::CarrierTask::Idle) && !c.walker.is_walking())
-        {
-            break;
-        }
-        world.step();
-    }
-    let carrier = world.carriers()[0].clone();
-    let idle = carrier.walker.at;
-    assert!(crate::roads::standing_fields(&world).contains(&idle));
-    assert!(crate::roads::idle_donkey_fields(std::slice::from_ref(&carrier)).is_empty());
-    let donkey = s2_sim::Carrier {
-        donkey: true,
-        ..carrier.clone()
-    };
-    let both = [carrier.clone(), donkey.clone()];
-    assert_eq!(
-        crate::roads::idle_donkey_fields(&both),
-        std::collections::BTreeSet::from([idle])
-    );
-    let mut walking = donkey;
-    walking.walker.next = Some(idle);
-    assert!(crate::roads::idle_donkey_fields(&[carrier, walking]).is_empty());
+    assert_eq!(walk(across(idle)), Some(2), "his carrier on {idle:?}");
 }
 
 // AI-CON-8.2: the street optimizer puts a flag on a road's first waypoint
@@ -2023,8 +2200,13 @@ fn t26_a_new_building_gets_the_needs_of_its_inputs() {
     );
 }
 
-// AI-CON-6.1: the first harbour-pavement field in the rings around p needs an
-// own building within 3 fields (4 for a large type), else v = 0.
+// AI-CON-6.1, T103: the first harbour-pavement field in the rings around p
+// needs an own harbour (any state: a site counts) within 3 fields (4 for a
+// large type), else v = 0; any other own building near the pavement does
+// not count (R6: player 3's guard house on (21, 30) beside the pavement
+// (18, 30) leaves (18, 30) and (19, 30) at 0, so its woodcutter of counter
+// 9772 goes on (28, 24) as recorded).
+// spec: AI-CON-6.1 (T103)
 #[test]
 fn the_pavement_rule_needs_a_building_nearby() {
     use s2_sim::map::state;
@@ -2052,7 +2234,7 @@ fn the_pavement_rule_needs_a_building_nearby() {
     // trees count is 0 here, so compare with a type without product).
     let forester = world.building_type(FORESTER).unwrap().clone();
     assert!(env.value(&forester, (21, 24)) > 0.0);
-    // With an own building within 3 of the pavement it is allowed.
+    // Another own building within 3 of the pavement does not count.
     let mut near = *snapshot.of(P0).first().unwrap();
     near.at = (27, 23);
     let own = vec![near];
@@ -2062,7 +2244,58 @@ fn the_pavement_rule_needs_a_building_nearby() {
         player: P0,
         own: &own,
     };
+    assert_eq!(env.value(&forester, (25, 22)), 0.0, "not a harbour");
+    // An own harbour there does, its site as well.
+    let mut harbour = near;
+    harbour.building_type = HARBOR;
+    harbour.under_construction = true;
+    let own = vec![near, harbour];
+    let env = crate::sites::SiteEnv {
+        world: &world,
+        config: &config,
+        player: P0,
+        own: &own,
+    };
     assert!(env.value(&forester, (25, 22)) > 0.0);
+}
+
+// AI-CON T105 (AI-CON-6.3, the depot test counts sites): a depot's site
+// value is 0 with an own warehouse within 10 fields in any state: a
+// storehouse's or harbour's building site counts as soon as it is placed
+// (R6: player 1's harbour site on (62, 49) zeroes (55, 45), 9 away, and the
+// storehouse goes on (54, 44), 11 away, as recorded).
+// spec: AI-CON-6.3 (AI-CON T105)
+#[test]
+fn t105_the_depot_test_counts_a_warehouse_site() {
+    let world = world(&[0]);
+    let config = config();
+    let depot = world.building_type(DEPOT).unwrap().clone();
+    let snapshot = crate::snapshot::Snapshot::take(&world);
+    let castle = *snapshot.of(P0).first().unwrap();
+    let value_with = |own: &[s2_sim::Building], at| {
+        let env = crate::sites::SiteEnv {
+            world: &world,
+            config: &config,
+            player: P0,
+            own,
+        };
+        env.value(&depot, at)
+    };
+    let at = (24, 22);
+    assert!(value_with(&[], at) > 0.0, "no warehouse near");
+    let site = s2_sim::Building {
+        building_type: HARBOR,
+        at: (33, 22),
+        under_construction: true,
+        ..castle
+    };
+    assert_eq!(crate::view::dist(site.at, at), 9);
+    assert_eq!(value_with(&[site], at), 0.0, "a harbour site 9 away");
+    let far = s2_sim::Building {
+        at: (35, 22),
+        ..site
+    };
+    assert!(value_with(&[far], at) > 0.0, "11 away");
 }
 
 // AI-CON-6.4, T28: a non-military type's value takes x 0.4 for a Border
@@ -3443,6 +3676,21 @@ fn t78_the_mean_productivity_counts_sites() {
     with_building(&mut world, WOODCUTTER, done);
     with_building(&mut world, WOODCUTTER, site);
     let mut ai = start(&world, 2);
+    // T107: the mean runs over the production records; each woodcutter has
+    // one, as a placed producer does (AI-CON-2.5b).
+    {
+        let p = ai.player_mut(P0);
+        p.plan.prods.retain(|q| q.good != WOOD);
+        for at in [done, site] {
+            let prod = p.plan.add_production(WOOD, cell_of(at), None);
+            p.plan
+                .prods
+                .iter_mut()
+                .find(|q| q.id == prod)
+                .unwrap()
+                .building = Some(at);
+        }
+    }
     let snapshot = finished_snapshot(&world, done, 100);
     let s = snapshot.building(P0, site).expect("the site");
     assert!(s.under_construction);
@@ -3451,6 +3699,46 @@ fn t78_the_mean_productivity_counts_sites() {
         p.average_productivity(ctx, WOOD)
     });
     assert_eq!(mean, 0.75);
+}
+
+// AI-CON T107 (AI-CON-4.2, E-ai-075): avgProd runs over exactly the
+// production records A(g) counts, each with its own building's value; a
+// building of the good without a record (the hunter's hut, AI-CON-2.5a) does
+// not count. With only a hunter's hut (a site, 0.5) meat's mean is 1.0; a
+// woodcutter site with its record makes wood's 0.5.
+// spec: AI-CON-4.2 (AI-CON T107), AI-CON-2.5a
+#[test]
+fn t107_the_mean_productivity_counts_production_records_only() {
+    let mut world = world(&[0]);
+    let (hut, cutter) = ((26, 22), (24, 24));
+    with_building(&mut world, HUNTER, hut);
+    with_building(&mut world, WOODCUTTER, cutter);
+    let mut ai = start(&world, 2);
+    let snapshot = crate::snapshot::Snapshot::take(&world);
+    let hut_value = snapshot
+        .building(P0, hut)
+        .expect("the hut")
+        .productivity_bits;
+    assert_eq!(f32::from_bits(hut_value), 0.5);
+    let meat = FISH + 100;
+    {
+        let p = ai.player_mut(P0);
+        p.plan.prods.retain(|q| q.good != meat && q.good != WOOD);
+        let prod = p.plan.add_production(WOOD, cell_of(cutter), None);
+        p.plan
+            .prods
+            .iter_mut()
+            .find(|q| q.id == prod)
+            .unwrap()
+            .building = Some(cutter);
+    }
+    let (means, _) = ai.with_snapshot(&world, P0, &snapshot, |p, ctx| {
+        (
+            p.average_productivity(ctx, meat),
+            p.average_productivity(ctx, WOOD),
+        )
+    });
+    assert_eq!(means, (1.0, 0.5));
 }
 
 // AI-CON T72 (AI-CON-6.2, Q-370): a fields good's site value is the sum of

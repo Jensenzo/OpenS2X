@@ -91,6 +91,13 @@ impl MilitaryMap {
         }
     }
 
+    /// Set a cell (tests of the parts that read the map).
+    #[cfg(test)]
+    pub(crate) fn set(&mut self, pos: MPos, cell: MilCell) {
+        let index = (pos.1 * self.cols + pos.0) as usize;
+        self.cells[index] = cell;
+    }
+
     /// Whether any building is recorded in the cell.
     pub fn has_threat(&self, pos: MPos) -> bool {
         self.get(pos).threat > 0 || self.get(pos).threat_building > 0

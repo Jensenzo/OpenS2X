@@ -155,7 +155,9 @@ snap_enum!(crate::combat::AttackStep {
     Leaving,
     Walking,
     Waiting,
-    Home
+    Home,
+    Meeting,
+    Arrived
 });
 snap_enum!(crate::combat::DefendStep {
     Leaving,

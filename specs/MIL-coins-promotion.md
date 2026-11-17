@@ -51,6 +51,12 @@ cost lists of `Jobs.lua` ("previous rank + coin") are not used for it.
   - otherwise, only if it has **no** open coin order: it orders
     `stock limit - coins in store` coins (the building type's stock limit,
     `bp_setStockLimit`), one order per coin.
+  **"No open order" exactly (2026-11-17 day, E-mil-023: code reading, the Hard recording E-trace-013
+  and an experiment build; high):** the test is that the building's own list of orders is empty,
+  whatever their good, and an order that is served stays in that list until its ware is delivered
+  (`ECO-requests-dispatch.md` ECO-REQ-5.3f: it leaves the open orders the matching sees, not the
+  building's list). So while a coin is on its way the building orders none, even with its store
+  empty: a barracks (stock limit 1) gets one coin at a time. Test T13.
   Confidence: high. The coin supply switch is **on** when a building is
   created (Q-056). Confidence: high.
 - **MIL-PROM-3.3** Coins are delivered by order matching
@@ -119,6 +125,7 @@ cost lists of `Jobs.lua` ("previous rank + coin") are not used for it.
 | T11 | two buildings with open coin orders (first one first in the list), enemy distances 10 and 30, accumulators 0 | three coin servings in a row | after the raises: 0.1 / 0.033333335 -> first served, reset 0; then 0.1 / 0.06666667 -> first; then 0.1 / 0.10000001 -> **second** served (float32 sum is larger, ECO-TIME-5.1), reset 0; the first building's accumulator stays 0.1 |
 | T11a | as T11, a distance update between the servings | serving | accumulators are not reset by the update (only the first update sets 0) |
 | T12 | new building | coin switch | on |
+| T13 | 3.2 (a served order still counts): E-trace-013 (R3, the Hard game), player 1's barracks 96422 on (127, 33) (stock limit 1, finished, its soldiers present, no coin in store), checks at the counters with (t + 96422) mod 33 = 0: 49174, 49207, 49240; its coin order of 49174 served at 49181 (a helper of the warehouse on (120, 59) carries the coin out, its door then waits 30 ticks) | the checks of 49207 and 49240 | no new order: the coin is still on its way (recorded: no other coin leaves for 96422 before 50150). Ordering again at each check (a served order not counted) sends coins at 49214 and 49247 as well; the first keeps that warehouse's door waiting at counter 49217, so the take-out pass of 49217 (`ECO-distribution.md` ECO-DIST-1.7) draws 5 numbers instead of 6 and the Hard game's generator differs from trace tick 49218. Experiment build (the tick-exact branch's head; the building's order counted while its coin is with the helper or on the roads): the Hard 150 000 pair moves from settlers 49500, generator 49218 to settlers 50700, generator 50659 (buildings 50700 as before); every other pair unchanged |
 
 ## Evidence
 
@@ -130,6 +137,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-001 | code reading | | global military update; promotion counter 300 |
 | E-mil-001 | code reading | | can use coins; promotion step; rank change; rank index |
 | E-mil-001 | code reading | | coin check every 33 ticks; no open order; soldiers present |
+| E-mil-023, E-trace-013 | code reading, recording, experiment build | (session 2026-11-17 day): the coin check's test of the building's order list; R3's coin ware for 96422 and the warehouses' coin stock | 3.2 (T13) |
 | E-mil-001 | code reading | | coin order choice: accumulator 1/n, highest wins, reset |
 | E-mil-001 | code reading | | warehouse soldier ranks (castle soldier amounts), type flag shared with MIL-PROM-2.1 |
 | E-mil-005 | code reading | | only the first distance set resets; raise in float32; strict-greater choice |

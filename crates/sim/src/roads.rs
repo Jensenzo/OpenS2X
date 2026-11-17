@@ -515,6 +515,38 @@ impl World {
                 self.retire_carrier(carrier, donkey, road.owner, &road.path);
             }
         }
+        // TRN-FREE-6.4b (T47a): a builder going home whose step in progress
+        // runs along the road has his walk cut to that step: he ends it on
+        // its point and stops there, nothing of the old walk left. (A
+        // builder still walking to a standing site is not cut; other
+        // settlers were not followed.)
+        let builder = self.roles.builder;
+        let along = |a: Point, b: Point| {
+            road.path
+                .windows(2)
+                .any(|w| (w[0], w[1]) == (a, b) || (w[1], w[0]) == (a, b))
+        };
+        // T47b (E-trn-040): one on the walk home his own home search chose
+        // is cut the same way (the excess dropped at the step's end) and
+        // chooses his way home again in his arrival tick, with no standing
+        // (`SettlerJob::Home`'s arrival short of its warehouse).
+        for settler in self.settlers.iter_mut().flatten() {
+            let going_home = matches!(settler.job, crate::SettlerJob::Leaving { .. })
+                && Some(settler.profession) == builder;
+            let walking_home = matches!(settler.job, crate::SettlerJob::Home { .. });
+            if !(going_home || walking_home) || settler.player != road.owner {
+                continue;
+            }
+            let walker = &mut settler.walker;
+            if walker.next.is_some_and(|next| along(walker.at, next)) {
+                walker.path.clear();
+                walker.pauses.clear();
+                if walking_home {
+                    walker.road_to = None;
+                    walker.held = false;
+                }
+            }
+        }
         self.renumber_removed(road.owner, road.carrier.is_some());
         // TRN-ROAD-6.1 (T26): an end flag keeps its Street while another
         // road is attached to it.

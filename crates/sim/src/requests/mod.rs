@@ -1082,6 +1082,9 @@ impl World {
 
     /// ECO-REQ-5.1
     pub(crate) fn transport_jobs(&mut self) {
+        // ECO-REQ-5.5 (T42, E-eco-049): first, in every tick, a ware whose
+        // building is gone is free.
+        self.free_wares_of_gone_buildings();
         // ECO-REQ-5.1: in this order when several are due.
         if self.tick.is_multiple_of(MATCHING_PERIOD) {
             self.drop_stranded_orders();
@@ -1095,6 +1098,34 @@ impl World {
         }
         if self.tick.is_multiple_of(TAKE_OUT_PERIOD) {
             self.take_out();
+        }
+    }
+
+    /// ECO-REQ-5.5 (T42, E-eco-049, as corrected by the investigation's
+    /// f0f1ecb7): at the start of every tick's transport step, before the
+    /// matching and any storage run, a ware lying at a flag for a building
+    /// (not a storage trip) whose flag is gone loses its destination: free,
+    /// on the free-ware list (5.4a), so the next matching can give it to
+    /// another order; a carrier's claim on it stays.
+    fn free_wares_of_gone_buildings(&mut self) {
+        let ids: Vec<usize> = self
+            .wares()
+            .filter(|(_, w)| {
+                matches!(w.location, WareLocation::Flag(_))
+                    && w.target
+                        .is_some_and(|t| !t.storage && self.target_flag(t).is_none())
+            })
+            .map(|(id, _)| id)
+            .collect();
+        for id in ids {
+            self.join_free_list(id);
+            let w = self.wares[id].as_mut().expect("live ware");
+            w.destination = None;
+            w.target = None;
+            w.order = None;
+            w.stranded = false;
+            w.next = None;
+            w.recheck = 0;
         }
     }
 

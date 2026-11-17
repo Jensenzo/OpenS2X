@@ -42,6 +42,13 @@ pub enum AttackStep {
     Waiting,
     /// Walking back to the building it came from.
     Home,
+    /// MIL-ATK-6.1a (T26, E-mil-024): walking to the meeting field an
+    /// interception gave him (MIL-ATK-3.3, 4.2), not inside his wait job.
+    Meeting,
+    /// MIL-ATK-6.1a (T26): standing on that meeting field, a waiting
+    /// attacker not yet in his wait job; his next update makes the checks
+    /// of MIL-ATK-4.4.
+    Arrived,
 }
 
 /// Where a soldier sent against an attacker is.
@@ -273,7 +280,14 @@ impl World {
         if n == 0 {
             return 0;
         }
-        let k = ((n as f32 - 1.0) * self.military_settings(player).attack_strength()) as u32;
+        // Item 7 (corrected 2026-11-17 day, E-mil-020, T23): times the
+        // distance factor f(d) = min(36 - d, 24) / 24, a float32 made as
+        // min(36 - d, 24) times the float32 1/24; (n - 1) x attackStrength x
+        // f(d) is then truncated, the product unrounded (exact in f64 for
+        // these float32 factors and a soldier count).
+        let factor = (36u32.saturating_sub(d)).min(24) as f32 * (1.0f32 / 24.0);
+        let strength = self.military_settings(player).attack_strength();
+        let k = ((n as f64 - 1.0) * f64::from(strength) * f64::from(factor)) as u32;
         if k == 0 || self.interceptors_out(from) > 0 {
             return 0;
         }
@@ -379,12 +393,9 @@ impl World {
             }
         }
         let home = self.target_of(at).expect("a building");
+        // MIL-ATK-2.3 (corrected, Q-1070): he stays on his home's soldier
+        // list, counted there (MIL-SOL-4.2) but not present (MIL-SOL-2.4).
         for &id in &chosen {
-            self.military
-                .get_mut(&at)
-                .expect("military")
-                .soldiers
-                .retain(|&s| s != id);
             let settler = self.settlers[id].as_mut().expect("a soldier");
             let health = health_of(settler).expect("a garrison soldier");
             settler.job = SettlerJob::Attack {
@@ -500,7 +511,9 @@ impl World {
             if d > 0 && best.is_none_or(|(b, _)| d < b) {
                 best = Some((d, f));
             }
-            for q in self.terrain.neighbours(f).into_iter().flatten() {
+            // T25 (E-mil-022): first in, first out, each field's neighbours
+            // in the ring order of MAP-GRID-3.2 (directions 5, 0, 1, 2, 3, 4).
+            for q in grid::ring(f, 1, self.terrain.width, self.terrain.height) {
                 let index = self.terrain.index(q);
                 if !seen[index]
                     && grid::distance(from, q) < MEETING_REACH
@@ -530,7 +543,8 @@ impl World {
             if !taken && self.streets[index].is_none() && self.flags[index].is_none() {
                 return Some(f);
             }
-            for q in self.terrain.neighbours(f).into_iter().flatten() {
+            // T25: the neighbours in the ring order 5, 0, 1, 2, 3, 4 (3.3).
+            for q in grid::ring(f, 1, self.terrain.width, self.terrain.height) {
                 let i = self.terrain.index(q);
                 if !seen[i] && !self.terrain.has(q, NOT_WALKABLE) {
                     seen[i] = true;
@@ -593,21 +607,20 @@ impl World {
     /// MIL-ATK-3.4, 5.1, 6.1a: the waiting interceptor `id` is paired with
     /// the attacker of `record`: he walks from where he stands to that
     /// attacker's waiting field and fights there.
+    /// MIL-ATK-3.4 (T30, E-mil-025): the pairing only links the two; the
+    /// interceptor's walk starts in his own update (`DefendStep::Out`),
+    /// never inside the attacker's.
     fn pair_waiting_interceptor(&mut self, record: usize, id: usize) {
         let attacker = self.attackers[record].soldier;
         self.attackers[record].opponent = Some(id);
-        let Some(field) = self.attackers[record].field else {
+        if self.attackers[record].field.is_none() {
             return;
-        };
-        let mut settler = self.settlers[id].take().expect("an interceptor");
+        }
+        let settler = self.settlers[id].as_mut().expect("an interceptor");
         if let SettlerJob::Defend { step, opponent, .. } = &mut settler.job {
             *step = DefendStep::Out;
             *opponent = Some(attacker);
         }
-        if settler.walker.at != field {
-            self.walk_to(&mut settler, field);
-        }
-        self.settlers[id] = Some(settler);
     }
 
     // ---- The soldiers' own updates ----
@@ -619,9 +632,24 @@ impl World {
         })
     }
 
+    /// MIL-ATK-4.1a (T24, E-mil-021): the walk out of a soldier on his
+    /// building's field is the walk of any settler leaving it: one step to
+    /// its own flag, at progress 0 in the tick he leaves, ending on the
+    /// flag's point (the excess dropped); his next walk is planned from the
+    /// flag. None when he stands elsewhere or the building is gone.
+    fn own_flag_step(&self, settler: &Settler, home: Target) -> Option<Point> {
+        if self.target_building(home).is_none() || settler.walker.at != home.at {
+            return None;
+        }
+        let flag = self.flag_of(home.at);
+        (grid::distance(home.at, flag) == 1).then_some(flag)
+    }
+
     /// MIL-ATK-4.1: the home building lets one soldier out per 40 ticks.
-    fn leave_building(&mut self, home: Target) -> bool {
-        if self.target_building(home).is_none() {
+    /// MIL-SOL-4.4 (Q-1071 b): a soldier with no home link (released, or
+    /// the building gone) skips the cooldown and sets none.
+    fn leave_building(&mut self, home: Target, number: usize) -> bool {
+        if !self.linked_to_home(home, number) {
             return true;
         }
         match self.military.get_mut(&home.at) {
@@ -676,24 +704,68 @@ impl World {
         }
     }
 
-    /// A soldier is back at the door of the building it came from: it
-    /// joins it again, or goes home to a warehouse when there is none.
+    /// MIL-ATK-2.3 (Q-1070): a game saved before snapshot format 84 took an
+    /// attacker off his home building's soldier list at the sending. Each
+    /// attacker whose home still stands is put back at the end of its list,
+    /// in settler order, so the home counts him again and he comes back to
+    /// it (`docs/snapshot.md`).
+    pub(crate) fn attackers_back_on_their_lists(&mut self) {
+        for id in 0..self.settlers.len() {
+            let Some(SettlerJob::Attack { home, .. }) = self.settlers[id].as_ref().map(|s| &s.job)
+            else {
+                continue;
+            };
+            let home = *home;
+            if self.target_building(home).is_none() {
+                continue;
+            }
+            if let Some(m) = self.military.get_mut(&home.at) {
+                if !m.soldiers.contains(&id) {
+                    m.soldiers.push(id);
+                }
+            }
+        }
+    }
+
+    /// MIL-ATK-2.3, MIL-SOL-4.4 (Q-1070): whether the soldier `number` is
+    /// still on the soldier list of his home building, the building
+    /// standing (not released by it).
+    pub(crate) fn linked_to_home(&self, home: Target, number: usize) -> bool {
+        self.target_building(home).is_some()
+            && self
+                .military
+                .get(&home.at)
+                .is_some_and(|m| m.soldiers.contains(&number))
+    }
+
+    /// MIL-ATK-2.3: the soldier `number` leaves the list of the building
+    /// `home` (he fell, or entered another building).
+    pub(crate) fn leave_home_list(&mut self, home: Target, number: usize) {
+        if self.target_building(home).is_none() {
+            return;
+        }
+        if let Some(m) = self.military.get_mut(&home.at) {
+            m.soldiers.retain(|&s| s != number);
+        }
+    }
+
+    /// A soldier is back at the door of the building it came from: still
+    /// on its list, he is present again at once, with no test of the
+    /// wanted number (MIL-SOL-4.4, Q-142); released by it, or with the
+    /// building gone, he goes home to a warehouse.
     fn rejoin(&mut self, settler: &mut Settler, number: usize, home: Target, health: u32) {
         let own = self
             .target_building(home)
             .is_some_and(|b| b.owner == settler.player && !b.under_construction)
-            && self.military.contains_key(&home.at);
+            && self.linked_to_home(home, number);
         if own {
             settler.job = SettlerJob::Garrison {
                 target: home,
                 health,
                 heal: 0,
             };
-            let m = self.military.get_mut(&home.at).expect("military");
-            if !m.soldiers.contains(&number) {
-                m.soldiers.push(number);
-            }
         } else {
+            self.leave_home_list(home, number);
             self.plan_home_excluding(settler, None);
         }
     }
@@ -707,18 +779,26 @@ impl World {
         health: u32,
     ) {
         self.attackers.retain(|r| r.soldier != number);
+        // MIL-ATK-4.4, MIL-SOL-4.4 (Q-1070): with his errand over and no
+        // home link (released, or the building gone) he has no link left
+        // and goes to a warehouse in this tick.
+        if !self.linked_to_home(home, number) {
+            self.plan_home_excluding(settler, None);
+            return;
+        }
         let at_door = settler.walker.at == home.at && !settler.walker.is_walking();
         if at_door {
             self.rejoin(settler, number, home, health);
             return;
         }
-        if self.target_building(home).is_some() && self.walk_to(settler, home.at) {
+        if self.walk_to(settler, home.at) {
             settler.job = SettlerJob::Attack {
                 home,
                 health,
                 step: AttackStep::Home,
             };
         } else {
+            self.leave_home_list(home, number);
             self.plan_home_excluding(settler, None);
         }
     }
@@ -732,14 +812,19 @@ impl World {
         health: u32,
         step: AttackStep,
     ) -> bool {
-        // MIL-ATK-6.6: a soldier at 0 dies in its own update.
+        // MIL-ATK-6.6: a soldier at 0 dies in its own update, and leaves
+        // his home's list (MIL-ATK-2.3).
         if health == 0 {
             self.attackers.retain(|r| r.soldier != number);
+            self.leave_home_list(home, number);
             return false;
         }
         let Some(record) = self.attackers.iter().position(|r| r.soldier == number) else {
-            // Its errand is over (the record is gone): back home.
-            if step != AttackStep::Home || !settler.walker.is_walking() {
+            // Its errand is over (the record is gone): back home; with no
+            // home link left on the way (released, or the building gone),
+            // to a warehouse in this tick (MIL-ATK-4.4).
+            let walking_home = step == AttackStep::Home && settler.walker.is_walking();
+            if !walking_home || !self.linked_to_home(home, number) {
                 self.attacker_goes_home(settler, number, home, health);
             }
             return true;
@@ -755,11 +840,25 @@ impl World {
         let set = |step| SettlerJob::Attack { home, health, step };
         match step {
             AttackStep::Leaving => {
-                if settler.timer > 0 || !self.leave_building(home) {
+                if settler.timer > 0 || !self.leave_building(home, number) {
                     return true;
                 }
                 if self.target_building(target).is_none() {
                     self.attacker_goes_home(settler, number, home, health);
+                    return true;
+                }
+                // MIL-ATK-4.1a (T24): out through his own flag first; on it,
+                // in the arrival tick, the walk on (`AttackStep::Walking`).
+                // T26: to an interception's meeting field he walks outside
+                // his wait job (`AttackStep::Meeting`).
+                let walking = if self.attackers[record].field.is_some() {
+                    AttackStep::Meeting
+                } else {
+                    AttackStep::Walking
+                };
+                if let Some(flag) = self.own_flag_step(settler, home) {
+                    settler.walker.walk([flag]);
+                    settler.job = set(walking);
                     return true;
                 }
                 // MIL-ATK-4.2 (Q-1051): to his meeting field if an
@@ -769,7 +868,7 @@ impl World {
                     .field
                     .unwrap_or_else(|| self.attack_door(target));
                 if self.walk_to(settler, to) {
-                    settler.job = set(AttackStep::Walking);
+                    settler.job = set(walking);
                 }
             }
             AttackStep::Walking => {
@@ -794,8 +893,69 @@ impl World {
                     Some(f) => {
                         self.walk_to(settler, f);
                     }
+                    // MIL-ATK-4.1a: on his own flag, towards the target from
+                    // there, in this tick.
+                    None if settler.walker.at == self.flag_of(home.at)
+                        && settler.walker.at != self.attack_door(target) =>
+                    {
+                        let door = self.attack_door(target);
+                        self.walk_to(settler, door);
+                    }
                     None => self.attacker_at_door(settler, number, record, home, health),
                 }
+            }
+            AttackStep::Meeting => {
+                if !arrived {
+                    return true;
+                }
+                if self.target_building(target).is_none() {
+                    self.attacker_goes_home(settler, number, home, health);
+                    return true;
+                }
+                match self.attackers[record].field {
+                    // MIL-ATK-6.1a (T26): arriving he only becomes waiting:
+                    // no check, no draw, no step in this update.
+                    Some(f) if settler.walker.at == f => {
+                        settler.job = set(AttackStep::Arrived);
+                    }
+                    // From his own flag (MIL-ATK-4.1a) on to the field.
+                    Some(f) => {
+                        self.walk_to(settler, f);
+                    }
+                    // The meeting field gone: towards the target's door.
+                    None => {
+                        let door = self.attack_door(target);
+                        if self.walk_to(settler, door) {
+                            settler.job = set(AttackStep::Walking);
+                        }
+                    }
+                }
+            }
+            AttackStep::Arrived => {
+                // MIL-ATK-6.1a (T26): the update after his arrival makes the
+                // checks of MIL-ATK-4.4; paired, his wait job starts (its
+                // walk over at once) and its next update makes the draw and
+                // the step.
+                if self.target_building(target).is_none() {
+                    self.attackers[record].offset = None;
+                    self.attacker_goes_home(settler, number, home, health);
+                    return true;
+                }
+                if self.attackers[record].opponent.is_none()
+                    && self.can_take(target, settler.player)
+                {
+                    self.attackers[record].field = None;
+                    self.attackers[record].offset = None;
+                    let door = self.attack_door(target);
+                    if self.walk_to(settler, door) {
+                        settler.job = set(AttackStep::Walking);
+                    }
+                    return true;
+                }
+                if self.attackers[record].opponent.is_none() {
+                    self.find_opponent(record, settler.player);
+                }
+                settler.job = set(AttackStep::Waiting);
             }
             AttackStep::Waiting => {
                 let field = self.attackers[record].field;
@@ -926,17 +1086,13 @@ impl World {
         defends: Option<Target>,
     ) -> bool {
         if health == 0 {
-            if let Some(m) = self.military.get_mut(&home.at) {
-                m.soldiers.retain(|&s| s != number);
-            }
+            self.leave_home_list(home, number);
             return false;
         }
-        let home_stands =
-            self.target_building(home).is_some() && self.military.contains_key(&home.at);
-        if !home_stands {
-            self.plan_home_excluding(settler, None);
-            return true;
-        }
+        // MIL-SOL-4.4 (Q-1071 c), MIL-ATK-4.4: with his home gone he has lost
+        // only that link: in a fight he fights on, an interceptor waits on
+        // for the building he defends; with no link left he goes to a
+        // warehouse (below).
         // The pair holds while the attacker's record points back.
         let record = opponent.and_then(|a| {
             self.attackers
@@ -966,6 +1122,13 @@ impl World {
                 }
                 return true;
             }
+            // MIL-SOL-4.4 (Q-1070 c): released while out, his fight over,
+            // he has no link left and goes to a warehouse (an interceptor
+            // released in his wait waits on above: Q-1071 a).
+            if !self.linked_to_home(home, number) {
+                self.plan_home_excluding(settler, None);
+                return true;
+            }
             // 3.4: no opponent (any more): back to its building.
             if step == DefendStep::Leaving {
                 self.rejoin(settler, number, home, health);
@@ -978,7 +1141,16 @@ impl World {
         }
         match step {
             DefendStep::Leaving => {
-                if settler.timer > 0 || !self.leave_building(home) {
+                if settler.timer > 0 || !self.leave_building(home, number) {
+                    return true;
+                }
+                // MIL-ATK-4.1a (T24, T27): an interceptor, and the target's
+                // own defender too (MIL-ATK-5.3), goes out through his own
+                // flag first; on it, in the arrival tick, on to the field
+                // (`DefendStep::Out`).
+                if let Some(flag) = self.own_flag_step(settler, home) {
+                    settler.walker.walk([flag]);
+                    settler.job = set(DefendStep::Out, opponent);
                     return true;
                 }
                 let field = self.attackers[record.expect("paired")]
@@ -995,6 +1167,16 @@ impl World {
                 let r = &self.attackers[record.expect("paired")];
                 let (field, target) = (r.field.expect("a field"), r.target);
                 if settler.walker.at == field {
+                    // MIL-ATK-5.3 (T28, E-mil-025): his arrival (the message,
+                    // the pair fighting) counts in his next update, when his
+                    // job sees the movement stopped: the timer holds that
+                    // one update (2, read as 1 after the next tick's
+                    // countdown).
+                    if settler.timer == 0 {
+                        settler.timer = 2;
+                        return true;
+                    }
+                    settler.timer = 0;
                     settler.job = set(DefendStep::Waiting, opponent);
                     self.under_attack(target);
                 } else {
@@ -1003,6 +1185,11 @@ impl World {
             }
             DefendStep::Waiting => {}
             DefendStep::Back => {
+                // MIL-SOL-4.4 (Q-1070 c): released on his way back.
+                if !self.linked_to_home(home, number) {
+                    self.plan_home_excluding(settler, None);
+                    return true;
+                }
                 if !arrived {
                     return true;
                 }
@@ -1020,8 +1207,8 @@ impl World {
 
     /// FMT-SAV-3.7a (T17): the fights of a save go on where they stood, in
     /// the next military update: each attacker, seated by the restore among
-    /// his home's soldiers (the save lists him there, 3.4a), leaves that
-    /// list and is out on his errand again with his record (target, saved
+    /// his home's soldiers (the save lists him there, 3.4a), stays on that
+    /// list (MIL-ATK-2.3) and is out on his errand again with his record (target, saved
     /// round counter, waiting field, pending hit); a fighting pair stands on
     /// the record's field, the defender on its point and the attacker on his
     /// saved sample, one lattice step off it (MIL-ATK-6.1a), its opponent out
@@ -1093,10 +1280,8 @@ impl World {
         };
         let field = fight.field;
         let paired = opponent.is_some();
-        // The attacker leaves his home's list (MIL-ATK-2.3).
-        if let Some(m) = self.military.get_mut(&fight.attacker_home) {
-            m.soldiers.retain(|&s| s != attacker);
-        }
+        // The attacker stays on his home's list (MIL-ATK-2.3, Q-1070), where
+        // the save lists him (FMT-SAV-3.4a).
         let duel_field = field.filter(|_| fight.fighting && paired);
         let stands = duel_field
             .or(field.filter(|_| fight.attacker_state == 20))

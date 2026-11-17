@@ -959,6 +959,8 @@ impl World {
             } => at == flag && (exchange.is_none() || bid),
             // T40: in its arrival tick, standing on the flag, too.
             CarrierTask::Stop { at, exchange: None } => at == flag,
+            // T60: standing with the ware a building did not take.
+            CarrierTask::Out { flag: at } => at == flag && c.ware.is_some(),
             _ => false,
         })
     }
@@ -1053,6 +1055,11 @@ impl World {
                 // TRN-CARRY-4.3 (T40): in its arrival tick, standing on the
                 // flag before the put-down, its place still counts.
                 CarrierTask::Stop { at, exchange: None } => *reserved.entry(at).or_default() += 1,
+                // T60: standing with the ware a building did not take, the
+                // place taken at its arrival.
+                CarrierTask::Out { flag } if c.ware.is_some() => {
+                    *reserved.entry(flag).or_default() += 1
+                }
                 _ => {}
             }
         }
@@ -1427,7 +1434,8 @@ impl World {
         // walk from where it stands, as on its way to its road.
         let off_road =
             standing && !self.carriers[carrier].walker.is_walking() && !road_path.contains(&at);
-        if off_road && matches!(task, CarrierTask::Idle | CarrierTask::Out { .. }) {
+        let empty_handed = self.carriers[carrier].ware.is_none();
+        if off_road && empty_handed && matches!(task, CarrierTask::Idle | CarrierTask::Out { .. }) {
             if let Some(walk) = self.walk_to_idle_field(carrier, at) {
                 let walker = &mut self.carriers[carrier].walker;
                 walker.walk(walk);
@@ -1504,28 +1512,34 @@ impl World {
                     // TRN-CARRY-3.3a: the tick the walk in ends is spent
                     // standing, and the next too but in a building with a
                     // door offset (on its door field; 9d3c62b, T27).
+                    // TRN-CARRY-3.3 (T60): with the building gone meanwhile
+                    // the next tick is the hand-over tick, the walk out
+                    // ordered in it: one standing tick.
                     let door = self
                         .terrain
                         .neighbour(flag, 4)
                         .is_some_and(|b| self.door_field(b) != b);
-                    self.carriers[carrier].task = CarrierTask::Inside { flag, waits: !door };
+                    let gone = !self.carriers[carrier]
+                        .ware
+                        .and_then(|w| self.wares[w].as_ref())
+                        .and_then(|w| w.target)
+                        .is_some_and(|t| self.target_building(t).is_some());
+                    self.carriers[carrier].task = CarrierTask::Inside {
+                        flag,
+                        waits: !door && !gone,
+                    };
                 } else if self.carriers[carrier].ware.is_some() {
                     // T60 (Q-230 c): back with the ware the removed building
-                    // did not take: he puts it down here like any ware, the
-                    // drop-time action from his arrival tick (its place
-                    // taken now, as a granted one).
+                    // did not take (its place taken now, as a granted one).
+                    // TRN-CARRY-3.3a: he stands in A as after any delivery;
+                    // from A + 1 he puts it down as at the end of a carrying
+                    // walk (`Out` with a ware in hand, then `Stop`).
                     *self.flag_reserved.entry(flag).or_default() += 1;
                     let key = self.take_join();
                     if let Some(ware) = self.carriers[carrier].ware {
                         self.wares[ware].as_mut().expect("live ware").joined = key;
                     }
-                    self.carriers[carrier].task = CarrierTask::PutDown {
-                        at: flag,
-                        ends: tick + Tick::from(self.settings.drop_ticks),
-                        second: false,
-                        exchange: None,
-                        bid: true,
-                    };
+                    self.carriers[carrier].task = CarrierTask::Out { flag };
                 } else {
                     // ECO-WORK-3.8d: back on the flag it stands this tick.
                     self.carriers[carrier].task = CarrierTask::Out { flag };
@@ -1567,6 +1581,15 @@ impl World {
                     walker.walk([building, flag]);
                     walker.pauses = vec![building];
                 }
+            }
+            CarrierTask::Out { flag } if self.carriers[carrier].ware.is_some() => {
+                // TRN-CARRY-3.3a (T60): the ware a building did not take,
+                // from A + 1 put down as at the end of a carrying walk: it
+                // stands this tick, the drop-time action from the next.
+                self.carriers[carrier].task = CarrierTask::Stop {
+                    at: flag,
+                    exchange: None,
+                };
             }
             CarrierTask::Out { .. } => {
                 // Then as after putting down (TRN-CARRY-3.5).

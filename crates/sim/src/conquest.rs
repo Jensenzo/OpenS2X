@@ -253,6 +253,9 @@ impl World {
         if settler.walker.at != target.at {
             settler.walker.walk([target.at]);
         }
+        // MIL-ATK-2.3 (Q-1070): he leaves the list of the building that sent
+        // him for this one's.
+        self.leave_home_list(home, number);
         self.military
             .get_mut(&target.at)
             .expect("military")

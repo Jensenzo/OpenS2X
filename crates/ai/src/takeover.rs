@@ -191,6 +191,14 @@ fn take_over_player(
             ties.insert(need, tied);
         }
     }
+    // AI-CON-2.5b (T102): a cell's need list in its saved order.
+    let mut celled: BTreeMap<u64, u32> = BTreeMap::new();
+    for c in &saved.cells {
+        for &need in &c.needs {
+            let place = celled.len() as u32 + 1;
+            celled.entry(need).or_insert(place);
+        }
+    }
     let plan_needs: Vec<Need> = all_needs
         .iter()
         .map(|n| {
@@ -216,6 +224,7 @@ fn take_over_player(
                 created: refs.seconds,
                 tied: ties.get(&n.id).copied().unwrap_or(0),
                 again: false,
+                celled: celled.get(&n.id).copied().unwrap_or(0),
             }
         })
         .collect();

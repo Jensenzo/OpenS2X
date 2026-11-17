@@ -2016,6 +2016,12 @@ impl World {
         if let Some(id) = self.hunted.remove(&building) {
             if let Some(Some(animal)) = self.animals.get_mut(id) {
                 animal.hunted_by = None;
+                // ECO-FOOD-5.7 (T62): released while standing at its hunted
+                // walk's end, it is waiting again in the removal's tick with
+                // the wait its walk left, 0; it spends no update hunted.
+                if animal.state == crate::AnimalState::Hunted {
+                    animal.state = crate::AnimalState::Waiting { left: 0 };
+                }
             }
         }
         self.search_timers.remove(&building);

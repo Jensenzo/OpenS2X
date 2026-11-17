@@ -9,8 +9,8 @@ use crate::construction::{Order, Outcome, Slot, Tag};
 use crate::expansion::{Kind, Source, Target};
 use crate::maps::{mcell_of, morigin};
 use crate::military::{
-    allocation, attack_count, building_for, castle_reserve, level, order_candidates,
-    soldiers_wanted, target_value,
+    allocation, attack_count, attack_target, building_for, candidate_seen, castle_reserve,
+    decide_attack, level, order_candidates, soldiers_wanted, target_value, AttackDecision,
 };
 use crate::sites::Area;
 use crate::testutil::*;
@@ -102,6 +102,40 @@ fn t1_allocation_grows_with_soldiers_in_stock() {
     assert_eq!(ai.player_mut(P0).settings_countdown, 49);
 }
 
+// AI-MIL T29 (AI-MIL-2.2, the countdown): a change sets the countdown to 50
+// and every run first lowers it by 1 and tests only when it is 0 or below,
+// so with soldiers in stock above S / 128 at every run the allocation
+// changes at runs r, r + 50, r + 100 (each 50 runs after the one before;
+// 51 apart put R6 player 1's fourth growth three runs late). A run whose
+// test finds no change leaves the countdown at 0 and the next run tests
+// again; a countdown saved below 0 (read as a u32) tests at once.
+// spec: AI-MIL-2.2 (T29)
+#[test]
+fn t29_allocation_changes_come_50_runs_apart() {
+    let world = world(&[0]);
+    let mut ai = start_with(&world, config(), 2);
+    let changes = |ai: &mut AiSystem, runs: u32| -> Vec<u32> {
+        (0..runs)
+            .filter(|_| {
+                let (_, commands) = ai.with_ctx(&world, P0, |p, ctx| p.military_settings(ctx));
+                commands
+                    .iter()
+                    .any(|c| matches!(c, Command::MilitaryAllocation { .. }))
+            })
+            .collect()
+    };
+    // No soldiers above S / 128: no change, every run tests.
+    ai.player_mut(P0).statistic = (1, u32::MAX);
+    assert!(changes(&mut ai, 3).is_empty());
+    assert_eq!(ai.player_mut(P0).settings_countdown, 0);
+    // Then they are: at once, and every 50 runs.
+    ai.player_mut(P0).statistic = (1, 128);
+    assert_eq!(changes(&mut ai, 120), [0, 50, 100]);
+    // Saved below 0: -1 read as a u32.
+    ai.player_mut(P0).settings_countdown = u32::MAX;
+    assert_eq!(changes(&mut ai, 2), [0]);
+}
+
 // T2: no soldiers in stock, medium 0.3: near 0.8, medium 0.24.
 // spec: AI-MIL-2.2 (T2)
 #[test]
@@ -187,6 +221,140 @@ fn castle_settings_follow_the_enemy_distance() {
 #[test]
 fn t7_target_value() {
     assert_eq!(target_value(0.0, 40.0, 10.0, 1.0, 2.0), 17.5);
+}
+
+// AI-MIL T31 (AI-MIL-5.2, the gate and the order): a cell is looked at
+// only when one of its eight neighbouring cells, not the cell itself,
+// holds a nonzero threat of the attacker in its own map; the enemy's threat
+// in the cell does not open it. The cells are visited column by column (x
+// from 0, every y from 0 for each) and the players 0 to 7 in order, so of
+// equal values the first visited stays; a later one replaces it only when
+// strictly greater (R6: player 2's runs of 630 .. 7681 find no cell, the
+// run of 8322 the cell (4, 2) of player 3 with -10).
+// spec: AI-MIL-5.2 (T31)
+#[test]
+fn t31_attack_targets_lie_next_to_own_threat_column_by_column() {
+    use crate::maps::{MilCell, MilitaryMap};
+    let (p0, p1, p2) = (PlayerId(0), PlayerId(1), PlayerId(2));
+    let alive = [true, true, true];
+    let threat = |t| MilCell {
+        threat: t,
+        ..MilCell::default()
+    };
+    let score = |s| MilCell {
+        threat: 30,
+        threat_building: 0,
+        score: s,
+    };
+    let target = |maps: &[MilitaryMap]| {
+        attack_target(maps, &alive, p0, |_| true, |_| 0.0, |_| (0.0, 0.0))
+            .map(|(v, cell, p)| (v as i64, cell, p))
+    };
+    let mut maps = vec![MilitaryMap::new(64, 64); 3];
+    maps[1].set((3, 3), score(300));
+    assert_eq!(target(&maps), None, "the enemy's threat opens nothing");
+    maps[0].set((3, 3), threat(30));
+    assert_eq!(target(&maps), None, "nor the attacker's in the cell itself");
+    maps[0].set((2, 4), threat(30));
+    assert_eq!(target(&maps), Some((600, (3, 3), p1)), "beside it");
+    // Column by column: (0, 2) before (2, 0), both beside (1, 1).
+    let mut maps = vec![MilitaryMap::new(64, 64); 3];
+    maps[0].set((1, 1), threat(30));
+    maps[1].set((2, 0), score(100));
+    maps[1].set((0, 2), score(100));
+    assert_eq!(target(&maps), Some((200, (0, 2), p1)));
+    // Players in order: player 2's equal value in (0, 2) does not replace.
+    maps[2].set((0, 2), score(100));
+    assert_eq!(target(&maps), Some((200, (0, 2), p1)));
+    // A strictly greater value later does.
+    maps[2].set((2, 0), score(150));
+    assert_eq!(target(&maps), Some((300, (2, 0), p2)));
+    // No value above -100: no target.
+    let low = attack_target(&maps, &alive, p0, |_| true, |_| 1000.0, |_| (0.0, 0.0));
+    assert_eq!(low, None);
+}
+
+// AI-MIL T31 (AI-MIL-5.3, the signed test): an attackable enemy building is
+// a candidate when it is explored or its enemy distance is at most 12,
+// signed: -1, which an enemy headquarters always holds, passes (R6: player
+// 3's headquarters (26, 24), not explored, is player 2's only candidate at
+// 8322).
+// spec: AI-MIL-5.3 (T31)
+#[test]
+fn t31_an_enemy_headquarters_in_range_is_always_a_candidate() {
+    assert!(candidate_seen(false, Some(-1)));
+    assert!(candidate_seen(false, Some(0)));
+    assert!(candidate_seen(false, Some(12)));
+    assert!(!candidate_seen(false, Some(13)));
+    assert!(!candidate_seen(false, None));
+    assert!(candidate_seen(true, Some(1000)));
+}
+
+// AI-MIL T30 (a) (AI-MIL-5.5, whole counters): C and A are whole numbers
+// and halving drops the remainder: a cell with C = 3 and A = 5 whose
+// target is gone has C = 1 and A = 2, and 1 halves to 0.
+// spec: AI-MIL-5.5 (T30)
+#[test]
+fn t30_halving_the_counters_drops_the_remainder() {
+    let world = world(&[0]);
+    let mut ai = start_with(&world, with_weights(), 2);
+    let cell = (3, 3);
+    let gone = (30, 30);
+    assert!(world.building_at(gone).is_none());
+    for ((c, a), (c2, a2)) in [((3.0, 5.0), (1.0, 2.0)), ((1.0, 1.0), (0.0, 0.0))] {
+        {
+            let p = ai.player_mut(P0);
+            let t = p.territory.get_mut(cell).unwrap();
+            (t.result, t.attempts) = (c, a);
+            p.attack.target = Some((gone, cell));
+        }
+        ai.with_ctx(&world, P0, |p, ctx| p.attack_system(ctx));
+        let p = ai.player_mut(P0);
+        let t = p.territory.get(cell);
+        assert_eq!((t.result, t.attempts), (c2, a2));
+        assert_eq!(p.attack.target, None);
+    }
+}
+
+// AI-MIL T30 (b) to (d) (AI-MIL-5.5, the last candidate): candidates g1
+// (want 6), g2 (want 2), g3 (want 7), 4 soldiers in stock, 1 available
+// against each, C = 0. (b) Safe: g1 and g3 are skipped (want above the
+// stock), g2 reaches the need test (need 2 > 1) and is not attacked: the
+// last candidate, the expansion's position, is g2, not g3. (c) Normal:
+// all three are tested, none attacked: g3. (d) No candidate, or none
+// that reached the test: no last candidate (A still rises by 1).
+// spec: AI-MIL-5.5 (T30), AI-MIL-5.4
+#[test]
+fn t30_the_last_candidate_is_the_last_one_tested() {
+    let (g1, g2, g3) = ((10, 10), (12, 10), (14, 10));
+    let list = [(g1, 6, 1), (g2, 2, 1), (g3, 7, 1)];
+    assert_eq!(
+        decide_attack(Mode::Safe, &list, 4, 0.0),
+        AttackDecision::NotAttacked { last: Some(g2) }
+    );
+    assert_eq!(
+        decide_attack(Mode::Normal, &list, 4, 0.0),
+        AttackDecision::NotAttacked { last: Some(g3) }
+    );
+    assert_eq!(
+        decide_attack(Mode::Normal, &[], 4, 0.0),
+        AttackDecision::NotAttacked { last: None }
+    );
+    assert_eq!(
+        decide_attack(Mode::Safe, &[(g1, 6, 1), (g3, 7, 1)], 4, 0.0),
+        AttackDecision::NotAttacked { last: None }
+    );
+    // With 2 available against g2 it is attacked in Safe mode, min(need,
+    // available) soldiers; in Normal min(2 need, available).
+    let list = [(g1, 6, 1), (g2, 2, 2), (g3, 7, 1)];
+    assert_eq!(
+        decide_attack(Mode::Safe, &list, 4, 0.0),
+        AttackDecision::Attack { at: g2, count: 2 }
+    );
+    assert_eq!(
+        decide_attack(Mode::Normal, &list, 4, 0.0),
+        AttackDecision::Attack { at: g2, count: 2 }
+    );
 }
 
 // T8 to T10: how many soldiers an attack sends.
@@ -619,6 +787,9 @@ fn order_outcomes_update_penalty_cooldown_and_target() {
     ai.player_mut(P0).expansion.current = Some((Source::WaitingNeed, target));
     ai.player_mut(P0).expansion.pending[Source::WaitingNeed as usize] = Some(target);
     let coordinate = crate::cells::cell_of(target.at);
+    // AI-MIL-4.4 (T28): the level is worked out at the order's place at each
+    // failure: no enemy (-2), coal within 4 squares (+2), 50 stones (+1): 1.
+    level_one_at(&mut ai, morigin(cell));
     let order = |building, attempts| Order {
         slot: Slot::Military,
         area: Area::Point {
@@ -635,7 +806,8 @@ fn order_outcomes_update_penalty_cooldown_and_target() {
             source: Source::WaitingNeed,
         },
     };
-    // Fortress found no site: a tower is ordered.
+    // Fortress found no site: a smaller building, a barracks (1 - 1), is
+    // ordered.
     ai.with_ctx(&world, P0, |p, ctx| {
         p.military_order_done(order(FORTRESS, 0), Outcome::NoSite, ctx)
     });
@@ -645,7 +817,7 @@ fn order_outcomes_update_penalty_cooldown_and_target() {
         .slot(Slot::Military)
         .copied()
         .unwrap();
-    assert_eq!(next.building, TOWER);
+    assert_eq!(next.building, BARRACKS);
     assert!(matches!(next.tag, Tag::Military { attempts: 1, .. }));
     // Worn down to a barracks, and that fails too: the target is given up.
     ai.player_mut(P0).build.slots[Slot::Military as usize] = None;
@@ -670,7 +842,7 @@ fn order_outcomes_update_penalty_cooldown_and_target() {
         .slot(Slot::Military)
         .copied()
         .unwrap();
-    assert_eq!(next.building, TOWER);
+    assert_eq!(next.building, BARRACKS);
     assert!(matches!(next.tag, Tag::Military { attempts: 1, .. }));
     // Below 0 after no material: no order, no penalty, the target stays
     // current and remembered; the next run finishes it and makes no order.
@@ -715,6 +887,122 @@ fn order_outcomes_update_penalty_cooldown_and_target() {
     assert!(p.expansion.pending[Source::WaitingNeed as usize].is_none());
     assert_eq!(p.attempts.get(&coordinate), Some(&1), "3 halved");
     assert!(p.build.slot(Slot::Military).is_none() && commands.is_empty());
+}
+
+/// AI-MIL-4.3 at `site` for player 0 of a one-player world: no enemy (-2),
+/// coal within 4 squares (+2) and 50 stones in stock (+1): level 1.
+fn level_one_at(ai: &mut AiSystem, site: Point) {
+    let p = ai.player_mut(P0);
+    p.econ = Economy::from_counts(&[(STONE, 50)], &[]);
+    p.resources.set_entries(
+        crate::resources::square_of(site),
+        vec![crate::resources::Entry {
+            good: COAL,
+            kind: crate::resources::UNDERGROUND,
+            landmass: 1,
+            amount: 5,
+        }],
+    );
+}
+
+// AI-MIL T28 (AI-MIL-4.4, the level anew): at every failure the level of
+// AI-MIL-4.3 is worked out again at the order's place (the point; the
+// cell's origin in cell mode) as things stand at that moment, and the new
+// attempt count is taken off that level, not off the level the order was
+// made with. An order made at level 4 (a fortress) whose place now gives
+// no enemy (-2), coal within 4 squares (+2) and 50 stones (+1) = 1: its
+// first failure orders 1 - 1 = 0, a barracks (the kept level would give
+// 4 - 1 = 3, a fortress again). With the stones down to 10 the level is 0,
+// so the barracks' failure for no material, 0 - 2 < 0, orders nothing and
+// leaves the target current and remembered without a penalty (R6: player
+// 1's chain of 3726 ends at 4495, no guard house at (57, 61)). In cell
+// mode the cell's origin is the place: a cell with the coal at its origin
+// re-orders a barracks after its fortress failed.
+// spec: AI-MIL-4.4 (T28), AI-MIL-4.3
+#[test]
+fn t28_the_level_is_worked_out_again_at_each_failure() {
+    let world = world(&[0]);
+    let mut ai = start_with(&world, with_weights(), 2);
+    let cell = mcell_of(ai.player_mut(P0).home);
+    let site = morigin(cell);
+    let target = Target {
+        kind: Kind::Position,
+        at: (40, 40),
+        since: 0,
+    };
+    {
+        let p = ai.player_mut(P0);
+        p.expansion.current = Some((Source::WaitingNeed, target));
+        p.expansion.pending[Source::WaitingNeed as usize] = Some(target);
+        p.expansion.remembered = true;
+    }
+    level_one_at(&mut ai, site);
+    let order = Order {
+        slot: Slot::Military,
+        area: Area::Point {
+            at: site,
+            radius: 12,
+        },
+        building: FORTRESS,
+        weight: 20,
+        time: 0.0,
+        tag: Tag::Military {
+            attempts: 0,
+            level: 4,
+            cell,
+            source: Source::WaitingNeed,
+        },
+    };
+    ai.with_ctx(&world, P0, |p, ctx| {
+        p.military_order_done(order, Outcome::NoSite, ctx)
+    });
+    let next = ai
+        .player_mut(P0)
+        .build
+        .slot(Slot::Military)
+        .copied()
+        .unwrap();
+    assert_eq!(next.building, BARRACKS, "1 - 1, not 4 - 1");
+    assert!(
+        matches!(
+            next.tag,
+            Tag::Military {
+                attempts: 1,
+                level: 1,
+                ..
+            }
+        ),
+        "{:?}",
+        next.tag
+    );
+    // The stones used up: level 0 at the next failure, 0 - 2 < 0.
+    ai.player_mut(P0).build.slots[Slot::Military as usize] = None;
+    ai.player_mut(P0).econ = Economy::from_counts(&[(STONE, 10)], &[]);
+    let (_, commands) = ai.with_ctx(&world, P0, |p, ctx| {
+        p.military_order_done(next, Outcome::NoMaterial, ctx)
+    });
+    let p = ai.player_mut(P0);
+    assert!(p.build.slot(Slot::Military).is_none() && commands.is_empty());
+    assert_eq!(p.expansion.current, Some((Source::WaitingNeed, target)));
+    assert!(p.expansion.remembered);
+    assert_eq!(p.territory.get(cell).penalty, 0.0);
+    // Cell mode: the place is the cell's origin.
+    let home_cell = cell_of(ai.player_mut(P0).home);
+    level_one_at(&mut ai, crate::cells::origin(home_cell));
+    let in_cell = Order {
+        area: Area::Cell(home_cell),
+        ..order
+    };
+    ai.with_ctx(&world, P0, |p, ctx| {
+        p.military_order_done(in_cell, Outcome::NoSite, ctx)
+    });
+    let next = ai
+        .player_mut(P0)
+        .build
+        .slot(Slot::Military)
+        .copied()
+        .unwrap();
+    assert_eq!(next.building, BARRACKS);
 }
 
 // AI-MIL T25 (AI-MIL-1.1): a building type without bp_setAiScore scores 20,
@@ -1129,6 +1417,108 @@ fn a_failed_order_upgrades_a_building_in_its_cell() {
     assert_eq!(commands, [Command::UpgradeBuilding { player: P0, at }]);
     assert!(ai.player_mut(P0).expansion.current.is_none());
     assert_eq!(ai.player_mut(P0).territory.get(cell).penalty, 2.0);
+}
+
+/// AI-MIL-4.4: an order of `area` that failed with no site at level 0
+/// (attempts 0 -> 1), handed to the order handler; its commands.
+fn failed_order(world: &World, ai: &mut AiSystem, area: Area) -> Vec<Command> {
+    let cell = match area {
+        Area::Cell(c) => mcell_of(crate::cells::origin(c)),
+        Area::Point { at, .. } => mcell_of(at),
+    };
+    ai.player_mut(P0).expansion.current = Some((
+        Source::WaitingNeed,
+        Target {
+            kind: Kind::Position,
+            at: (40, 40),
+            since: 0,
+        },
+    ));
+    let order = Order {
+        slot: Slot::Military,
+        area,
+        building: BARRACKS,
+        weight: 20,
+        time: 0.0,
+        tag: Tag::Military {
+            attempts: 0,
+            level: 0,
+            cell,
+            source: Source::WaitingNeed,
+        },
+    };
+    let (_, commands) = ai.with_ctx(world, P0, |p, ctx| {
+        p.military_order_done(order, Outcome::NoSite, ctx)
+    });
+    commands
+}
+
+// AI-MIL T32 (AI-MIL-4.4a, MIL-UPG-1.4 corrected): the upgrade a failed
+// military order makes instead tests no level and the next type's costs
+// once (the 37-tick run of 4.5: the level and twice the costs). Without an
+// underground resource the barracks' upgrade level is 0 (its own level), so
+// the 37-tick run leaves it, and 2 stones are the guard house's costs once:
+// the order upgrades it; with 1 stone nothing passes and the target is
+// cancelled.
+// spec: AI-MIL-4.4a (T32), AI-MIL-4.4, MIL-UPG-1.4
+#[test]
+fn t32_the_upgrade_instead_tests_no_level_and_the_costs_once() {
+    let (world, mut ai, at) = upgrade_game();
+    ai.player_mut(P0)
+        .resources
+        .set_entries(crate::resources::square_of(at), Vec::new());
+    ai.player_mut(P0).econ = Economy::from_counts(&[(STONE, 4)], &[]);
+    let (level, _) = ai.with_ctx(&world, P0, |p, ctx| p.upgrade_level(ctx, at));
+    assert_eq!(level, 0);
+    let (_, run) = ai.with_ctx(&world, P0, |p, ctx| p.military_upgrade(ctx));
+    assert!(run.is_empty(), "the 37-tick run tests the level: {run:?}");
+    ai.player_mut(P0).econ = Economy::from_counts(&[(STONE, 2)], &[]);
+    let commands = failed_order(&world, &mut ai, Area::Cell(cell_of(at)));
+    assert_eq!(commands, [Command::UpgradeBuilding { player: P0, at }]);
+    assert!(ai.player_mut(P0).expansion.current.is_none(), "done");
+    ai.player_mut(P0).econ = Economy::from_counts(&[(STONE, 1)], &[]);
+    let commands = failed_order(&world, &mut ai, Area::Cell(cell_of(at)));
+    assert!(commands.is_empty(), "{commands:?}");
+    assert!(ai.player_mut(P0).expansion.current.is_none(), "cancelled");
+}
+
+// AI-MIL T32 (AI-MIL-4.4a): in cell mode the fields are walked row by row
+// from the cell's first row, so a building on an earlier row is upgraded
+// before one made earlier; in point mode the walk reaches the order's own
+// radius (12 towards a position), not 6 fields.
+// spec: AI-MIL-4.4a (T32)
+#[test]
+fn t32_the_upgrade_instead_walks_rows_and_the_orders_radius() {
+    let (mut world, mut ai, at) = upgrade_game();
+    let earlier_row = (25, 17);
+    created(&mut world, BARRACKS, earlier_row);
+    for _ in 0..60 {
+        world.step();
+    }
+    assert_eq!(cell_of(earlier_row), cell_of(at));
+    ai.player_mut(P0).econ = Economy::from_counts(&[(STONE, 2)], &[]);
+    let commands = failed_order(&world, &mut ai, Area::Cell(cell_of(at)));
+    assert_eq!(
+        commands,
+        [Command::UpgradeBuilding {
+            player: P0,
+            at: earlier_row
+        }]
+    );
+    // Point mode: the barracks 10 fields from the order's point.
+    let (world, mut ai, at) = upgrade_game();
+    ai.player_mut(P0).econ = Economy::from_counts(&[(STONE, 2)], &[]);
+    let point = (33, 22);
+    assert_eq!(crate::view::dist(point, at), 10);
+    let commands = failed_order(
+        &world,
+        &mut ai,
+        Area::Point {
+            at: point,
+            radius: 12,
+        },
+    );
+    assert_eq!(commands, [Command::UpgradeBuilding { player: P0, at }]);
 }
 
 // ECO-DIST-1.7c b, AI-MIL-6.1 (Q-264): with no storehouse the castle, a

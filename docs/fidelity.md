@@ -7,16 +7,24 @@ map with the same set-up: every settler's place, every building and the
 game's random number generator, tick by tick (a tick is a tenth of a second
 of game time). The recordings belong to the investigation and are not in the
 public repository, so the numbers can be measured only in the working
-repository; this page keeps them. Measured on 0.11.1, on MP_2P_Storm_Coast:
+repository; this page keeps them. Measured on 0.12.0, on MP_2P_Storm_Coast:
 
 | Game | Equal up to tick | Game time |
 |---|---|---|
 | Two players, the computer player Weak: settlers and buildings | every compared tick to 40,000 | 67 minutes |
-| The same game: the random number generator | 51,723 | 86 minutes |
+| The same game: the random number generator | 52,419 | 87 minutes |
 | The same game recorded densely, each settler's animation compared too | 17,532 | 29 minutes |
 | You alone, no computer player: settlers and buildings | 27,672 | 46 minutes |
-| Two players, the computer player Strong: the generator; settlers and buildings | 48,042; 48,199 | 80 minutes |
+| Two players, the computer player Strong: the generator; settlers and buildings | 50,658; 50,699 | 84 minutes |
 | The Strong game recorded densely, with the animations | 7,053 | 12 minutes |
+
+Not a pair of this page, measured by hand on 0.12.0 (`s2-app trace` against the
+recording E-trace-019, every tenth tick): four players at war on `MP_4P_Fight`,
+three Strong computer players: the generator equal up to tick 12,949, the
+settlers 12,689 and the buildings 13,449 (21 minutes; 0.11.5: 4,872, 8
+minutes). The dense, one-player and Strong dense rows' first differences are
+the recordings' own (a one-tick lag of the recorder's view, the raced end of
+the one-player recording; `TOOL-trace.md` T16), not differences of the game.
 
 "Equal up to" means the first difference comes in the next tick. A change
 that moves a first difference later adds a line to the record at the end of
@@ -170,8 +178,8 @@ ours.
 first-differing-tick = none
 settlers-first-differing-tick = none
 buildings-first-differing-tick = none
-generator-first-differing-tick = 51724
-generator-matching-ticks = 51788
+generator-first-differing-tick = 52420
+generator-matching-ticks = 52462
 generator-compared-ticks = 149987
 one-player-first-differing-tick = 27673
 one-player-generator-first-differing-tick = none
@@ -201,11 +209,11 @@ hard-20000-buildings-first-differing-tick = none
 hard-20000-generator-first-differing-tick = none
 hard-20000-generator-matching-ticks = 14950
 hard-20000-generator-compared-ticks = 14950
-hard-150000-first-differing-tick = 48200
-hard-150000-settlers-first-differing-tick = 48200
-hard-150000-buildings-first-differing-tick = 48200
-hard-150000-generator-first-differing-tick = 48043
-hard-150000-generator-matching-ticks = 48149
+hard-150000-first-differing-tick = 50700
+hard-150000-settlers-first-differing-tick = 50700
+hard-150000-buildings-first-differing-tick = 50700
+hard-150000-generator-first-differing-tick = 50659
+hard-150000-generator-matching-ticks = 50811
 hard-150000-generator-compared-ticks = 149993
 ```
 
@@ -500,3 +508,7 @@ and the words of the time. R3 and R4 in it are the recordings E-trace-013
 | 2026-11-02 | the building takes a ware only while it accepts it; step 0 in cell-list order; a lost storage trip placed in the next run | none | none | none | 50113 | 50 157 of 149 987 | TRN-CARRY-3.3 (TRN-CARRY T59), AI-CON-10.4 (AI-CON T100), ECO-REQ-5.7 (c) (ECO-REQ T41; e85e27d, 1d8f13d), one batch: the building case of the entry holds only while the warehouse takes the good (no stop or out), tested every tick of the walk, and a ware put down at its refused building's flag keeps its destination with no next flag and no way; step 0's first found goes by the cell list and each cell's depots in the order they were added, and the run leaves stop on all but the emptiest; a lost storage trip loses its destination at one storage run and gets its new warehouse at the next (a ware whose building is gone is still placed in the same run: passing it over as well moves R4 to 33230, Q-296). R3 counter 45647: the planks bound for the harbour and the castle are put down at their flags and go to the storehouse 94359. Hard 150 000 (R3): settlers 45700 -> 46100, buildings 46700 -> 47000, generator 45865 -> 45969; every other pair unchanged |
 | 2026-11-02 | the ship finished partway through its last trip; the ship's route draws | none | none | none | 50934 | 50 985 of 149 987 | ECO-FOOD-7.4b (ECO-FOOD T60, 3fac1c9) with SHIP-3.1 (SHIP T13, 4e5b83f), one batch: the ship's frame and main work are f32 parts lowered once a tick of the shipwright's 56-tick step (1/220 or 1/440, fixed at the step's start, a residue taken whole), so the ship is finished and starts in the tick the main part reaches 0, partway through the 12th trip (R3 45867, R5 50011), and its first search try comes 101 ticks later; a ship's route is the free walk's search and drawing read-out with the ship's field test and a step cost of 1, or 3 beside land, a landing field or the map's edge (was: a plain search without draws). Every draw of the try ticks (R5 50112, R3 45968) equal. The Weak 150 000 generator 50113 -> 50934; Hard 150 000 (R3): settlers 46100 -> 46600, generator 45969 -> 46754; every other pair unchanged |
 | 2026-11-02 | list 0 before list 1 and by the plain rule; a launched ship frees its water field; served expedition orders on their way count | none | none | none | 51724 | 51 788 of 149 987 | ECO-DIST-3.1, 3.3a (ECO-DIST T23, T24; b8ae4bc, a4ad058), ECO-FOOD-7.3b (ECO-FOOD T61), SHIP-5.2 (SHIP T14, c31094d), one batch: the matching serves list 0 (the orders of finished warehouse-type buildings) before list 1, and list 0 by the plain lowest-stamp rule also for a good with a table or coins; a launched ship no longer holds its water field; the harbour's gathering pass counts the wares on their way to it (a warehouse helper's included) besides its open orders and cancels only open ones (by target, storage trips too, Q-297). R5: the castle's planks go to the harbour 90351 at 50820 / 50853, the second ship starts on (145, 46) at 50667; R3: the harbour 90366 gets the storage-bound planks at 46541 / 46552. The Weak 150 000 generator 50934 -> 51724; Hard 150 000 (R3): settlers 46600 -> 48200, buildings 47000 -> 48200, generator 46754 -> 48043; every other pair unchanged |
+| 2026-11-17 | a cell ties needs and productions from either side | none | none | none | 51724 | 51 788 of 149 987 | AI-CON-2.5b (AI-CON T102, E-ai-068), AI-CON-3.3 corrected: a producer's production, whatever order placed its building, is tied when the building is announced to the first need of its good in its cell's need list (the order the needs were given the cell) that has no production; a need given a cell takes the first free production of its good there, placed or not (was: unplaced only). Hard 150 000 (R3): settlers 48200 -> 49500, buildings 48200 -> 50700, generator 48043 -> 49218 (matching 48 149 -> 49 313); the four-player war R6 (E-trace-019, not a pair of this page): generator 8205 -> 8340; every other pair unchanged. Snapshot format 82 (a need's place in its cell's list) |
+| 2026-11-17 | the depot test counts warehouse sites | none | none | none | 51724 | 51 753 of 149 987 | AI-CON-6.3 (AI-CON T105, E-ai-072): a depot's site value is 0 with an own warehouse in any state within 10, a storehouse's or harbour's building site included (was: finished warehouses only). The four-player war R6 (not a pair of this page): generator 10698 -> 11964, buildings 10460 -> 12070; the Weak 150 000 generator's matching ticks 51 788 -> 51 753, after its first difference (51724 unchanged); every other pair unchanged |
+| 2026-11-17 | a served order still counts until its ware is in | none | none | none | 51724 | 51 753 of 149 987 | MIL-PROM-3.2 clarified (PROM T13, E-mil-023): the coin check's "no open order" is the building's own order list empty, whatever the good, and a served order stays on it until its ware is delivered (ECO-REQ-5.3f): open orders, wares on the roads filed with an order for it, and the warehouse helper carrying one out. R3: barracks 96422 ordered again at 49207 while its coin of 49174 was on its way; the second coin kept (120, 59)'s door waiting at 49217. The Hard 150 000 pair: settlers 49500 -> 50700, generator 49218 -> 50659 (49 313 -> 50 811 matching), buildings 50700; every other pair unchanged. |
+| 2026-11-17 | the street cursor steps on from where it is | none | none | none | 52420 | 52 462 of 149 987 | AI-CON-8.1f (AI-CON T106, E-ai-074): passing on to the next flag (no T, no building, the give-ups used up, a road built) raises the street construction's cursor by one from its current value (was: the handled flag's place plus one); after the T97 move it ends two places past the old place. R5: cursor 88 -> 90 at 51423; ours ran one place behind from then on, so the road "114,35 .. 117,34" was never built and the castle made no builder at 51721. The Weak 150 000 generator 51724 -> 52420 (51 753 -> 52 462 matching); every other pair unchanged. |

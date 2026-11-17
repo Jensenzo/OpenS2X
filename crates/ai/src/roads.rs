@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use s2_sim::grid::Point;
 use s2_sim::map::state;
 use s2_sim::movement::{free_walk_without_draws, NOT_WALKABLE};
-use s2_sim::{Carrier, CarrierTask, Command, PlayerId, Rng, World};
+use s2_sim::{Command, PlayerId, Rng, World};
 
 use crate::player::{AiPlayer, Category, Ctx};
 use crate::view::{dist, flag_of, Network};
@@ -96,6 +96,47 @@ impl RouteWork {
         self.k += 1;
         self.clear_partner();
     }
+
+    /// AI-CON-8.3 a: a run's cursor step over the building records
+    /// (creation number and field, in creation order): the building B this
+    /// run works on, or `None` when the run ends with the step. The record
+    /// with the smallest number at or above the cursor is taken; none: the
+    /// cursor restarts and the state is cleared. A planting building is
+    /// skipped (the cursor past it, the state cleared). A record above the
+    /// cursor only moves the cursor to it, and the next run takes it up.
+    /// T101: the state (k, i, t, w, X) goes with the task, not with the
+    /// building: it is cleared only when B is done (by the caller), at a
+    /// restart and at a planting building's skip, so a building taken up
+    /// after the current one's record went keeps the state it left. The
+    /// current building is the one whose number the cursor holds, so a new
+    /// building on a removed one's field is a new record.
+    pub(crate) fn take(
+        &mut self,
+        records: &[(u32, Point)],
+        planting: impl Fn(Point) -> bool,
+    ) -> Option<(u32, Point)> {
+        let cursor = self.cursor;
+        let Some(&(serial, b)) = records.iter().find(|&&(s, _)| s >= cursor) else {
+            *self = RouteWork::default();
+            return None;
+        };
+        if self.current != Some(b) || serial != cursor {
+            if planting(b) {
+                *self = RouteWork {
+                    cursor: serial + 1,
+                    ..RouteWork::default()
+                };
+                return None;
+            }
+            if serial > cursor {
+                // Only moves the cursor to it; handled next run.
+                self.cursor = serial;
+                return None;
+            }
+            self.current = Some(b);
+        }
+        Some((serial, b))
+    }
 }
 
 /// AI-CON-8.1 / 8.3 / 8.2 state.
@@ -128,9 +169,10 @@ fn walk(
 /// labelled. A field is not entered when it is farther than 4 x distance(a,
 /// b) from `b` or is not the player's; nor, unless it is `a`, when it is in
 /// `excluded`, holds a flag, is an inner road field not in `road` (the road
-/// R a second leg may walk over), is not walkable, holds a tree or a stone
-/// pile (T68: DepositBlocked, as a flag does), or a settler stands on it
-/// (T61, T64: not in a step, [`standing_fields`]). Its length is the
+/// R a second leg may walk over), is not walkable, or holds a tree or a
+/// stone pile (T68: DepositBlocked, as a flag does). T104: no settler
+/// blocks it, not even R's carrier on its idle field (the settler test of
+/// T61, T64 is withdrawn). Its length is the
 /// number of steps from `a` down the labels to `b`, each to the neighbour
 /// with the lowest label below the current one (the lowest direction among
 /// equal labels); neighbours are 1 step without a search. No draws.
@@ -167,7 +209,6 @@ pub(crate) fn walk_fields(
         .filter(|r| r.owner == player)
         .flat_map(|r| r.path[1..r.path.len() - 1].iter().copied())
         .collect();
-    let standing = standing_fields(world);
     let reach = 4 * dist(a, b);
     let mut labels: BTreeMap<Point, u32> = BTreeMap::new();
     let mut entry: BTreeMap<Point, u64> = BTreeMap::new();
@@ -193,8 +234,7 @@ pub(crate) fn walk_fields(
             if q != a
                 && (excluded.contains(&q)
                     || world.flag_at(q).is_some()
-                    || (road_fields.contains(&q) && !road.contains(&q))
-                    || standing.contains(&q))
+                    || (road_fields.contains(&q) && !road.contains(&q)))
             {
                 continue;
             }
@@ -487,56 +527,6 @@ pub(crate) fn road_stop_search(
     })
 }
 
-/// AI-CON-8.1e (T79): a worker on his fine walk back from a work spot to
-/// his own field (TRN-FREE-5.6) is in a step until he stands on it, also in
-/// a tick his walker shows him standing.
-pub(crate) fn in_a_step(job: &s2_sim::SettlerJob) -> bool {
-    matches!(
-        job,
-        s2_sim::SettlerJob::Worker {
-            work: s2_sim::Work::Return { .. },
-            ..
-        }
-    )
-}
-
-/// AI-CON-8.1e (T80): the fields on which a road's donkey stands idle.
-pub(crate) fn idle_donkey_fields(carriers: &[Carrier]) -> BTreeSet<Point> {
-    carriers
-        .iter()
-        .filter(|c| c.donkey && matches!(c.task, CarrierTask::Idle) && !c.walker.is_walking())
-        .map(|c| c.walker.at)
-        .collect()
-}
-
-/// AI-CON-8.1e (T61, T64): the fields a settler stands on, not in a step
-/// (a carrier waiting on his idle field, a worker in a timed action on his
-/// work spot; one walking through does not block a walk path). A retired
-/// road carrier is the settler he became. Builders and levellers at work on
-/// their sites are not counted (not observed). A field on which a road's
-/// donkey stands idle is not counted, even with the road's carrier standing
-/// there too (T80).
-pub(crate) fn standing_fields(world: &World) -> BTreeSet<Point> {
-    let donkeys = idle_donkey_fields(world.carriers());
-    let carriers = world
-        .carriers()
-        .iter()
-        .filter(|c| !matches!(c.task, CarrierTask::Retired))
-        .map(|c| (c.number, &c.walker));
-    let settlers = world
-        .settlers()
-        .filter(|(_, s)| !in_a_step(&s.job))
-        .map(|(_, s)| (s.number, &s.walker));
-    // AI-CON-8.1e (T95): standing there means holding the field's settler
-    // mark; another settler that walked over the field since cleared it.
-    carriers
-        .chain(settlers)
-        .filter(|(number, w)| !w.is_walking() && world.field_mark(w.at) == Some(*number))
-        .map(|(_, w)| w.at)
-        .filter(|at| !donkeys.contains(at))
-        .collect()
-}
-
 impl AiPlayer {
     /// AI-CON-8.1, every 7 ticks: one flag at a time through its attempts.
     pub(crate) fn street_construction(&mut self, ctx: &mut Ctx) {
@@ -579,7 +569,7 @@ impl AiPlayer {
         };
         // A flag without a building is skipped.
         if building_of_flag(world, self.id, flag).is_none() {
-            self.next_flag(&flags, flag);
+            self.next_flag();
             return;
         }
         let mut work = self
@@ -591,12 +581,12 @@ impl AiPlayer {
         let Some(target) =
             flag_search(world, self.id, flag, &work.excluded, Some((&network, flag)))
         else {
-            self.next_flag(&flags, flag);
+            self.next_flag();
             return;
         };
         // A flag with roads is not joined to a lone flag.
         if network.roads_at(flag) > 0 && network.roads_at(target) == 0 {
-            self.give_up(work, target, &flags);
+            self.give_up(work, target);
             return;
         }
         if work.target != Some(target) {
@@ -609,7 +599,7 @@ impl AiPlayer {
         work.attempts += 1;
         if work.attempts > EXECUTE_ATTEMPT {
             // A failed execution leaves the counter at 6: given up now.
-            self.give_up(work, target, &flags);
+            self.give_up(work, target);
             return;
         }
         if work.attempts < EXECUTE_ATTEMPT {
@@ -618,27 +608,30 @@ impl AiPlayer {
             return;
         }
         if self.execute(ctx, &work, target) {
-            self.next_flag(&flags, flag);
+            self.next_flag();
         } else {
             self.street.work = Some(work);
         }
     }
 
-    /// Take the flag after `current` in the list.
+    /// Pass on to the next flag.
     /// AI-CON-8.1d: the cursor moves past the flag; it is not wrapped here,
     /// so a flag added before the next run is the next one handled.
-    fn next_flag(&mut self, flags: &[Point], current: Point) {
-        let index = flags.iter().position(|&f| f == current).unwrap_or(0);
-        self.street.cursor = index + 1;
+    /// AI-CON-8.1f (T106, E-ai-074): it rises by one from its current value
+    /// (not the handled flag's place plus one): after the T97 move, which
+    /// already stepped it past the flag handled, it ends two places past
+    /// the old place.
+    fn next_flag(&mut self) {
+        self.street.cursor += 1;
         self.street.work = None;
     }
 
     /// AI-CON-8.1c.
-    fn give_up(&mut self, mut work: FlagWork, target: Point, flags: &[Point]) {
+    fn give_up(&mut self, mut work: FlagWork, target: Point) {
         work.excluded.push(target);
         work.give_ups += 1;
         if work.give_ups > MAX_GIVE_UPS {
-            self.next_flag(flags, work.flag);
+            self.next_flag();
         } else {
             work.reset_attempts();
             self.street.work = Some(work);
@@ -991,28 +984,12 @@ impl AiPlayer {
         // a. The building record with the smallest id >= cursor.
         let mut records: Vec<_> = self.records.values().map(|r| (r.serial, r.at)).collect();
         records.sort();
-        let cursor = self.street.route.cursor;
-        let Some(&(serial, b)) = records.iter().find(|&&(s, _)| s >= cursor) else {
-            self.street.route = RouteWork::default();
+        let records_ = &self.records;
+        let Some((serial, b)) = self.street.route.take(&records, |b| {
+            records_.get(&b).is_some_and(|r| r.protect.planting)
+        }) else {
             return;
         };
-        if self.street.route.current != Some(b) {
-            if self.records.get(&b).is_some_and(|r| r.protect.planting) {
-                self.street.route = RouteWork {
-                    cursor: serial + 1,
-                    ..RouteWork::default()
-                };
-                return;
-            }
-            if serial > cursor {
-                // Only moves the cursor to it; handled next run.
-                self.street.route.cursor = serial;
-                return;
-            }
-            self.street.route.current = Some(b);
-            self.street.route.k = 0;
-            self.street.route.clear_partner();
-        }
         let Some(s) = self.partner(ctx, b) else {
             // Done with this building.
             self.street.route = RouteWork {

@@ -31,8 +31,12 @@ pub struct Need {
     /// consumer's need list is in this order (0: no consumer).
     pub tied: u32,
     /// AI-CON-9.3 (T84): its producer was torn down and it waits to be
-    /// placed again; then it also takes a placed free production.
+    /// placed again.
     pub again: bool,
+    /// AI-CON-2.5b (T102): its place in its cell's need list, which holds
+    /// the needs in the order they were given the cell (0: no cell, or
+    /// given it in a game saved before snapshot format 83, ordered by id).
+    pub celled: u32,
 }
 
 /// A planned or existing producer of a good in a cell.
@@ -61,6 +65,8 @@ pub struct Plan {
     pub waiting: Vec<NeedId>,
     /// AI-CON-8.3 b (T51): the needs tied to a consumer so far.
     ties: u32,
+    /// AI-CON-2.5b (T102): the needs given a cell so far.
+    celled: u32,
 }
 
 impl Plan {
@@ -72,6 +78,7 @@ impl Plan {
         waiting: Vec<NeedId>,
         ties: u32,
     ) -> Self {
+        let celled = needs.iter().map(|n| n.celled).max().unwrap_or(0);
         let last = needs
             .iter()
             .map(|n| n.id)
@@ -84,6 +91,7 @@ impl Plan {
             prods,
             waiting,
             ties,
+            celled,
         }
     }
 
@@ -93,6 +101,29 @@ impl Plan {
         self.next_id = 0;
         self.waiting.clear();
         self.ties = 0;
+        self.celled = 0;
+    }
+
+    /// AI-CON-2.5b (T102): the need `id` is given `cell`: it joins the end of
+    /// the cell's need list.
+    pub fn give_cell(&mut self, id: NeedId, cell: CellPos) {
+        self.celled += 1;
+        let place = self.celled;
+        if let Some(n) = self.need_mut(id) {
+            n.cell = Some(cell);
+            n.celled = place;
+        }
+    }
+
+    /// AI-CON-2.5b (T102): the first need in `cell`'s need list (the order
+    /// the needs were given the cell; needs given it before snapshot format
+    /// 82 first, by id) that has no production yet and whose good `takes`.
+    pub fn first_need_in(&self, cell: CellPos, takes: impl Fn(u32) -> bool) -> Option<NeedId> {
+        self.needs
+            .iter()
+            .filter(|n| n.cell == Some(cell) && n.production.is_none() && takes(n.good))
+            .min_by_key(|n| (n.celled, n.id))
+            .map(|n| n.id)
     }
 
     /// AI-CON-8.3 b (T51): the next place in a consumer's need list.
@@ -180,6 +211,7 @@ impl Plan {
             created: now,
             tied: 0,
             again: false,
+            celled: 0,
         });
         // T51: a need made for a consumer joins the end of its list.
         if consumer.is_some() {
@@ -306,5 +338,6 @@ s2_sim::snap_struct!(Plan {
     next_id,
     made,
     waiting,
-    ties
+    ties,
+    celled @ 83 = 0
 });

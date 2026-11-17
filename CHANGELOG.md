@@ -8,6 +8,44 @@ the working name s2-reborn. The public repository starts with its first
 public release; the sections before it describe releases made in the
 maintainer's working repository, which have no tag or download there.
 
+## OpenS2X 0.12.0 (2026-11-17)
+
+The computer players and the battles follow the original more closely. A
+four-player war of three Strong computer players, recorded in the original,
+now plays tick for tick alike for its first 21 minutes of game time (8 in
+0.11.5); the long two-player games stay equal to the original's for 87
+minutes (Weak) and 84 minutes (Strong).
+
+### What is new
+
+- **Soldiers who go out to attack stay their building's soldiers.** The
+  building counts them while they are away and asks for no replacement; if
+  it wants fewer soldiers meanwhile, it lets them go first, and they go to a
+  storehouse when their fight is over. When a building is lost, its soldiers
+  out fighting fight on.
+- **Attacks as the original makes them:** a building far from the target
+  (more than 12 fields) sends fewer soldiers; soldiers leave one at a time
+  through their building's flag; the meeting places of attackers and
+  defenders, who arrives when, and when the first blow falls follow the
+  original.
+- **The computer players** choose their military buildings, upgrades,
+  attack targets and new production as the original does in many more
+  cases: where to upgrade when a new military building finds no place, which
+  building a need is tied to, which goods are short, which roads to build
+  next, when a storehouse is worth it, and how many coins to order.
+- **Settlers walking home** whose road is removed under them stop at the end
+  of their step and choose a new way home at once, as in the original.
+
+### For projects built on OpenS2X: breaking changes
+
+- The world snapshot version is 85 (0.11.5: 82). Saves of earlier versions
+  load; what an older game shows is listed in docs/snapshot.md (attackers
+  out at the save go back on their building's list).
+- `s2_sim::AttackStep` has two new steps, `Meeting` and `Arrived`;
+  `World::garrison` lists a building's soldiers out on an attack, not
+  present. The golden state hashes changed for the rules named in each
+  commit.
+
 ## OpenS2X 0.11.5 (2026-11-17)
 
 0.11.4 as published: the same program, with two of its documents worded for

@@ -1374,6 +1374,229 @@ fn t37_a_builder_on_his_way_goes_home_when_the_site_goes() {
     assert_ne!(s.walker.at, (16, 12), "not on the site");
 }
 
+// TRN-FREE T47a (TRN-FREE-6.4b, the road goes under him): a builder going
+// home from his removed site along the road to its flag has his walk cut to
+// the step in progress when that road is removed (here with the site's
+// flag): he ends that step on its point (A), stands in A and A + 1, and his
+// walk home starts at progress 0 in A + 2; he never reaches the old flag
+// (R6: player 1's builder 17095, the flag (41, 59) and its road removed in
+// counter 9366 while he walks (44, 59) -> (43, 59); on (43, 59)'s point in
+// 9369, standing 9369 and 9370, searching home in 9371).
+// spec: TRN-FREE-6.4b (TRN-FREE T47a)
+#[test]
+fn t47a_the_road_cut_under_a_builder_going_home() {
+    let mut world = game(&full_stock());
+    let (hut, flag) = ((16, 12), (16, 11));
+    apply_all(&mut world, vec![place(HUT, hut)]);
+    apply_all(&mut world, vec![road_cmd(HQ_FLAG, flag)]);
+    let builder = |w: &World| {
+        w.settlers()
+            .find(|(_, s)| {
+                matches!(s.job, SettlerJob::ToSite { builder: true, .. })
+                    || (matches!(s.job, SettlerJob::Leaving { .. })
+                        && Some(s.profession) == w.roles.builder)
+            })
+            .map(|(id, _)| id)
+    };
+    run_until(&mut world, 3000, |w| {
+        builder(w).is_some_and(|id| {
+            let s = w.settlers[id].as_ref().unwrap();
+            s.walker.at != HQ
+                && s.walker.next.is_some_and(|n| w.flag_at(n).is_none())
+                && s.walker.path.len() >= 4
+        })
+    });
+    let id = builder(&world).unwrap();
+    apply_all(
+        &mut world,
+        vec![Command::RemoveBuilding {
+            player: P0,
+            at: hut,
+        }],
+    );
+    let walker = |w: &World| w.settlers[id].as_ref().unwrap().walker.clone();
+    assert_eq!(walker(&world).destination(), flag, "walking on to the flag");
+    // Mid-step, with steps left after it.
+    run_until(&mut world, 200, |w| {
+        let k = walker(w);
+        k.next.is_some() && k.path.len() >= 2 && k.progress() > 0.0
+    });
+    let step_to = walker(&world).next.unwrap();
+    apply_all(
+        &mut world,
+        vec![Command::RemoveFlag {
+            player: P0,
+            at: flag,
+        }],
+    );
+    assert!(world.flag_at(flag).is_none());
+    let point = |at: Point| {
+        let (c, r) = crate::grid::field_sample(at);
+        (i64::from(c) * 1000, i64::from(r) * 1000)
+    };
+    let fine = |w: &World| {
+        w.trace_settlers()
+            .into_iter()
+            .find(|r| r.job == "Home")
+            .map(|r| r.fine)
+            .unwrap()
+    };
+    let mut arrived = None;
+    for _ in 0..40 {
+        if fine(&world) == point(step_to) {
+            arrived = Some(world.tick());
+            break;
+        }
+        world.step();
+    }
+    let a = arrived.expect("on the step's point");
+    assert_eq!(walker(&world).at, step_to);
+    world.step();
+    assert_eq!(fine(&world), point(step_to), "A + 1");
+    world.step();
+    assert_eq!(fine(&world), point(step_to), "A + 2: progress 0");
+    world.step();
+    assert_ne!(fine(&world), point(step_to), "A + 3: on his way home");
+    assert_eq!(world.tick(), a + 3);
+    assert_ne!(walker(&world).at, flag, "never on the old flag");
+}
+
+// ECO-REQ T42 (ECO-REQ-5.5, E-eco-049, corrected f0f1ecb7): a ware lying at
+// a flag for a building that is removed loses its destination at the start
+// of the next transport step (the removal's tick here): a free ware on the
+// free-ware list, before the matching and any storage run; a carrier's
+// claim on it stays.
+// spec: ECO-REQ-5.5 (ECO-REQ T42), ECO-REQ-5.4a
+#[test]
+fn t42_a_removed_buildings_ware_is_free_at_once() {
+    let mut world = game(&full_stock());
+    let (x, hut) = ((14, 9), (16, 12));
+    apply_all(&mut world, vec![flag_cmd(x), place(HUT, hut)]);
+    let hut_flag = world.flag_of(hut);
+    apply_all(
+        &mut world,
+        vec![road_cmd(HQ_FLAG, x), road_cmd(x, hut_flag)],
+    );
+    let target = world.target_of(hut).unwrap();
+    let lying = |w: &World| {
+        w.wares().find_map(|(id, ware)| {
+            (ware.target == Some(target)
+                && matches!(ware.location, crate::WareLocation::Flag(f) if f == x))
+            .then_some(id)
+        })
+    };
+    run_until(&mut world, 3000, |w| {
+        lying(w).is_some() && w.tick() % 5 == 2
+    });
+    let id = lying(&world).expect("a ware for the hut at the middle flag");
+    let claim = world.wares[id].as_ref().unwrap().claimed_by;
+    apply_all(
+        &mut world,
+        vec![Command::RemoveBuilding {
+            player: P0,
+            at: hut,
+        }],
+    );
+    assert_ne!(world.tick() % 5, 1, "no storage run in the removal's tick");
+    let w = world.wares[id].as_ref().expect("the ware lies there still");
+    assert_eq!(w.destination, None);
+    assert_eq!(w.target, None);
+    assert!(w.free_place.is_some(), "on the free-ware list");
+    assert_eq!(w.claimed_by, claim, "the claim stays");
+}
+
+// TRN-FREE T47b (TRN-FREE-6.4b, a walk home cut; E-trn-040): a settler on
+// the road walk home his own home search chose, mid-step on a road that is
+// then removed, finishes that step on its point (A) and in A, with no
+// standing tick, chooses his way home again: off the roads now, a free walk
+// to the home network's flag nearest to him, at progress 0 in A (moving in
+// A + 1); on that flag, in its arrival tick, the road walk home.
+// spec: TRN-FREE-6.4b (TRN-FREE T47b), TRN-FREE-6.4
+#[test]
+fn t47b_a_walk_home_cut_chooses_again_in_its_arrival_tick() {
+    let mut world = game(&full_stock());
+    let (x, y) = ((14, 9), (16, 11));
+    apply_all(&mut world, vec![flag_cmd(x), flag_cmd(y)]);
+    apply_all(&mut world, vec![road_cmd(HQ_FLAG, x), road_cmd(x, y)]);
+    let hq = world.target_of(HQ).unwrap();
+    let id = world.add_settler(Settler {
+        number: 77_777,
+        player: P0,
+        profession: HELPER,
+        list: crate::SettlerList::Carriers,
+        walker: crate::movement::Walker::new(y),
+        job: SettlerJob::Home { target: hq },
+        timer: 0,
+        carrying: None,
+    });
+    let mut settler = world.settlers[id].take().unwrap();
+    world.plan_home_excluding(&mut settler, None);
+    world.settlers[id] = Some(settler);
+    let walker = |w: &World| w.settlers[id].as_ref().unwrap().walker.clone();
+    let job = |w: &World| w.settlers[id].as_ref().unwrap().job.clone();
+    assert!(matches!(job(&world), SettlerJob::Home { .. }));
+    // Mid-step on the road x - y, towards one of its inner fields.
+    run_until(&mut world, 100, |w| {
+        let k = walker(w);
+        k.next.is_some_and(|n| w.flag_at(n).is_none()) && k.progress() > 0.0
+    });
+    let step_to = walker(&world).next.unwrap();
+    let inner = world.road_at(step_to).expect("on the road").path[1];
+    apply_all(
+        &mut world,
+        vec![Command::RemoveRoad {
+            player: P0,
+            at: inner,
+        }],
+    );
+    assert!(world.road_at(step_to).is_none());
+    let point = |at: Point| {
+        let (c, r) = crate::grid::field_sample(at);
+        (i64::from(c) * 1000, i64::from(r) * 1000)
+    };
+    let fine = |w: &World| {
+        w.trace_settlers()
+            .into_iter()
+            .find(|r| r.id == "77777")
+            .map(|r| r.fine)
+            .unwrap()
+    };
+    let mut arrived = None;
+    for _ in 0..40 {
+        if walker(&world).next.is_none() {
+            arrived = Some(world.tick());
+            break;
+        }
+        world.step();
+    }
+    arrived.expect("the step ended");
+    assert_eq!(walker(&world).at, step_to);
+    assert_eq!(fine(&world), point(step_to), "A: on the step's point");
+    // A: the free walk to the network flag is ordered, not the old road.
+    assert!(
+        matches!(
+            job(&world),
+            SettlerJob::Leaving {
+                step: crate::LeavingStep::ToFlag,
+                ..
+            }
+        ),
+        "{:?}",
+        job(&world)
+    );
+    let flag = walker(&world).destination();
+    assert!(world.flag_at(flag).is_some() && flag != y);
+    world.step();
+    assert_ne!(fine(&world), point(step_to), "A + 1: moving, no standing");
+    // On the flag, in its arrival tick, the road walk home is ordered.
+    run_until(&mut world, 200, |w| {
+        matches!(job(w), SettlerJob::Home { .. })
+    });
+    assert_eq!(walker(&world).at, flag);
+    assert!(walker(&world).is_walking() && !walker(&world).held);
+    assert_eq!(walker(&world).destination(), HQ);
+}
+
 // ECO-REQ T36 (ECO-REQ-2.5): the skip after a failed try is keyed by the
 // profession and the land road network of the requester's flag, not by the
 // requester: another road of the same network is skipped, a road whose
@@ -1673,6 +1896,60 @@ fn t47_on_the_back_leg_the_walk_home_starts_a_tick_later() {
     }
     let a = arrived.expect("back on the flag's point");
     // A and A + 1 standing, A + 2 the walk home at progress 0, A + 3 off it.
+    world.step();
+    assert_eq!(home(&world), point, "A + 1, tick {}", world.tick());
+    world.step();
+    assert_eq!(home(&world), point, "A + 2: progress 0");
+    world.step();
+    assert_ne!(home(&world), point, "A + 3: on his way home");
+    assert_eq!(world.tick(), a + 3);
+}
+
+// TRN-FREE-6.4b (TRN-FREE T47), removed by a computer player: the same
+// timeline when the site goes in the late part of a tick (AI-2.1a), after
+// that tick's settlers' part: he arrives in A, stands in A and A + 1, and
+// his walk home starts at progress 0 in A + 2 (R6: player 3's builder 16731
+// of the site on (33, 22), removed at counter 8307 on the approach's back
+// leg, on the flag's point at trace tick 8339, standing at 8340, walking
+// home from 8341).
+// spec: TRN-FREE-6.4b (TRN-FREE T47), AI-2.1a
+#[test]
+fn t47_on_the_back_leg_a_computer_players_removal_too() {
+    let mut world = game(&without(&full_stock(), PLANK));
+    let hut = (16, 12);
+    apply_all(&mut world, vec![place(HUT, hut)]);
+    apply_all(&mut world, vec![road_cmd(HQ_FLAG, (16, 11))]);
+    run_until(&mut world, 3000, |w| {
+        w.approach_left(hut)
+            .is_some_and(|a| a.clock == a.out_ticks + 1 && a.back_ticks > 2)
+    });
+    world.step_then(|_, _, _, _| {
+        vec![Command::RemoveBuilding {
+            player: P0,
+            at: hut,
+        }]
+    });
+    assert!(world.building_at(hut).is_none());
+    let home = |world: &World| {
+        world
+            .trace_settlers()
+            .into_iter()
+            .find(|r| r.job == "Home")
+            .map(|r| r.fine)
+            .unwrap()
+    };
+    let flag = world.terrain().neighbour(hut, 1).unwrap();
+    let (c, r) = crate::grid::field_sample(flag);
+    let point = (i64::from(c) * 1000, i64::from(r) * 1000);
+    let mut arrived = None;
+    for _ in 0..40 {
+        world.step();
+        if home(&world) == point {
+            arrived = Some(world.tick());
+            break;
+        }
+    }
+    let a = arrived.expect("back on the flag's point");
     world.step();
     assert_eq!(home(&world), point, "A + 1, tick {}", world.tick());
     world.step();

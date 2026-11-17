@@ -448,13 +448,34 @@ impl AiPlayer {
                     .prods
                     .iter_mut()
                     .find(|p| p.good == good && p.cell == cell && p.building.is_none());
-                match planned {
-                    Some(p) => p.building = Some(b.at),
+                let production = match planned {
+                    Some(p) => {
+                        p.building = Some(b.at);
+                        p.id
+                    }
                     None => {
                         let id = self.plan.add_production(good, cell, None);
                         if let Some(p) = self.plan.prods.iter_mut().find(|p| p.id == id) {
                             p.building = Some(b.at);
                         }
+                        id
+                    }
+                };
+                // AI-CON-2.5b (T102): a production given a cell, whatever
+                // order placed its building, is tied to the first need in
+                // the cell's need list whose good it supplies and that has
+                // no production yet.
+                let untied = self
+                    .plan
+                    .production(production)
+                    .is_some_and(|p| p.need.is_none());
+                let first = self.plan.first_need_in(cell, |g| config.supplies(good, g));
+                if let (true, Some(need)) = (untied, first) {
+                    if let Some(p) = self.plan.prods.iter_mut().find(|p| p.id == production) {
+                        p.need = Some(need);
+                    }
+                    if let Some(n) = self.plan.need_mut(need) {
+                        n.production = Some(production);
                     }
                 }
             }

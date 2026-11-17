@@ -110,7 +110,8 @@ snap_struct!(crate::plan::Need {
     food,
     created,
     tied,
-    again
+    again,
+    celled @ 83 = 0
 });
 snap_struct!(crate::plan::Production {
     id,
