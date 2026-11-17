@@ -137,6 +137,25 @@ attacking and defending are plan 4.4.
      ends he is homeless and goes to a warehouse (`MIL-attack-combat.md` MIL-ATK-4.4, TRN-FREE-6.4). One
      the building still keeps becomes present again the moment he arrives back (no test of the wanted
      number then); a later pass releases a surplus by step 3.
+     **A released soldier who is away, case by case (2026-11-17 day, Q-1071; E-mil-019, code reading,
+     high).** A soldier carries four links: his home building, his attack target, the opponent of the
+     fight he is in, and, for an interceptor, the building he defends (MIL-ATK-3). Releasing him clears
+     the home link only; the other three stay as they are. So:
+     - (a) **An interceptor in defense wait** (MIL-ATK-3.4) keeps the link to the building he defends.
+       He waits on while that building has attackers; when it has none he drops that link and turns
+       to walk home, and with no home he then has no link left and is sent home as a settler without
+       a building (MIL-ATK-4.4): a warehouse.
+     - (b) **An attacker or interceptor still inside, waiting to walk out** (MIL-ATK-4.1) is not
+       present (he has his errand's link), so he can be released. His wait to walk out tests the
+       release cooldown **of his home building**; with no home he skips it and walks out in his next
+       update, without waiting for any cooldown and without setting one, and goes on with his errand.
+     - (c) **His home building removed** (torn down, burnt, or taken and rebuilt for the conqueror): the
+       building's soldier list is emptied by releasing every soldier on it in the same way. One standing
+       in it idle (present) is made to leave and, homeless, goes to a warehouse (`TRN-free-walk.md`
+       TRN-FREE-6.4); every
+       other one loses only his home link. A defender **in a fight** therefore fights on (his opponent's
+       link remains) and goes to a warehouse when the fight is over and he has no link left; he is not
+       sent home at once.
   3. if `d` is still below 0, at least one soldier is left and the building's
      release cooldown is 0: **one** present soldier is released (MIL-SOL-4.5)
      and the cooldown is set to 40.
@@ -356,6 +375,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-002 | code reading | | settings defaults and commands (`toggle-soldiers-out`, MIL-SOL-7.1's seven) |
 | E-mil-002 | strings | | dialog labels |
 | E-mil-008, E-trace-019 | code reading and recording | R6 settlers table (player 3's door field (25, 25)) | MIL-SOL-6.2, 6.3, T20 |
+| E-mil-019 | code reading | (session 2026-11-17 day): the soldier's update and its four links, the interceptor link, the release, the soldier list emptied when its building goes | MIL-SOL-4.4 (a) to (c) (Q-1071); MIL-ATK-4.4's fourth link |
 | E-trace-002 | live read of the running game | `settlers.csv.gz` (objects 90186, 90187), `specs/traces/original.s2trace.gz` ticks 1 .. 5000 | present soldiers on the door field; player 1's gone at trace tick 609 |
 | E-sim-001 | code reading | | soldier death outside a fight (ECO-WORK-6) |
 | E-trace-013 | live read of the running game | TRACED plan R3, recorded 2026-10-27 from 01:18, MP_2P_Storm_Coast, player 1 computer Hard, every tick from counter 0, heap dumps every 500 | the Hard game tick by tick (T19) |

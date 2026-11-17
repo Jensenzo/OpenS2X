@@ -77,8 +77,8 @@ impl AiPlayer {
             }
         }
         // Hook W25 (reborn.ai_setDeepen): an exhausted mine of a type with
-        // a deepening is deepened, or kept for one, instead (none in the
-        // original's rules: torn down as below).
+        // a deepening is deepened, or kept for one (W25b: or torn down as
+        // below), instead (none in the original's rules: torn down as below).
         if let Some(deepening) = world.deepening(rec.building_type) {
             let done = world.mine_deepening(rec.at);
             let other_under_way = self
@@ -97,6 +97,7 @@ impl AiPlayer {
                 food,
                 other_under_way,
                 world.can_deepen(self.id, rec.at),
+                !cfg.project_rules.deepen_tears_down,
             );
             match fate {
                 crate::project::MineFate::TearDown => {}

@@ -63,7 +63,8 @@ pub fn flag_menu(ctx: &Ctx, flag: Point) -> Panel {
 }
 
 /// A portrait button: its picture's top-left corner, the highlighted
-/// picture's, its tooltip key, action and whether it is enabled.
+/// picture's, its tooltip key, action and whether it is enabled. The
+/// pictures are `uiElements3`'s, but the pave button's (W34).
 pub(crate) type Portrait = ([u32; 2], [u32; 2], &'static str, Action, bool);
 
 /// UI-GAME-3.1: the flag menu's buttons, the smart cursor's first.
@@ -131,10 +132,20 @@ pub(crate) const PORTRAIT_STEP: f32 = 52.0;
 
 pub(crate) fn portrait_row(p: &mut Panel, ctx: &Ctx, rows: Vec<Portrait>) {
     for (i, (picture, lit, key, action, enabled)) in rows.into_iter().enumerate() {
+        // W34: the pave button may show a project's picture.
+        let (atlas, picture, hover) = match action {
+            Action::Command(Command::PaveRoad { .. }) => {
+                let pave = crate::extend::button_pictures().and_then(|b| b.pave.as_ref());
+                let (atlas, at, hover) =
+                    crate::extend::pave_cell(pave, crate::extend::project_pictures());
+                (atlas, at, hover.map_or(Hover::None, Hover::Swap))
+            }
+            _ => (Atlas::Elements3, picture, Hover::Swap(lit)),
+        };
         p.button(
-            Atlas::Elements3,
+            atlas,
             [picture[0], picture[1], 48, 48],
-            Hover::Swap(lit),
+            hover,
             [
                 PORTRAIT_FIRST[0] + PORTRAIT_STEP * i as f32,
                 PORTRAIT_FIRST[1],
@@ -432,8 +443,9 @@ pub(crate) fn road_menu_rows(ctx: &Ctx, field: Point) -> Vec<Portrait> {
         ));
     }
     // Hook W19 (a project's, docs/extending.md "Paved roads"): with a paving
-    // rule, the road menu has a pave button (the flag-with-hammer picture),
-    // usable while the command would be accepted.
+    // rule, the road menu has a pave button (the flag-with-hammer picture,
+    // or a project's, W34: `portrait_row`), usable while the command would
+    // be accepted.
     if ctx.world.paving_rule().is_some()
         && ctx
             .world

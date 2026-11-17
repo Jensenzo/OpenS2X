@@ -22,7 +22,7 @@ simulation only through its public API (`docs/api.md`).
 | Paved roads | a road paved with a good per field, carried there over the roads; its carriers and donkeys walk it faster | `reborn.cfg_setPaving` (in an overlay), `Command::PaveRoad`, `World::can_pave`, `World::is_paved`, `World::paving_work` |
 | The look of a paved road | a project's street textures for paved roads (hook W21) | `RenderOptions::paved_road` (`StreetLook`) |
 | Deepening a mine | an exhausted mine of a type the overlay names is deepened for material a builder works; part of the ore comes back and the mine eats more food per product | `reborn.bp_setDeepening`, `reborn.bp_addDeepeningCost`, `reborn.bp_addDeepeningFood` (in an overlay), `Command::DeepenMine`, `World::can_deepen`, `World::mine_deepening` |
-| The pictures of the hooks' buttons | the Deepen and Next recipe buttons of a building's window drawn with a 48 x 48 cell of the project's picture | `Extensions::button_pictures` (`ButtonPictures`, `ButtonPicture`) |
+| The pictures of the hooks' buttons | the Deepen and Next recipe buttons of a building's window and the road menu's Pave button drawn with a 48 x 48 cell of the project's picture | `Extensions::button_pictures` (`ButtonPictures`, `ButtonPicture`) |
 | A message when a project's rule finishes | the player's message when a mine's deepening is done or a road is paved, in the project's words (hook W24) | `Extensions::messages` (`ProjectEvent`) |
 | A whole property script | a file of the same path in an asset folder (below) | `GameDir::with_overlay` |
 | Models, textures, sounds, interface pictures, fonts, settings files | asset folders laid out like the install (`data/...`, any case); a file there takes the place of the install's file of the same path; the last folder wins | `GameDir::with_overlay`, `Extensions::asset_folders`, `--assets <dir>` |
@@ -189,25 +189,27 @@ their own accord (the original has none of these). An overlay tells them
 when (hook W25); each call is optional and none is the default:
 
 ```lua
--- deepen an exhausted mine while 6 or more food is in stock
+-- deepen an exhausted mine while 6 or more food is in stock (a second
+-- value false: tear down a mine not deepened now, W25b)
 reborn.ai_setDeepen(6)
 -- pave the busiest road once its traffic average is 3 or more and more
 -- than 10 stones beyond the road's cost are in stock
 reborn.ai_setPaving(3, 10)
 -- the smelter works its second recipe (index 1) while more than 40 tools
--- (a group good: its members together) are in stock, else its first
+-- (a group good: its members above their kept stock) are in stock, else
+-- its first
 reborn.ai_setRecipeRule(building_smelter, 1, good_tools, 40)
 ```
 
 | Call | What a computer player does |
 |---|---|
-| `reborn.ai_setDeepen(food_at_least)` | when its destruction run (AI-CON-9.2, every 41 ticks, one building at a time) comes to an exhausted mine it would tear down, and the mine's type has a deepening (W15) with deepenings left: it sends `Command::DeepenMine` if its stock of fish, meat and bread together is at least `food_at_least`, no other mine of its own is being deepened and the command would be accepted; otherwise it **keeps** the mine for a later run. A mine being deepened is kept; a mine at its most deepenings is torn down as in the original |
+| `reborn.ai_setDeepen(food_at_least[, keep_waiting])` | when its destruction run (AI-CON-9.2, every 41 ticks, one building at a time) comes to an exhausted mine it would tear down, and the mine's type has a deepening (W15) with deepenings left: it sends `Command::DeepenMine` if its stock of fish, meat and bread together is at least `food_at_least`, no other mine of its own is being deepened and the command would be accepted; otherwise it **keeps** the mine for a later run, or with `keep_waiting` `false` (W25b, since 0.11.4) tears it down as the original does (AI-CON-9.3). A mine being deepened is kept; a mine at its most deepenings is torn down as in the original |
 | `reborn.ai_setPaving(traffic_at_least, reserve)` | every 97 counts (shifted per player as its parts are): while none of its roads is being paved, it paves its land road of the highest traffic average (TRN-CARRY-6.1; the lowest object number of equal ones) that can be paved, when that average is at least `traffic_at_least` and its stock of the paving good (`reborn.cfg_setPaving`'s) is more than `reserve` plus the road's cost (the good per field times the path's fields): `Command::PaveRoad` through the road's first inner field |
-| `reborn.ai_setRecipeRule(building, index, good, above)` | every 97 counts: each of its finished buildings of the type works recipe `index` (0 the first) while its stock of `good` is more than `above` (a group good of W16: its members together), else the first; it sends `Command::ChooseRecipe` when the building's choice differs. The last call for a type wins; an index the type's set has not got does nothing |
+| `reborn.ai_setRecipeRule(building, index, good, above)` | every 97 counts: each of its finished buildings of the type works recipe `index` (0 the first) while its stock of `good` is more than `above` (a group good of W16: its members together, each counting only its stock above its kept stock, `reborn.cfg_setRecipeKeep`, which is what its warehouses would hand out; W25b, since 0.11.4: until 0.11.3 the plain sum), else the first; it sends `Command::ChooseRecipe` when the building's choice differs. The last call for a type wins; an index the type's set has not got does nothing |
 
 The stock is the computer player's own count of its warehouses (AI-CON-1.7),
 as for its other decisions. `s2_rules::RuleSet::ai_project`
-(`AiProjectRules { deepen_food, paving, recipes }`) holds the calls, and
+(`AiProjectRules { deepen_food, deepen_tears_down, paving, recipes }`) holds the calls, and
 `AiConfig::project_rules` takes it from the rules; it is not saved (it
 comes from the rules, as the rest of the configuration). Without any call
 nothing of it runs: the golden hashes and the fidelity pairs are the
@@ -507,7 +509,9 @@ What it does not cover:
 
 The Deepen button (W15) and the Next recipe button (W20) of a building's
 window are drawn with the boat-and-ship switch's picture (`uiElements5`
-(256, 88)) unless the project names a picture of its own for each:
+(256, 88)), and the road menu's Pave button (W19) with the flag-with-hammer
+portrait (`uiElements3` (368, 160), lit (416, 160)), unless the project
+names a picture of its own for each (`pave` since 0.11.4, W34):
 
 ```rust
 use s2_viewer::{ButtonPicture, ButtonPictures, Extensions};
@@ -524,6 +528,11 @@ let extensions = Extensions {
             at: [48, 0],
             hover: None,
         }),
+        pave: Some(ButtonPicture {
+            file: "frontier_buttons.dds".into(),
+            at: [96, 0],
+            hover: Some([96, 48]),
+        }),
     },
     ..Default::default()
 };
@@ -534,7 +543,7 @@ of the install's interface sheets (`uiElements4.dds`) or a file anywhere
 in an asset folder. The button is the 48 x 48 cell at `at` of it, and while
 the pointer is over it the cell at `hover` (none: the same); greyed as any
 button while it cannot be used. A picture that is not found leaves the
-button with the switch's picture. Each picture is loaded once with the
+button with its picture as before. Each picture is loaded once with the
 interface's atlases.
 
 ### Messages when a project's rule finishes

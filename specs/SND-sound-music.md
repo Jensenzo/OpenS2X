@@ -86,6 +86,17 @@ map. Four volume settings exist: master, music, UI, sound.
   (`ui_briefing_screen_won`) and defeat screen (`!You have lost the Map!`,
   `ui_briefing_screen_lost`); the credits start `Credits Music`; the
   menus start `Intro Music`. Confidence: high (code).
+  **Which files (2026-11-17 day, E-snd-005: code reading and the definitions):** each of these
+  definitions names one file, so no choice is made (SND-1.2): `Winning Jingle` plays
+  `music/Jingle_Good.mp3`, `Loosing Jingle` `music/Jingle_Bad.mp3`, `Battle Music`
+  `music/Battle_loop.wav` (looping, SND-3.4). An attack on the local player brings two sounds:
+  the "You are under attack!" row is a military message, so it plays `uiMessage1`
+  (`uiMessage1.wav`) when it is added, only while the messages window is shown (`UI-ingame.md`
+  UI-GAME-11.4; a repeated attack within 60 timer units only resets the row and adds nothing, so
+  it sounds once); and the fight itself starts the battle loop (SND-3.4). The original keeps no
+  sound log (its log files are crash dumps and network logs), and the file-open trace cannot tell
+  them apart (it opens these files at start-up), so the files rest on the code and the
+  definitions; not heard in a recording.
 - **SND-2.3 Audibility (corrected 2026-10-17, E-pt5-001).** A positioned
   sound is played only when the **game speed** setting is at most 3 (always
   true for the three speeds of the game; looping sounds skip this test) and
@@ -377,6 +388,7 @@ map. Four volume settings exist: master, music, UI, sound.
 | E-snd-002 | code reading | `fmod.dll` 3.75 | channels, roll-off, channel choice, footstep gate, follow camera |
 | E-snd-003 | code reading | the ambient player, the choice of the four, the level and its easing, the frame seconds, the sound update | SND-7.4, 7.T1, 7.T2 |
 | E-snd-004 | code reading | (= E-gfx-039): the listener up vector; fmod.dll: the listener attributes call (right = up x forward), software 3D update (pan = 128 + 128 n . R), gains (mixed level (L + R) / 2), pan table = min(255, floor(16 sqrt p)) | SND-8.1, 8.3a, 2.6b, T9 |
+| E-snd-005 | code reading and data | (session 2026-11-17 day): the music slots' definitions in `sounds.lua` (one file each), the message sound by kind, the original's log files | SND-2.2 "Which files" |
 | E-snd-001a | data | `data/scripts/properties/sounds.lua`, `data/sound/**` (241 files), `character/settler_animations.xml`, `settings/buildings.xml` | definitions, files, animation events |
 | E-snd-001b | the program's data | `S2DNG.exe`: the Lua binding table, the factor 30.0 | setters and the audibility factor |
 

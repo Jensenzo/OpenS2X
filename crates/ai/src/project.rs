@@ -28,7 +28,8 @@ pub enum MineFate {
 /// mine's type has a deepening and the mine has deepenings left, `under_way`
 /// one of it is being done, `food` the player's fish, meat and bread in
 /// stock, `other_under_way` another mine of his is being deepened, `can`
-/// `World::can_deepen`.
+/// `World::can_deepen`, `keep_waiting` a mine not deepened now is kept for
+/// a later run (W25b: else torn down, as the original's rule does).
 pub fn mine_fate(
     food_at_least: Option<u32>,
     left: bool,
@@ -36,6 +37,7 @@ pub fn mine_fate(
     food: u32,
     other_under_way: bool,
     can: bool,
+    keep_waiting: bool,
 ) -> MineFate {
     let Some(at_least) = food_at_least else {
         return MineFate::TearDown;
@@ -48,8 +50,10 @@ pub fn mine_fate(
     }
     if can && !other_under_way && food >= at_least {
         MineFate::Deepen
-    } else {
+    } else if keep_waiting {
         MineFate::Keep
+    } else {
+        MineFate::TearDown
     }
 }
 
@@ -89,6 +93,25 @@ pub fn road_to_pave(
                 .then(a.number.cmp(&b.number))
         })?;
     (u64::from(stock) > u64::from(reserve) + u64::from(best.cost)).then_some(best.number)
+}
+
+/// What a recipe rule counts of `good`: the player's stock of it, or of a
+/// group good the sum over its `members` of each one's stock above the
+/// stock kept back from recipes (`reborn.cfg_setRecipeKeep`; W25b: what the
+/// warehouses would hand out).
+pub fn rule_stock(
+    good: u32,
+    members: Option<&[u32]>,
+    stock: impl Fn(u32) -> u32,
+    kept: impl Fn(u32) -> u32,
+) -> u32 {
+    match members {
+        Some(members) => members
+            .iter()
+            .map(|&g| stock(g).saturating_sub(kept(g)))
+            .sum(),
+        None => stock(good),
+    }
 }
 
 /// The recipe a recipe rule wants: `index` while the player holds more
@@ -164,11 +187,13 @@ impl AiPlayer {
             if rule.index as usize >= set.len() {
                 continue;
             }
-            // A group good counts its members.
-            let have: u32 = match cfg.sim.recipe_groups.get(&rule.good) {
-                Some(members) => members.iter().map(|&g| self.econ.stock(g)).sum(),
-                None => self.econ.stock(rule.good),
-            };
+            // A group good counts its members above their kept stock (W25b).
+            let have = rule_stock(
+                rule.good,
+                cfg.sim.recipe_groups.get(&rule.good).map(Vec::as_slice),
+                |g| self.econ.stock(g),
+                |g| cfg.sim.recipe_keep.get(&g).copied().unwrap_or(0),
+            );
             let wanted = wanted_recipe(have, rule.above, rule.index);
             let mine: Vec<_> = world
                 .buildings()
@@ -202,13 +227,78 @@ mod tests {
     #[test]
     fn the_deepening_rule_decides_an_exhausted_mines_fate() {
         use MineFate::*;
-        assert_eq!(mine_fate(None, true, false, 50, false, true), TearDown);
-        assert_eq!(mine_fate(Some(6), true, false, 6, false, true), Deepen);
-        assert_eq!(mine_fate(Some(6), true, false, 5, false, true), Keep);
-        assert_eq!(mine_fate(Some(6), true, false, 9, true, true), Keep);
-        assert_eq!(mine_fate(Some(6), true, false, 9, false, false), Keep);
-        assert_eq!(mine_fate(Some(6), true, true, 9, false, false), Keep);
-        assert_eq!(mine_fate(Some(6), false, false, 9, false, false), TearDown);
+        assert_eq!(
+            mine_fate(None, true, false, 50, false, true, true),
+            TearDown
+        );
+        assert_eq!(
+            mine_fate(Some(6), true, false, 6, false, true, true),
+            Deepen
+        );
+        assert_eq!(mine_fate(Some(6), true, false, 5, false, true, true), Keep);
+        assert_eq!(mine_fate(Some(6), true, false, 9, true, true, true), Keep);
+        assert_eq!(mine_fate(Some(6), true, false, 9, false, false, true), Keep);
+        assert_eq!(mine_fate(Some(6), true, true, 9, false, false, true), Keep);
+        assert_eq!(
+            mine_fate(Some(6), false, false, 9, false, false, true),
+            TearDown
+        );
+    }
+
+    // W25b (reborn.ai_setDeepen(food, false)): a mine not deepened in this
+    // run is torn down, as the original's rule does (AI-CON-9.3), not kept:
+    // food below the line, another mine being deepened, the command refused;
+    // one being deepened is kept, one deepened now as before.
+    // spec: none (hook W25b, a project's rule for the computer players)
+    #[test]
+    fn without_waiting_a_mine_not_deepened_now_is_torn_down() {
+        use MineFate::*;
+        assert_eq!(
+            mine_fate(Some(6), true, false, 5, false, true, false),
+            TearDown
+        );
+        assert_eq!(
+            mine_fate(Some(6), true, false, 9, true, true, false),
+            TearDown
+        );
+        assert_eq!(
+            mine_fate(Some(6), true, false, 9, false, false, false),
+            TearDown
+        );
+        assert_eq!(mine_fate(Some(6), true, true, 9, false, false, false), Keep);
+        assert_eq!(
+            mine_fate(Some(6), true, false, 6, false, true, false),
+            Deepen
+        );
+        assert_eq!(
+            mine_fate(None, true, false, 5, false, true, false),
+            TearDown
+        );
+    }
+
+    // W25b (reborn.ai_setRecipeRule with a group good): each member counts
+    // only its stock above its kept stock, so with every member at its kept
+    // stock and a plain sum above the line the rule keeps the first recipe.
+    // spec: none (hook W25b, a project's rule for the computer players)
+    #[test]
+    fn a_group_rule_counts_what_the_warehouses_would_send() {
+        let stock = |g: u32| [0, 30, 30, 30][g as usize];
+        let kept = |g: u32| if g == 3 { 20 } else { 30 };
+        let tools = [1, 2, 3];
+        let have = rule_stock(9, Some(&tools[..2]), stock, kept);
+        assert_eq!(have, 0, "every member at its kept stock");
+        assert_eq!(wanted_recipe(have, 50, 1), 0, "the plain sum 60 would melt");
+        assert_eq!(rule_stock(9, Some(&tools), stock, kept), 10);
+        assert_eq!(
+            rule_stock(9, Some(&tools), stock, |_| 40),
+            0,
+            "never below 0"
+        );
+        assert_eq!(
+            rule_stock(2, None, stock, kept),
+            30,
+            "a plain good: its stock"
+        );
     }
 
     // W25 (reborn.ai_setPaving): the busiest pavable road at or above the

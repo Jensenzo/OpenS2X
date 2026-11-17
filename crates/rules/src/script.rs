@@ -866,7 +866,8 @@ pub fn function_names() -> Vec<String> {
 /// `reborn.cfg_setRecipeKeep(good, count)` sets `RuleSet::recipe_keep`. W19:
 /// `reborn.cfg_setPaving(good, per_field, speed_percent)` sets
 /// `RuleSet::paving`. `reborn.dist_addConsumer(good, building, weight)` adds
-/// to `RuleSet::dist_consumers`. W25: `reborn.ai_setDeepen(food_at_least)`,
+/// to `RuleSet::dist_consumers`. W25: `reborn.ai_setDeepen(food_at_least)`
+/// (W25b: `, keep_waiting`, `false` tearing down a mine not deepened now),
 /// `reborn.ai_setPaving(traffic_at_least, reserve)` and
 /// `reborn.ai_setRecipeRule(building, index, good, above)` fill
 /// `RuleSet::ai_project`.
@@ -992,10 +993,15 @@ fn install_project(lua: &Lua, state: &Shared) -> mlua::Result<()> {
         },
     )?;
     // W25: the computer players' use of the project's rules.
-    r.def("ai_setDeepen", |rules, (Count(food),): (Count,)| {
-        rules.ai_project.deepen_food = Some(food);
-        Ok(())
-    })?;
+    r.def(
+        "ai_setDeepen",
+        |rules, (Count(food), keep_waiting): (Count, Option<Flag>)| {
+            rules.ai_project.deepen_food = Some(food);
+            // W25b: `false` tears down a mine not deepened now.
+            rules.ai_project.deepen_tears_down = matches!(keep_waiting, Some(Flag(false)));
+            Ok(())
+        },
+    )?;
     r.def(
         "ai_setPaving",
         |rules, (Count(traffic), Count(reserve)): (Count, Count)| {
@@ -1303,8 +1309,8 @@ mod tests {
 
     /// Hook W25: the three `reborn.ai_set*` calls fill the computer
     /// players' rules; an unknown good is an error; without overlays there
-    /// are none.
-    // spec: none (hook W25, docs/extending.md "The computer players and a project's rules")
+    /// are none. W25b: `ai_setDeepen`'s second value.
+    // spec: none (hooks W25 and W25b, docs/extending.md "The computer players and a project's rules")
     #[test]
     fn an_overlay_sets_the_computer_players_rules() {
         let main = "good_stone = properties.gp_create(\"00000002\")
@@ -1321,6 +1327,10 @@ mod tests {
         let (rules, report) =
             run_with_overlays(source(), "main.lua", std::slice::from_ref(&ai)).unwrap();
         assert_eq!(rules.ai_project.deepen_food, Some(6));
+        assert!(
+            !rules.ai_project.deepen_tears_down,
+            "kept for later, as W25"
+        );
         assert_eq!(rules.ai_project.paving, Some((3, 10)));
         assert_eq!(
             rules.ai_project.recipes,
@@ -1341,6 +1351,19 @@ mod tests {
         assert!(err.0.contains("unknown good"), "{}", err.0);
         let (plain, _) = run(source(), "main.lua").unwrap();
         assert!(!plain.ai_project.any());
+        // W25b: a second value `false` tears down a mine not deepened now.
+        for (code, tears_down) in [
+            (&b"reborn.ai_setDeepen(6, false)"[..], true),
+            (&b"reborn.ai_setDeepen(6, true)"[..], false),
+        ] {
+            let deepen = Overlay {
+                name: "deepen".into(),
+                code: code.to_vec(),
+            };
+            let (rules, _) = run_with_overlays(source(), "main.lua", &[deepen]).unwrap();
+            assert_eq!(rules.ai_project.deepen_food, Some(6));
+            assert_eq!(rules.ai_project.deepen_tears_down, tears_down);
+        }
     }
 
     /// Hook W12: the types an overlay creates are the project's, an

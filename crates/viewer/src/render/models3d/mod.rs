@@ -460,6 +460,14 @@ impl Palettes {
         self.capacity
     }
 
+    /// F55: the slots taken (the identity slot 0 not counted) and the slots
+    /// given back, free for the next [`Self::alloc`] (`--bench`, tests).
+    pub fn slots(&self) -> (usize, usize) {
+        let free = self.free.len() + self.freed.len();
+        let made = self.used / anim::MAX_BONES;
+        (made.saturating_sub(1 + free), free)
+    }
+
     /// Write the palette at `offset`.
     pub fn write(&mut self, offset: u32, bones: &Bones) {
         let at = offset as usize;

@@ -11,7 +11,11 @@
 # 3. records the release in docs/releases.txt (how many implementation lines
 #    of the progress log it covers), regenerates PROGRESS-LOG.md and the
 #    README's fidelity chart (docs/images/fidelity.svg);
-# 4. runs cargo fmt --check, clippy and the tests;
+# 4. runs cargo fmt --check, clippy and the tests, and the public check over
+#    the whole tree (scripts/public-check.py: the tag is what the public copy
+#    is exported from, and a tag is never moved, so a finding must stop the
+#    release here; 0.11.4's documents named an internal finding and could
+#    not be exported);
 # 5. commits those files by path and makes the annotated tag vX.Y.Z;
 # 6. writes the release notes, target/dist/OpenS2X-X.Y.Z-notes.md.
 #
@@ -36,6 +40,7 @@ if ! git diff --quiet HEAD -- crates docs scripts Cargo.toml Cargo.lock CHANGELO
   echo "uncommitted changes under crates/, docs/, scripts/, Cargo files or CHANGELOG.md"; exit 2
 fi
 python3 -B scripts/changelog.py --check "$version" || exit 2
+python3 -B scripts/public-check.py . || { echo "the public check found something (above): fix it before the release"; exit 2; }
 
 sed -i "0,/^version = \".*\"/s//version = \"$version\"/" Cargo.toml
 cargo update --workspace --offline >/dev/null 2>&1 || cargo update --workspace >/dev/null

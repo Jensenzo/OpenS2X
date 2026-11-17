@@ -180,7 +180,7 @@ AI-construction (AI-CON-1.8).
   the next building, made at once; corrected 2026-10-27 night: no material
   was "ends the order", E-ai-024). Below 0: after no site the AI
   tries instead to upgrade an own military building in the order's cell (or
-  within 6 fields in point mode); if one is upgraded the target counts as
+  within the order's radius in point mode; AI-MIL-4.4a); if one is upgraded the target counts as
   done and P is halved, else the target is cancelled and P rises by 1; after
   no material nothing happens: the target stays current and remembered, and
   the next run past the cooldown finishes it (3.2, without a penalty change
@@ -197,6 +197,28 @@ AI-construction (AI-CON-1.8).
   the heap dump of 4500: player 1's slot holds attempts 3, no building type, the time of the
   re-order of trace tick 4245). Confidence: high (the handler's call with the attempt count; the
   heap record; building rows equal to trace tick 7030 instead of 4680 with it). Test T28.
+- **AI-MIL-4.4a The upgrade instead: which building, and its tests (2026-11-17 day, E-ai-073:
+  code reading, the four-player recording E-trace-019, an experiment build).**
+  - **The fields, in order.** Cell mode: the 256 fields of the order's 16 x 16 cell (AI-CON-1.1),
+    row by row from the cell's top-left field (y from the cell's first row, x from its first column
+    within each row). Point mode: the fields around the order's point in the ring order of
+    `MAP-grid-geometry.md` MAP-GRID-3 (the point first), up to **the order's own radius** (12 for a
+    target towards a position, 20 for a need without a cell, AI-MIL-4.1), not 6 fields as written
+    before. Fields outside the map are skipped.
+  - **The tests, per field.** A building stands on the field (its own field); it is the player's own;
+    its type has a territory range; it can be upgraded (`MIL-building-upgrade.md` MIL-UPG-1.2:
+    finished, no upgrade running, no builder still linked, a next type, the size fits); and the next
+    type's construction costs (frame goods plus building goods, **once**) are in stock (stock(g) of
+    `AI-construction.md` AI-CON-1.7: every good's stock >= its amount).
+  - **What is not tested, unlike the 37-tick run of AI-MIL-4.5:** the building's level against the
+    upgrade level of AI-MIL-4.3, and the doubled costs. So a guard house far from any enemy (upgrade
+    level 0) is still upgraded here, with 3 planks and 5 stones in stock for its tower.
+  - The first field that passes is upgraded (one upgrade command, as a player's); the walk ends there.
+    None passes: the target is cancelled (P + 1), as above.
+  - The upgrade then runs as any other (`MIL-building-upgrade.md` MIL-UPG-2): its levelling part
+    requests the leveller in the building's first update after the command.
+  - Confidence: high (the two walks and their tests read from the code and compared with the 37-tick
+    run's; the case of T32 measured). Test T32.
 - **AI-MIL-4.5 Upgrades (every 37 ticks, one military building per run in
   list order).** An own finished non-depot military building that can be
   upgraded (`MIL-building-upgrade.md` MIL-UPG-1.2: next type in the upgrade
@@ -462,6 +484,7 @@ AI-construction (AI-CON-1.8).
 | T29 | AI-MIL-2.2 (countdown): a computer player whose allocation grows at run r (medium m to 0.3 f), soldiers in stock above S / 128 at every later run | the runs that change the allocation | r, r + 50, r + 100, ... (each change 50 runs after the one before; the countdown 50 after a change, 49 after the next run, ..., 0 at run r + 50, which tests and changes); R6 player 1: medium 0.586 -> 0.733 at the run of counter 7997, its fortress (56, 50) then wanting 7 and asking at 8000 and 8021. With 51 runs apart the fourth change would come three runs (159 ticks) later |
 | T30 | AI-MIL-5.5 precisions: (a) a cell with C = 3, A = 5 whose target is taken; (b) mode Safe, candidates in order g1 (want 6), g2 (want 2), g3 (want 7), 4 soldiers in stock, avail 1 against each, C = 0, no pending expansion; (c) the same in mode Normal; (d) a run whose target cell has no candidate | the cell's counters; the expansion target | (a) C = 1, A = 2; (b) g1 and g3 skipped, g2 tested and not attacked (need 2 > 1): A + 1, expansion target at g2 (not g3); (c) all three tested, none attacked: expansion at g3; (d) A + 1, no expansion target |
 | T31 | AI-MIL-5.2 (the neighbour gate, column order), 5.3 (the headquarters' enemy distance -1), 5.5: E-trace-019 (R6, Keyhole `MP_4P_Fight`, players 1 to 3 Hard), player 2 (headquarters (52, 24)) | its attack runs (every 641 ticks) and its expansion target | no cell passes the gate at the runs of counters 630 .. 7681 (no target, no expansion); at the run of counter 8322 (trace 8323) the best cell is (4, 2) of player 3 with value -10; its only candidate is player 3's headquarters (26, 24) (enemy distance -1, not explored), not attacked (need far above the soldiers available), so A + 1 and the expansion target "towards a position" (26, 24) (the original's heap at counters 8500 and 9000: current kind 1 (26, 24) since game time 832.14 s, the attack source); the guard house (12e67603) then placed on (42, 23) at counter 8573 as in the original. Experiment: the fight game's first generator difference 8884 -> 9311; the MP_2P_Storm_Coast pairs unchanged |
+| T32 | AI-MIL-4.4a: E-trace-019 (R6, Keyhole `MP_4P_Fight`, players 1 to 3 Hard), player 2; its military order for the cell (3, 1) (fields x 48 .. 63, y 16 .. 31) taken at counter 11639 fails with no site at 11669 with attempts 0; the level worked out anew at the cell's origin (48, 16) is 0 (enemy distance 19, nothing added), so 0 - 1 < 0; in the cell stands its guard house 16515 on (51, 17), finished long before (a guard house, level 1), with stock(planks) 6 and stock(stones) 36 | the failure at 11669 | the upgrade instead: the guard house is ordered up to a tower (the first qualifying field row by row; costs 3 planks + 5 stones, once); its leveller request is filed in its next update, counter 11670 (object number 18159), and the target counts as done (P halved); each 21-tick pass then cancels that request and the next update files it again (11676, 11697, ..., 11928; MIL-SOL-4.4 step 1) until a leveller takes it at 11933; the building is a tower from counter 15674 (the recording's tables). With the 37-tick run's tests here (level below the upgrade level, twice the costs) nothing is upgraded at 11669, the request queue's phase moves by one and player 1's leveller for (49, 60) leaves the headquarters at 11685 instead of 11778. Experiment build (the rule switched on, every other rule as before): the war's settlers (animation aside) first differ at 11862 instead of 11672, buildings 12225 instead of 12067, generator 12169 instead of 11964 |
 
 ## Evidence
 
@@ -491,6 +514,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ai-036, E-trace-011, E-trace-012 | code reading, memory reads of the running game, recordings | route stores of E-trace-011 at 18000, 19000, 19500 and E-trace-012 at 4500 | AI-MIL-6.1 S and B |
 | E-ai-049, E-trace-013 | code reading and memory reads of the running game | heap dumps 4500 .. 17500 of E-trace-013 (player 1's catapult scan state in its military part, military map cells (16, 7) / (17, 6) / (17, 7)) | AI-MIL-1.1, 1.2, 6.4, T25, T26 |
 | E-ai-065, E-trace-019 | code reading, heap dumps of the recording, an experiment build | (session 2026-11-15 night) | 4.4: the level computed anew at each failure (the failure handler's level call with the attempt count; the military order records in the heap dumps 4000 / 4500 / 5000; an experiment build with the rule: first differing building row 4680 -> 7030, generator 4873 -> 6635) |
+| E-ai-073, E-trace-019 | code reading, recording, experiment build | E-trace-019 `objects` (the leveller requests for player 2's guard house 16515 from counter 11670), `buildings` (its type from 15674), heap dumps 11500 and 12000 (player 2's upgrade cursor 4 and 17, as ours) | AI-MIL-4.4a: the order's upgrade has no level test and checks the costs once; its point-mode reach is the order's radius (T32); `MIL-building-upgrade.md` MIL-UPG-1.4 |
 | E-ai-067, E-trace-019 | recording, experiment build | E-trace-019 `objects` (player 1's soldier requests 16786 at 8000 and 16798 at 8021 for the fortress 14432 on (56, 50)), `settlers` (soldiers out of player 1's headquarters at 8002 and 8032, its builder at 8062); an experiment build's allocation log (ours countdown 3 at the run of 7997, medium 0.586, wanted 5); with 50 runs between changes: fight generator 8072 -> 8205, buildings 8280 -> 8580, other games unchanged | AI-MIL-2.2 countdown, T29 |
 | E-trace-013 heap 24500 | a memory read of the running game | the AI core of player 1: need 93243 (iron, consumer 90597) cell 92155, production -1; iron productions 92841 (need 90599) and 92942 (need 90899) | AI-MIL-6.2 (T27) |
 | E-trace-013 | live read of the running game | 2026-10-27 01:18 .. 04:15, player 1 Hard, every tick from 0 to 150011 with about 12 % snapshot gaps, heap dumps every 500 | T23 |

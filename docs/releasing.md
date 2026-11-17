@@ -52,7 +52,10 @@ Every release commit has passed, in this order:
   warnings` and `cargo test --workspace`, with the game installed (the tests
   that need its files run);
 - `scripts/spec-coverage.py --check` (every test names the spec rules it
-  checks) and `scripts/public-check.py .` (nothing that must not be public);
+  checks) and `scripts/public-check.py .` (nothing that must not be public;
+  `scripts/release.sh` stops before the release commit when it finds
+  anything, since the public copy is exported from the tag, which is never
+  moved);
 - the golden state hashes of whole games, on Linux and on the Windows build,
   which must be the same (`scripts/golden.sh`);
 - the golden pictures of 63 scenes, the same to the pixel within a small
@@ -60,6 +63,11 @@ Every release commit has passed, in this order:
 - the play harness, which drives the real Windows program with the mouse and
   the keyboard through the menus, the tutorial and the campaign
   (`scripts/play-test.sh`);
+- the long play since 0.11.4: 30 minutes of a four-player game from its start
+  on the Windows program, held to the screen's refresh, within its limits for
+  frame times, the bone-palette buffer and the rules
+  (`scripts/long-play.sh`, [`docs/test-coverage.md`](test-coverage.md) "The
+  long play");
 - the fidelity measure against the recordings of the original
   ([`docs/fidelity.md`](fidelity.md)): no first difference may move earlier;
 - CI green on the release commit.

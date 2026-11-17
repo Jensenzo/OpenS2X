@@ -114,6 +114,8 @@ struct LongRun {
     rates: Vec<f64>,
     /// Frames over 100 ms: a line each.
     stalls: Vec<String>,
+    /// F55: when the palette slots were last counted by owner.
+    slots_at: f64,
 }
 
 /// The parts of the map's update, between consecutive marks.
@@ -239,6 +241,7 @@ impl Bench {
                 memory: Vec::new(),
                 rates: Vec::new(),
                 stalls: Vec::new(),
+                slots_at: 0.0,
             },
             pan: (pan || drag.is_some()).then(|| Pan::new(drag)),
             placements_at_start: 0,
@@ -265,6 +268,12 @@ type RunState<'w> = (
     Res<'w, crate::render::models3d::ModelLibrary>,
 );
 
+/// F55: who holds the palette slots (the animator's poses, the buildings).
+type SlotOwners<'w> = (
+    Res<'w, crate::animation::animate3d::Animator>,
+    Res<'w, crate::render::view3d::BuildingAnims>,
+);
+
 /// At each frame's start: the length of the frame before, and whether this
 /// one is timed.
 #[allow(clippy::too_many_arguments)]
@@ -277,6 +286,7 @@ pub(crate) fn bench_frame(
     mut sounds: ResMut<crate::audio::SoundStats>,
     placements: Res<crate::render::view3d::Placements>,
     (mut spans, run_check, clock, library): RunState,
+    (animator, building_anims): SlotOwners,
     mut exit: MessageWriter<AppExit>,
 ) {
     let Some(mut bench) = bench else { return };
@@ -301,6 +311,7 @@ pub(crate) fn bench_frame(
                 run_check.as_deref(),
                 library.palettes.capacity(),
             );
+            log_slots(&mut bench, &library, &animator, &building_anims);
         }
     }
     if let Some(spans) = spans.as_mut() {
@@ -617,6 +628,41 @@ fn log_second(bench: &mut Bench, tick: u64, check: Option<&RunCheck>, palette_ma
     long.row_at = at;
     long.row_frame = bench.frame_ms.len();
     long.row_tick = tick;
+}
+
+/// F55 (the long play): a line a minute: the palette slots taken and free,
+/// and who holds them: the skinned parts' rest slots, the poses' parts
+/// (with the most one pose holds), the buildings' own parts, and what is
+/// left (nobody counted should hold any).
+fn log_slots(
+    bench: &mut Bench,
+    library: &crate::render::models3d::ModelLibrary,
+    animator: &crate::animation::animate3d::Animator,
+    buildings: &crate::render::view3d::BuildingAnims,
+) {
+    let Some(started) = bench.long.started else {
+        return;
+    };
+    let at = (Instant::now() - started).as_secs_f64();
+    let long = &mut bench.long;
+    if at < long.slots_at + 60.0 {
+        return;
+    }
+    long.slots_at = at;
+    let (taken, free) = library.palettes.slots();
+    let rest = library.rest_slot_count();
+    let poses = animator.slot_counts();
+    let own = buildings.slot_count();
+    let other = taken as i64 - (rest + poses.slots + poses.pending + own) as i64;
+    if let Some(log) = long.log.as_mut() {
+        use std::io::Write;
+        let _ = writeln!(
+            log,
+            "P {at:.0} s, palette slots {taken} taken, {free} free: rest {rest}, poses {} in {} poses (most {} in one, {} given back next frame), buildings {own}, other {other}",
+            poses.slots, poses.poses, poses.most, poses.pending
+        );
+        let _ = log.flush();
+    }
 }
 
 /// The long run's summary: ticks held, memory, invariants, stalls.

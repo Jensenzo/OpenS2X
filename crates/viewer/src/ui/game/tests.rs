@@ -2856,7 +2856,8 @@ fn the_minimap_dialog_stands_at_the_right_edge() {
 /// Hook W19 (docs/extending.md "Paved roads"): with a paving rule the road
 /// menu of a road of the player's has the pave button, usable while the
 /// command would be accepted (no warehouse is needed to order it); without
-/// the rule it has none.
+/// the rule it has none. W34: without a project's picture it shows the
+/// flag-with-hammer portrait, as before.
 // spec: none (hook W19; the menu is UI-GAME-3.3's)
 #[test]
 fn a_paving_rule_adds_the_pave_button_to_the_road_menu() {
@@ -2906,6 +2907,25 @@ fn a_paving_rule_adds_the_pave_button_to_the_road_menu() {
         p.buttons().any(|b| *b.0 == pave),
         "{:?}",
         p.buttons().collect::<Vec<_>>()
+    );
+    // W34: without a project's picture, the flag-with-hammer portrait.
+    let picture = p.widgets.iter().find_map(|w| match w {
+        Widget::Button {
+            atlas,
+            rect,
+            hover,
+            action,
+            ..
+        } if *action == pave => Some((*atlas, *rect, hover.clone())),
+        _ => None,
+    });
+    assert_eq!(
+        picture,
+        Some((
+            Atlas::Elements3,
+            [368, 160, 48, 48],
+            Hover::Swap([416, 160])
+        ))
     );
     let plain = road_world(None);
     let p = road_menu(&ctx(&plain, &texts, &catalog), (3, 2));

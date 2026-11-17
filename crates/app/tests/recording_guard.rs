@@ -53,7 +53,7 @@ fn harness_scripts_refuse_while_the_recording_flag_exists() {
     let shots = dir.join("shots");
     std::fs::create_dir_all(shots.join("original")).unwrap();
     let shots = shots.display().to_string();
-    let scripts: [(&str, &[&str]); 7] = [
+    let scripts: [(&str, &[&str]); 8] = [
         ("play-test.sh", &[]),
         ("golden-images.sh", &[]),
         ("view-map.sh", &[]),
@@ -61,6 +61,7 @@ fn harness_scripts_refuse_while_the_recording_flag_exists() {
         ("install-local.sh", &["--build"]),
         ("frame-bench.sh", &[]),
         ("look-compare.sh", &[shots.as_str()]),
+        ("long-play.sh", &[]),
     ];
     for (script, args) in scripts {
         std::fs::write(&flag, "2026-10-23 23:40:00 pid 4242 E-trace-007\r\n").unwrap();

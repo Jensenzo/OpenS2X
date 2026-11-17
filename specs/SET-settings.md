@@ -26,6 +26,12 @@ read at start-up; a missing file means defaults.
   none) is a separate field.
 - **SET-1.2** Written when a settings page is closed; read when the settings object is created
   (start-up). If the file is missing or unreadable the defaults of SET-3 apply.
+  **When exactly (2026-11-17 day, Q-188 d; E-set-004, code reading, high):** the file is written in two
+  places only: (1) when any settings page is left (the same write for every page, before the pages'
+  values are applied), and (2) once when the program quits, as part of its shutdown. The quit write
+  is skipped in one display state of the renderer (a flag of its display settings, not decoded;
+  medium). Nothing else writes the file: changing a value inside a page does not, and no backup copy
+  is kept.
 - **SET-1.3** The file is two objects in the marker format of FMT-S2M-1.2: `UserObject` (version 5)
   followed by `SceneSettings` (version 1). No padding.
 
@@ -225,6 +231,7 @@ copying step has one caller, the view's set-up), medium that the set-up runs exa
 | E-trace-026 | a picture of the running original | the game settings page at 2560 x 1440 (session 2026-11-14 b) | SET-2 field 17: a profile with 0 shows On |
 | E-set-002 | data | the profile file `default01.cfg`, parsed | observed values, exact length |
 | E-set-003 | code reading | S2DNG.exe (session 2026-11-16 day): the start-up's one settings object, created with the fixed name default01 and loaded | SET-1.1 (Q-188 a) |
+| E-set-004 | code reading | (session 2026-11-17 day): the two callers of the settings write (leaving a settings page; the shutdown) | SET-1.2 (Q-188 d) |
 | E-gfx-056 | code reading | the scene settings' setters, getters and presets; the engine page's widgets, labels and slider handlers | SET-4a, T5 |
 | E-gfx-063 | code reading | (session 2026-11-13) the Engine page's change handler; every reader of the scene settings (the per-frame pass set-up, frame, mirror draw and update; the view's settings copy and its one caller, the view's set-up; the mirror image's size function; the device's shader-level setter) | SET-4b, T6 |
 | E-ui-035 | code reading, a picture | (session 2026-11-15 night; the pictures of E-trace-026) | SET-5.2, 5.5, 5.7: the Graphics, Input and Network pages' controls, choices, fields and places; SET-2 fields 5, 6, 8, 9, 21 |

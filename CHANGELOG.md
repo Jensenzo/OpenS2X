@@ -8,6 +8,75 @@ the working name s2-reborn. The public repository starts with its first
 public release; the sections before it describe releases made in the
 maintainer's working repository, which have no tag or download there.
 
+## OpenS2X 0.11.5 (2026-11-17)
+
+0.11.4 as published: the same program, with two of its documents worded for
+readers outside the project. 0.11.3 and 0.11.4 were made but not published;
+what they bring is listed under them below (the long-game slowdown fixed in
+0.11.4).
+
+### Fixed
+
+- `docs/test-coverage.md` ("The long play") and the head of
+  `scripts/long-play.sh` no longer use the project's internal finding
+  numbers, and `scripts/release.sh` now runs the public check
+  (`scripts/public-check.py`) over the whole tree before it makes a release.
+
+## OpenS2X 0.11.4 (2026-11-17)
+
+Long games stay smooth again: the slowdown after 15 to 30 minutes of a big
+game, which every release since 0.9.3 had (the public 0.10.1 and 0.11.2
+among them), is fixed. Two small hooks for projects.
+
+### Fixed
+
+- **Long games slowed down.** In a big game the picture grew slower and
+  slower after 15 to 30 minutes of play, with more and more single frames
+  of a tenth of a second or longer; the game itself kept its pace. Releases
+  0.9.3 to 0.11.3 have it, the public 0.10.1 and 0.11.2 too. Measured on
+  their downloads, 30 minutes of a four-player game from the start at
+  2560 x 1440: 0.11.2 ran at 60 frames per second for 15 minutes, then at 39
+  after 20 minutes and at 16 after 25, with 1 200 frames of a tenth of a
+  second or longer; 0.10.1 at 60, then 43 after 20 minutes and 32 after 25,
+  with 776 such frames. The cause: settlers that walk (or work)
+  the same way share one animation, and each figure drawn in it kept a slot
+  in the buffer of bone positions for as long as anyone at all still walked
+  that way, which on a busy map is for good; the whole buffer goes to the
+  graphics card every frame. Since 0.9.3 every settler figure has colours of
+  its own, so every settler that ever walked took one more slot. Now a
+  figure's slot is given back when it stops using the animation. In a
+  30-minute test game the buffer stays at 6 MB (it reached 100 MB) and the
+  frames at 16.6 ms (99 % within 21 ms), as before 0.9.3.
+
+### What is new
+
+- **The long play** is a step of the release checks: 30 minutes of a
+  four-player game from the start, held to the refresh rate, which fails on
+  a slowdown, a growing palette buffer or a broken rule
+  (`scripts/long-play.sh`; docs/test-coverage.md, "The long play").
+- New hook **W34**, off by default (docs/extending.md, "The pictures of the
+  hooks' buttons"): a project's picture for the road menu's Pave button,
+  `ButtonPictures::pave`.
+- Hook **W25b** (docs/extending.md, "The computer players and a project's
+  rules"): `reborn.ai_setDeepen(food, false)` makes a computer player tear
+  down an exhausted mine it does not deepen in that run, as the original's
+  rule does, instead of keeping it idle; and `reborn.ai_setRecipeRule` with a
+  group good counts each member's stock above its kept stock
+  (`reborn.cfg_setRecipeKeep`), what the warehouses would hand out.
+
+### For projects built on OpenS2X: breaking changes
+
+- `s2_viewer::ButtonPictures` has a new field `pave` (W34); a struct literal
+  of it needs the field or `..Default::default()`. The default draws as
+  before.
+- `s2_rules::model::AiProjectRules` has a new field `deepen_tears_down`
+  (W25b; default `false`, the mine kept as since 0.11.2); a struct literal
+  needs it or `..Default::default()`. `s2_ai::project::mine_fate` takes a
+  seventh value, `keep_waiting`. `reborn.ai_setRecipeRule` with a group good
+  now counts each member above its kept stock, no longer the plain sum.
+  Without `reborn.ai_set*` calls the computer players play as before: every
+  golden state hash and the fidelity measure are unchanged.
+
 ## OpenS2X 0.11.3 (2026-11-17)
 
 Ships carry what your islands lack; the pointer picks the field the original

@@ -45,10 +45,12 @@ Meanwhile it stays what it was: it keeps its soldiers and its territory.
   checked and nothing is paid at the order**: the materials are requested
   and delivered as for a site. Confidence: high.
 - **MIL-UPG-1.4** The computer player orders upgrades as in `AI-military.md`
-  AI-MIL-4.4 and 4.5; before ordering it checks that **twice** the target
+  AI-MIL-4.4 and 4.5. Its 37-tick run (4.5) checks that **twice** the target
   type's full construction costs (frame goods and building goods, the list
   merged with itself) are in stock (corrected 2026-10-27 night, E-ai-029, `AI-military.md` T19: a guard house needs 6 planks and 10 stones
-  for its tower). Confidence: high.
+  for its tower). The upgrade a failed military order makes instead (4.4a) checks the costs
+  **once** (3 planks and 5 stones for that tower) and no level (corrected 2026-11-17 day, E-ai-073,
+  `AI-military.md` T32). Confidence: high.
 
 ### MIL-UPG-2 Process
 
@@ -163,6 +165,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ai-006 | code reading | | start: helpers, blocked area, area re-marking |
 | E-ai-006 | code reading | | per-tick update: levelling, material requests, construction |
 | E-ai-006 | code reading | | completion and type change |
+| E-ai-073 | code reading, recording | | the failed military order's upgrade: costs once, no level test (MIL-UPG-1.4; `AI-military.md` T32) |
 | E-ai-006 | code reading | | military map counts an upgrading building as under construction |
 | E-ai-029, E-trace-011 | code reading, memory reads of the running game | heap dumps 9500 and 10000 (guard house 90785) | MIL-UPG-1.2, 1.4 |
 | E-ai-006 | strings | | button tooltips and the game event name |

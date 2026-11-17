@@ -59,6 +59,18 @@ pub struct BuildingAnims {
     pub(crate) tick: Option<u64>,
 }
 
+impl BuildingAnims {
+    /// F55: the palette slots the buildings' own parts hold (`--bench`).
+    pub(crate) fn slot_count(&self) -> usize {
+        self.states
+            .values()
+            .chain(self.collapsing.values())
+            .flat_map(|s| s.materials.iter().flatten())
+            .filter(|m| m.is_some())
+            .count()
+    }
+}
+
 /// GFX-OBJ-1.6a: how many of a building's `animals` production animals
 /// show at `productivity` hundredths: round(productivity x N), adding a half
 /// and cutting off; none before the first product (-100).
@@ -193,7 +205,7 @@ pub fn animate_buildings(
         for key in gone {
             if let Some(state) = anims.states.remove(&key) {
                 for (_, pose, _) in &state.animals {
-                    animator.detach(pose);
+                    animator.detach(pose, &animal_look());
                 }
                 // F55 (the long play): its parts' palette slots.
                 release_palettes(&state, library, &materials);
@@ -214,7 +226,7 @@ pub fn animate_buildings(
         for serial in ended {
             if let Some(state) = anims.collapsing.remove(&serial) {
                 for (_, pose, _) in &state.animals {
-                    animator.detach(pose);
+                    animator.detach(pose, &animal_look());
                 }
                 release_palettes(&state, library, &materials);
             }
@@ -355,7 +367,7 @@ pub fn animate_buildings(
             state.entity = entity;
             state.materials = None;
             for (_, pose, _) in std::mem::take(&mut state.animals) {
-                animator.detach(&pose);
+                animator.detach(&pose, &animal_look());
             }
             if let Some(prod) = state.production.clone().filter(|_| state.animals_shown > 0) {
                 make_animals(
@@ -486,14 +498,8 @@ fn make_animals(
             .first()
             .and_then(|a| pose_key(&model, Some(&(a.clone(), true))));
         let Some(want) = want else { continue };
-        let (pose, parts) = animator.attach(
-            &want,
-            &model,
-            &crate::render::models3d::Look::plain([1.0; 4]),
-            library,
-            images,
-            materials,
-        );
+        let (pose, parts) =
+            animator.attach(&want, &model, &animal_look(), library, images, materials);
         let (animal, _) = spawn_parts(
             commands,
             Transform::IDENTITY,
@@ -503,6 +509,12 @@ fn make_animals(
         commands.entity(state.entity).add_child(animal);
         state.animals.push((animal, pose, bone));
     }
+}
+
+/// The look a production animal is drawn with (plain), the one it leaves
+/// its pose with (F55).
+fn animal_look() -> crate::render::models3d::Look {
+    crate::render::models3d::Look::plain([1.0; 4])
 }
 
 /// GFX-OBJ-1.6a: the first `animals_shown` animals show, the others not.

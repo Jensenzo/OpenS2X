@@ -248,7 +248,30 @@ pause is the game speed, not the world's time scale).
   `view_base` 0 against 8 in E-trace-010, with `state`, `anim_code` and `anim_left`
   equal). The dense recording (`traces/original-dense-6000.s2trace.gz`) is the reference for it; a first
   difference against E-trace-002 that is only this column at an action's first tick
-  is not a simulation difference (2026-10-25 evening). A worker inside his
+  is not a simulation difference (2026-10-25 evening).
+  **How often, and when (2026-11-17 day; E-trace-011, E-trace-012, the recordings' own tables):**
+  within one recording the view's switch is late by one tick very rarely, and only in a tick
+  whose frames advanced the view clock by 0.075 instead of 0.1 (TRACE-2.6's 3-frame tick): in
+  E-trace-011, 2 of about 5 560 walk ends kept the walk view in their arrival tick (carriers
+  90288 at counter 17532, 91756 at 18974); in E-trace-012, 2 of about 10 060 put-down and
+  pick-up starts showed the new clip only in the tick after the request (carrier 90623 at counter
+  7053, 91768 at 17797). Most 0.075 ticks switch in time, so the frame timing alone does not
+  predict it (medium); the simulation's own columns (`progress`, `anim_code`, `anim_left`) are
+  on time in all four. So the first differences of the dense pairs at trace ticks **17533**
+  (`original-dense-20000`, carrier 90288 one tick in Walk) and **7054**
+  (`original-hard-dense-20000`, carrier 90623 one tick in Stand before PutDown) are this view
+  lag, not a game rule: the program shows the simulation's state, and is right there. Test T16.
+  **What is left of the three pairs past it (measured 2026-11-17 day, the program's 0.11.3 and the
+  recordings' converted traces, on the ticks both hold):** `original-dense-20000` against the
+  program differs only in its two view-lag rows (17533 and 18975, builder 91756) and is equal from
+  18976 to its end; `original-hard-dense-20000` differs only in the animation column, 17 rows from
+  6500 to 20000, every one a one-tick view lag (13 a new clip a tick late, 4 an old clip kept over a
+  one-tick stand, e.g. carrier 90298 at 7188: the pick-up shown one tick longer while the raw row
+  already has no action), and is equal without that column; `original-1p` lacks the generator row of
+  27673 and shows an empty view in 55 settler rows from 27742 (the raced end of its recording,
+  TRACE-2.7), and is equal in settlers, buildings and generator to 30000 otherwise. So none of the
+  three first differences (17533, 7054, 27673) is a difference of the games.
+  A worker inside his
   building keeps his view: his work action there is recorded as `WorkLoop0` (the
   request of `GFX-animations.md` GFX-ANIM-3.8), though he is not drawn (E-trace-010:
   the sawmill's worker 90431 from trace tick 3169).
@@ -609,6 +632,7 @@ pause is the game speed, not the world's time scale).
 | T13 | PC used less than 10 minutes ago, or the play harness running | start the launcher | it exits 2 without starting the game or touching the pointer, and writes no flag file |
 | T14 | launcher running, game at a menu | move the mouse | the launcher stops before its next input event with "someone else used mouse or keyboard", releases any held button, closes the game and removes the flag file |
 | T15 | file trace running, no game | read one file of the install whose last-access time is more than an hour old | `files.csv` gets one `read` row for it within one scan; a file read again within the hour gets no second row |
+| T16 | TRACE-4.4 (the view lag): `original-dense-20000` against the program's default game, `original-hard-dense-20000` against its Hard game | the first differences | 17533: carrier 90288, the original's row Walk, the program's Stand, every other column equal (the recording's raw row: progress -1, arrived, at counter 17532); 7054: carrier 90623, the original's Stand, the program's PutDown (raw: anim_code 2 set at counter 7053); both are counted as view lag and the comparison goes on past them |
 
 ## Evidence
 

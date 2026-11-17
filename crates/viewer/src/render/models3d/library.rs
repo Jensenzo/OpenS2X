@@ -510,6 +510,11 @@ impl ModelLibrary {
         self.material_with(part, look, None, images, materials)
     }
 
+    /// F55: the palette slots of the skinned parts' rest poses (`--bench`).
+    pub fn rest_slot_count(&self) -> usize {
+        self.rest_slots.len()
+    }
+
     /// The material of a part of `model` in its rest pose (a static
     /// skinned part, as a building that plays nothing).
     pub fn rest_material(

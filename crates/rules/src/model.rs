@@ -544,6 +544,11 @@ pub struct AiProjectRules {
     /// exhausted mine of a type with a deepening while its stock of food
     /// (fish, meat and bread together) is at least this, one at a time.
     pub deepen_food: Option<u32>,
+    /// W25b: `reborn.ai_setDeepen(food_at_least, false)`: an exhausted mine
+    /// not deepened in the destruction run is torn down as the original's
+    /// rule does; without (`true` or no second value) it is kept for a later
+    /// run, as since W25. A mine being deepened is kept either way.
+    pub deepen_tears_down: bool,
     /// `reborn.ai_setPaving(traffic_at_least, reserve)`: a computer player
     /// paves its road of the highest traffic average, when that is at least
     /// the first value, while it holds more of the paving good than the
@@ -552,7 +557,9 @@ pub struct AiProjectRules {
     /// `reborn.ai_setRecipeRule(building, index, good, above)`: a computer
     /// player's building of the type works recipe `index` while the player
     /// holds more than `above` of the good (a group good: its members
-    /// together), else its first; in call order, the last for a type wins.
+    /// together, each counting only its stock above its kept stock,
+    /// `reborn.cfg_setRecipeKeep`, W25b), else its first; in call order, the
+    /// last for a type wins.
     pub recipes: Vec<AiRecipeRule>,
 }
 

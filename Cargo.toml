@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/sim", "crates/assets", "crates/app", "crates/rules", "crates/ai", "crates/viewer"]
 
 [workspace.package]
-version = "0.11.3"
+version = "0.11.5"
 edition = "2021"
 license = "Apache-2.0"
 # Not on crates.io: a project built on these crates pins a git tag (docs/releasing.md).

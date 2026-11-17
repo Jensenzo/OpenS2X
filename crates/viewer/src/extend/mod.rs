@@ -93,20 +93,25 @@ pub struct Extensions {
     /// message, as the game.
     pub messages: Vec<(ProjectEvent, String)>,
     /// The pictures of the hooks' buttons in a building's window (the
-    /// deepening's, W15, and the next recipe's, W20). Default: both drawn
-    /// with the boat-and-ship switch's picture, as before.
+    /// deepening's, W15, and the next recipe's, W20) and of the road menu's
+    /// pave button (W19, W34). Default: the first two drawn with the
+    /// boat-and-ship switch's picture, the pave button with the
+    /// flag-with-hammer picture, as before.
     pub button_pictures: ButtonPictures,
 }
 
-/// The pictures of the hooks' buttons in a building's window
-/// ([`Extensions::button_pictures`]); each none: the boat-and-ship switch's
-/// picture (`uiElements5` (256, 88)).
+/// The pictures of the hooks' buttons ([`Extensions::button_pictures`]);
+/// each none: the picture as before.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ButtonPictures {
-    /// W15: the mine window's Deepen button.
+    /// W15: the mine window's Deepen button (none: the boat-and-ship
+    /// switch's picture, `uiElements5` (256, 88)).
     pub deepen: Option<ButtonPicture>,
-    /// W20: the production window's Next recipe button.
+    /// W20: the production window's Next recipe button (none: as Deepen).
     pub recipe: Option<ButtonPicture>,
+    /// W34: the road menu's Pave button (W19; none: the flag-with-hammer
+    /// portrait, `uiElements3` (368, 160), lit (416, 160)).
+    pub pave: Option<ButtonPicture>,
 }
 
 /// A button's picture: the 48 x 48 cell at `at` of the picture `file` (a
@@ -126,7 +131,10 @@ static BUTTONS: OnceLock<(ButtonPictures, Vec<&'static str>)> = OnceLock::new();
 /// Keep the buttons' pictures; the first call wins.
 pub(crate) fn install_buttons(pictures: ButtonPictures) {
     let mut files: Vec<&'static str> = Vec::new();
-    for p in [&pictures.deepen, &pictures.recipe].into_iter().flatten() {
+    for p in [&pictures.deepen, &pictures.recipe, &pictures.pave]
+        .into_iter()
+        .flatten()
+    {
         if !files.iter().any(|f| f.eq_ignore_ascii_case(&p.file)) {
             files.push(Box::leak(p.file.clone().into_boxed_str()));
         }
@@ -153,12 +161,42 @@ pub(crate) fn button_pictures() -> Option<&'static ButtonPictures> {
     BUTTONS.get().map(|(p, _)| p)
 }
 
-/// A hook button's atlas, cell and hover cell: the project's picture when
-/// it names one (`files` the loaded pictures), else the boat-and-ship
-/// switch's.
+/// A building window's hook button's atlas, cell and hover cell: the
+/// project's picture when it names one (`files` the loaded pictures), else
+/// the boat-and-ship switch's.
 pub(crate) fn button_cell(
     picture: Option<&ButtonPicture>,
     files: &[&str],
+) -> (crate::ui::widgets::Atlas, [u32; 2], Option<[u32; 2]>) {
+    button_cell_or(
+        picture,
+        files,
+        (crate::ui::widgets::Atlas::Elements5, [256, 88], None),
+    )
+}
+
+/// W34: the road menu's pave button's atlas, cell and hover cell: the
+/// project's picture when it names one, else the flag-with-hammer portrait.
+pub(crate) fn pave_cell(
+    picture: Option<&ButtonPicture>,
+    files: &[&str],
+) -> (crate::ui::widgets::Atlas, [u32; 2], Option<[u32; 2]>) {
+    button_cell_or(
+        picture,
+        files,
+        (
+            crate::ui::widgets::Atlas::Elements3,
+            [368, 160],
+            Some([416, 160]),
+        ),
+    )
+}
+
+/// The project's picture when it names one loaded, else `default`.
+fn button_cell_or(
+    picture: Option<&ButtonPicture>,
+    files: &[&str],
+    default: (crate::ui::widgets::Atlas, [u32; 2], Option<[u32; 2]>),
 ) -> (crate::ui::widgets::Atlas, [u32; 2], Option<[u32; 2]>) {
     picture
         .and_then(|p| {
@@ -169,7 +207,7 @@ pub(crate) fn button_cell(
                 p.hover,
             ))
         })
-        .unwrap_or((crate::ui::widgets::Atlas::Elements5, [256, 88], None))
+        .unwrap_or(default)
 }
 
 /// Called with the player's settings after a change
@@ -562,7 +600,7 @@ pub(crate) fn render() -> RenderOptions {
 mod tests {
     use super::*;
 
-    // spec: none (the hooks' button pictures: a project's cell, else the boat-and-ship switch's, as before)
+    // spec: none (the hooks' button pictures, W34's pave button too: a project's cell, else the picture as before)
     #[test]
     fn a_hook_button_takes_the_projects_picture() {
         use crate::ui::widgets::Atlas;
@@ -580,6 +618,19 @@ mod tests {
         );
         // A picture that was not loaded falls back to the switch's.
         assert_eq!(button_cell(Some(&pick), &files[..1]), default);
+        // W34: the pave button's, else the flag-with-hammer portrait.
+        let portrait = (Atlas::Elements3, [368, 160], Some([416, 160]));
+        assert_eq!(pave_cell(None, &files), portrait);
+        let paving = ButtonPicture {
+            file: "frontier_buttons.dds".into(),
+            at: [96, 0],
+            hover: Some([96, 48]),
+        };
+        assert_eq!(
+            pave_cell(Some(&paving), &files),
+            (Atlas::Project(1), [96, 0], Some([96, 48]))
+        );
+        assert_eq!(pave_cell(Some(&paving), &files[..1]), portrait);
     }
 
     // spec: none (the window title hook: a project's title, else the game's)

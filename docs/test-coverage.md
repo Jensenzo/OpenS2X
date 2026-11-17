@@ -142,10 +142,25 @@ sitting of it: frame times with a line a second and a line per frame over 33 ms
 with its parts and what it did, ticks per second, the program's memory and every
 soak invariant after every tick (their time left out of the frame times).
 
-**The long play**: 30 minutes of wall time at speed 3, 2560 x 1440, held to
-the refresh, `--free-game MP_4P_Close_Frontier --ai 0=3`. It starts from tick
+**The long play** (`scripts/long-play.sh`, a step of the release net since
+0.11.4): 30 minutes of wall time at speed 3, 2560 x 1440, held to the
+refresh, `--free-game MP_4P_Close_Frontier --ai 0=3`. It starts from tick
 0 with the view on, so it sees what grows with a game played in view, which a
-benchmark that plays ahead headless (`--run`) or loads a save does not.
+benchmark that plays ahead headless (`--run`) or loads a save does not. It
+fails on a broken invariant, a minute below 29.5 ticks per second, a frame
+p99 over 25 ms, any frame over 100 ms, a bone-palette buffer over 12.5 MB
+at the end, or a palette slot no owner holds; `--check DIR` judges a run's
+report and log. The log has a line a minute (`P`) with the palette slots by
+owner: the skinned parts' rest slots, the poses' parts (and the most one
+pose holds), the buildings' own parts. The long-game slowdown came twice
+from slots taken and never given back: until 2026-11-04 (poses' and sites'
+slots), and from 0.9.3 to 0.11.3 a shared pose's slot per figure look (each settler figure's
+look has its own atlas block since GFX-OBJ-3.2 (3), and the walk of a busy
+map is one pose that never empties); the buffer doubled to 100 MB in 25
+minutes and the frames went from 16.6 to 45..59 ms. The unit test
+`a_pose_that_never_empties_gives_a_leaving_looks_slot_back`
+(`crates/viewer/src/animation/animate3d.rs`) holds the mechanism without a
+desktop.
 
 ## Lessons 2 to 4
 
@@ -265,8 +280,8 @@ Two guards for a machine that also records the original, or shares its
 mouse with another computer; on any other machine they never stop a run.
 The scripts that run a Windows build or install the game on the PC
 (`play-test.sh`, `golden-images.sh`, `view-map.sh`, `golden.sh`,
-`install-local.sh`, `frame-bench.sh`, `look-compare.sh`) refuse to start while
-the original is being recorded on the same machine, which its recorder says
+`install-local.sh`, `frame-bench.sh`, `look-compare.sh`, `long-play.sh`)
+refuse to start while the original is being recorded on the same machine, which its recorder says
 with a flag file (TOOL-trace TRACE-7.3; `S2_RECORDING_FLAG` names the file).
 `crates/app/tests/recording_guard.rs` runs each of them with and without the
 flag.
@@ -294,7 +309,8 @@ Nothing the safety net starts writes the player's settings
   profile of the PC they are drawn on (an empty folder, the first start's
   sliders at 0, drew the far zooms, the water's mirror and the engine page
   differently from a profile at Very high).
-- `frame-bench.sh` the same in `target/frame-bench/profile`; `look-compare.sh`
+- `frame-bench.sh` the same in `target/frame-bench/profile`, `long-play.sh` in
+  `target/long-play/profile`; `look-compare.sh`
   through `s2-app shot --profile-dir` in `target/look-compare/profile/<picture>`.
 - `play-test.sh`: a play script without `--profile-dir` holds both files
   unwritten (`settings::hold_files`), its saves go to `target/tmp/play/saves`.

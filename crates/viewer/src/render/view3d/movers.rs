@@ -560,7 +560,7 @@ pub(crate) fn repose(
     }
     // GFX-ANIM-2.4 (c): leave the old pose before taking the new (T19c).
     if let Some(old) = state.pose.take() {
-        animator.detach(&old);
+        animator.detach(&old, &state.look);
     }
     let (pose, parts) = parts_in(
         animator,
@@ -665,7 +665,7 @@ pub fn sync_movers(
             if !reuse {
                 if let Some(old) = movers.states.remove(&mover.id) {
                     if let Some(pose) = &old.pose {
-                        animator.detach(pose);
+                        animator.detach(pose, &old.look);
                     }
                     if let Some(block) = &old.block {
                         library.release_figure(block);
@@ -894,7 +894,7 @@ pub fn sync_movers(
         for id in gone {
             if let Some(state) = movers.states.remove(&id) {
                 if let Some(pose) = &state.pose {
-                    animator.detach(pose);
+                    animator.detach(pose, &state.look);
                 }
                 if let Some(block) = &state.block {
                     library.release_figure(block);

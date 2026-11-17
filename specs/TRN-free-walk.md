@@ -531,6 +531,16 @@ TRN-MOVE-1 and 2.
   game's generator difference from 51 724 to 42 120: its builder of counter 41021; what he does
   instead was not followed). Whether other settlers on a road walk (a worker, a soldier) are cut
   when their road goes was not followed (medium). Test T47a.
+  **A settler already on his walk home (2026-11-17 day; E-trn-040, the R6 recording and an experiment
+  build, high for a carrier):** "already going home" above is a settler whose going home began with a
+  road walk under way (the builder of T47a). One who is past that, on the walk home that his own home
+  search chose (6.4), is cut the same way when the road he walks on is removed (he finishes the step in
+  progress to its point, its excess dropped), but he does **not** stand: he chooses his way home again
+  **in the tick he arrives (A)**, by 6.4's tries 1 to 3, as at the end of any walk home. Off the roads
+  (the field he stopped on is no road field any more) that is a free walk to the warehouse's network
+  flag nearest to him (tries 2 and 3), started at progress 0 in A and first advancing in A + 1; on that
+  flag, in its arrival tick, he chooses again and road-walks on (6.4, "at the end of the walk"). Test
+  T47b.
   **A builder in a work step's walk** (`ECO-warehouse-construction.md` ECO-HQ-4.6b
   step 4, the lattice walk from one construction position to the next, TRN-FREE-5.5)
   when the site is removed (2026-10-27 b, measured T34; route corrected 2026-10-28,
@@ -705,6 +715,7 @@ produce over all six starting draws (TRN-FREE-3.2a).
 | T46a | 6.3a Worker (Q-1056): a woodcutter's hut finished in tick F (its worker timer fires in F + 101, F + 202, ...); the first request's woodcutter is sent at F + 101, his road walk ends short and he goes home; his walk home ends in tick T at a warehouse, with F + 303 < T + 1 < F + 404 | the hut's worker requests | no request at F + 202 or F + 303 (he is linked and counted); he is taken into the stock and unlinked in T + 1; the next request is filed at F + 404 (the timer's next firing), not at T + 2; had T + 1 been F + 404 itself, the firing then would still count him and the request would wait until F + 505 |
 | T47 | 6.4b, the approach's back leg: E-trace-019 (R6, MP_4P_Fight, three Hard computer players), player 3's hunter's hut site on (33, 22) (flag (33, 21), flag point sample (134, 84)) removed after counter 8306 while its builder walks the back leg from (135, 87) (at counter 8306 on (135, 87), progress 0.18) | his rows (counters; trace ticks = counter + 1) | no new walk: on (134, 85) -> (134, 84) at 0.97 in 8337; on the point (A) in 8338; standing 8338 and 8339; walk home (free walk, first step to (33, 20), its 2 read-out draws) at progress 0 in 8340, 0.045 in 8341. The other back-leg cases of the recording: counters 8416 -> 8418, 9320 -> 9322, 13460 -> 13462, 15388 -> 15390; out-leg or work-walk cases (a new walk after the removal): 9459 -> 9460, 10874 -> 10875, 12749 -> 12750 among 12. A build starting home in A + 1 here differs from the fight game's generator at trace tick 8340; with the rule at 8456 (experiment build; every MP_2P_Storm_Coast pair unchanged) |
 | T47a | 6.4b, the road cut under the walk to the site: E-trace-019 (R6, the fight game), player 1's builder 17095, sent at counter 8923 to the hunter site on (41, 60), walking along the road (46, 59) .. (41, 59) to the site's flag (41, 59) | the site removed in counter 9342 (he goes home from 9344 and walks on toward the flag); the flag (41, 59) and that road removed in counter 9366, while he walks the step (44, 59) -> (43, 59) | he ends that step on the point of (43, 59) in counter 9369 (174000, 236000), stands in 9369 and 9370, and in 9371 searches home (2 draws) and walks back east; he never reaches (42, 59). Walking on to the old flag's field (41, 59) makes the fight game's generator differ from trace tick 9371; with the cut it moves to 9801 (experiment build) |
+| T47b | 6.4b (a walk home cut): E-trace-019 (R6), player 1's carrier 17758, idle on (55, 43) of road "54,43 55,43 56,44" until the computer player removes that road at counter 11811 (with the site on (56, 42)); he goes home (TRN-CARRY-7.1a, 7.1b): Walk 0 at trace tick 11816, a free walk to the flag (56, 44) (on its point at 11839, excess dropped), then the road walk home from there over road "55,46 55,45 56,44" from 11840 | the computer player removes that road at counter 11851, while he is in his step (56, 44) -> (55, 45) | he finishes that step: on (55, 45)'s point exactly at trace 11862 (fine (222000, 180000)); a free walk to the flag (55, 46) at progress 0 in 11862 (221909 at 11863: no standing tick); on (55, 46)'s point at 11885, the road walk east from it from 11886 (recorded). Walking on through (55, 45) with the excess carried (no cut) puts him at 221929 in 11862. Experiment build (the cut and the choice in A for a carrier walking home; AI-MIL-4.4a on): the war's settlers (animation aside) first differ at 12172 instead of 11862 |
 
 ## Evidence
 
@@ -742,6 +753,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-trn-035 | code reading | (session 2026-11-15 day) | 6.3a Worker: the worker's link is dropped only by his object's removal or the building's; going home leaves it; the worker request counts linked workers |
 | E-trn-037 | code reading and recording | going home's update (wait for the step's end, its fine walk to the target's point, finish, search); E-trace-019's 17 removed-site builders | 6.4b back leg, T47 |
 | E-trn-039 | recording and measured | E-trace-019's builder 17095 (rows every tick 9290 .. 9420), the flags and streets tables (flag (41, 59), street (41, 59) .. (46, 59) last seen in counter 9365), an experiment build | 6.4b the road cut under the walk to the site, T47a |
+| E-trn-040 | recording, code reading, experiment build | E-trace-019's carrier 17758 (rows of trace ticks 11813 .. 11890; the streets table: the road's last row at counter 11851); the going-home states | 6.4b, a walk home cut (T47b) |
 | E-trace-011 | recording | `settlers.csv.gz` and `buildings.csv.gz` (builder 91177, counters 11043 .. 11116; site 91151 gone after 11063) | 6.4b, the approach walk (T33) |
 
 ## Open questions

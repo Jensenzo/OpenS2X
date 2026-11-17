@@ -31,12 +31,21 @@ health point off the other.
   5. `d = dist(B, target) < 24` (MAP-GRID-2.1);
   6. a free walking path from the target to B exists and is **shorter than
      2 x d** steps (the free path search of `TRN-free-walk.md`);
-  7. `k = trunc((n - 1) x attackStrength) > 0`, with `n` the number of B's
-     soldiers that are present (MIL-SOL-2.4) and idle (not on an errand), and
-     `attackStrength` the player's "Attack Strength" setting (MIL-SOL-7.1).
+  7. `k = trunc((n - 1) x attackStrength x f(d)) > 0`, with `n` the number of B's
+     soldiers that are present (MIL-SOL-2.4) and idle (not on an errand),
+     `attackStrength` the player's "Attack Strength" setting (MIL-SOL-7.1), and the
+     **distance factor** `f(d) = min(36 - d, 24) / 24` (corrected 2026-11-17 day, E-mil-020:
+     the factor was missing). So a building up to 12 fields from the target counts fully,
+     and from there each field further takes 1/24 off, down to 13/24 at d = 23.
+     Number order: `f` is worked out first and kept as a float32: `min(36 - d, 24)` times the
+     float32 constant 1/24 (0.0416666679), rounded to float32; `(n - 1)` times
+     `attackStrength` (float32) times that factor is then truncated. Every `f` so made is a
+     hair above the exact fraction, so truncating the exact rational product gives the same `k`
+     at strength 1.0.
   B can then send `k` soldiers. So one soldier always stays home (at strength
-  1.0, `n - 1` go). Confidence: high for the conditions; medium for "region"
-  being the water-separated land area.
+  1.0 and d <= 12, `n - 1` go). Confidence: high for the conditions; medium for "region"
+  being the water-separated land area; high for the factor (read from the machine code, its
+  three constants 24, 12 and 1/24, and measured: T23).
 - **MIL-ATK-1.2 Available attackers.** `A(target, P)` = 0 unless at least one
   field of the ring at distance exactly `range(target) + 1` around the target
   (the six-sided ring, MAP-GRID-2.1; fields off the map are skipped) is owned
@@ -119,6 +128,12 @@ health point off the other.
   From that field a second breadth-first search finds the first **free**
   field (MIL-ATK-4.3). Both the attacker and the interceptor get this field as
   their meeting field. Confidence: medium (search order details in the notes).
+  **The order of both searches (2026-11-17 day, E-mil-022: code reading, the R6 recording and an
+  experiment build; high):** each search tests its start field first and then works first in, first
+  out; a field's six neighbours are taken in the ring order of `MAP-grid-geometry.md` MAP-GRID-3.2,
+  **directions 5, 0, 1, 2, 3, 4** (one step in direction 4, then around), not 0 to 5. "First found on
+  ties" is in that order. So when D is the target itself, the meeting field is the target's
+  direction-5 neighbour if that is free (T25). The free-field search of 4.3 visits in the same order.
 - **MIL-ATK-3.4** An interceptor that reaches its meeting field, or whose
   duel has ended, waits there ("defense wait"). In each of its updates: if it
   is paired with an attacker (again), it walks to that attacker's waiting
@@ -136,6 +151,14 @@ health point off the other.
   soldiers leave in ticks c + 1, c + 41, c + 81, ... Confidence: medium for
   the exact ticks (a soldier switches to waiting in tick c and walks out on its
   next update).
+- **MIL-ATK-4.1a Out through his own flag (2026-11-17 day, E-mil-021: the four-player recording
+  E-trace-019 and an experiment build; high).** The walk out is the walk of any settler leaving a
+  building: one step from the building's field to **its own flag**, started at progress 0 in the
+  tick he leaves. He ends it on the flag's point exactly (the step's excess dropped) and, in that
+  arrival tick, starts his next walk at progress 0 from the flag: an attacker to his meeting field
+  if his record holds one, else towards the target (4.2); an interceptor to his meeting field
+  (MIL-ATK-3.3). The free walk is planned from the flag, not from the building's field, so the
+  first field after the flag can lie on the other side of the building. Test T24.
 - **MIL-ATK-4.2 Walk.** An attacker with a meeting field walks there (free
   walk, `TRN-free-walk.md`); otherwise it walks to the target building's door.
   On arriving at the door, if the target can be taken (MIL-CON-1.1) it goes
@@ -149,7 +172,7 @@ health point off the other.
   MIL-ATK-3.3) walks straight to that field instead. Confidence: high.
 - **MIL-ATK-4.3 Free field.** A waiting field is found by breadth-first search
   from the attacker's own field over walkable fields (the start field is
-  tested first; neighbours are taken in a fixed ring order). A field is free
+  tested first; neighbours are taken in the ring order 5, 0, 1, 2, 3, 4, as 3.3). A field is free
   when no other attacker's waiting field and no interceptor's meeting field is
   that field, it is not a road field (field state bit Street, FMT-S2M-4.4) and
   no flag stands on it. The first free field wins. Confidence: medium.
@@ -173,8 +196,9 @@ health point off the other.
   code reading, high).** "Walks home" is a free walk to the flag of **his own military building**
   (the one that sent him), after which he goes in as every settler does. When that building no
   longer exists, the walk does not start. Every tick, before his state is handled, a soldier
-  outside a building checks his four links: his home building, his attack target, and the two
-  links of the fight he may be in. When none of them exists any more, he is **sent home as a
+  outside a building checks his four links: his home building, his attack target, the opponent of
+  the fight he may be in, and (an interceptor) the building he defends (corrected 2026-11-17 day,
+  E-mil-019: not a second link of the fight). When none of them exists any more, he is **sent home as a
   settler without a building** (`TRN-free-walk.md` TRN-FREE-6.4: the nearest accepting warehouse
   over the roads, and so on), in that tick. So an attacker whose target and home are both gone
   ends in a warehouse. (How a home building that now wants fewer soldiers takes a returning one
@@ -341,6 +365,7 @@ health point off the other.
 | Name | Value | Unit | Confidence | Evidence ref |
 |---|---|---|---|---|
 | attack / interception reach | d < 24 | fields | high | E-mil-003 |
+| distance factor of k | min(36 - d, 24) / 24 (float32, 1/24 = 0.0416666679) | | high | E-mil-020 |
 | path limit | < 2 x d | steps | high | E-mil-003 |
 | target ring | range + 1 | fields | high | E-mil-003 |
 | count fractions | 0.25, 0.5, 0.75, 1.0 | | high | E-mil-003 |
@@ -378,6 +403,9 @@ health point off the other.
 | T20 | 6.1a, interceptor I with meeting field M, paired with a waiting attacker whose waiting field is W != M | where the duel is fought | on W (I walks to W's lattice point); after the duel I stands where he is; M unchanged in I's record |
 | T21 | 6.1a (Q-1050): attacker A arrives at his waiting field W when no defender can be paired; later defender D is paired with A at tick t; D dies in the duel and the target can be taken | A's position and draws | A walks to W's lattice point and draws nothing while unpaired; at t + 1 one draw and the one-step offset walk (12 ticks); after D's death A walks the step back to W's point (12 ticks) and only then starts for the door |
 | T22 | 4.2, 4.3 (Q-1051): attacker A sent against guard house G (field g, flag field f), no interception, no opponent when he arrives | where A walks and the waiting field | A's walk ends on f; the search starts on f (a flag: not free), never enters g or any other building's footprint (MovementBlocked) and passes over road fields without taking them; the waiting field is the first walkable field without a flag, road or other waiting / meeting field in the search's order |
+| T23 | 1.1 (the distance factor), 1.2, 2.1, 2.3: E-trace-019 (R6, Keyhole `MP_4P_Fight`, players 1 to 3 Hard, attack strength 1.0), player 2's first attack, against player 3's guard house on (31, 21), in counter 12168 (trace tick 12169); its buildings in range: the guard house on (42, 23) (d 12, 2 soldiers present and idle), the tower on (47, 19) (d 17, 6), the guard house on (51, 17) (d 22, 3, being upgraded) | k of each; the attackers sent; the draws | k = trunc(1 x 1.0 x 24/24) = 1, trunc(5 x 1.0 x 19/24) = trunc(3.96) = 3, trunc(2 x 1.0 x 14/24) = trunc(1.17) = 1, so 5 available and 5 sent: 1 from (42, 23), then the first 3 of (47, 19)'s list, then 1 of (51, 17)'s (by distance, MIL-ATK-2.1), five attack records and so five draws in that tick (recorded: 8 draws and 8 attackers, 1 + 5 + 2, without the factor). The upgrading building sends: it counts as finished (its own construction is done; the upgrade is separate). Experiment build (the factor; AI-MIL-4.4a on): the war's generator first differs at 12171 instead of 12169 |
+| T24 | 4.1a: E-trace-019 (R6), player 2's first attack on player 3's guard house (31, 21), counter 12168 (trace tick 12169); the interceptor 16370 of (31, 21) with meeting field (32, 21); the attackers 16579 of (47, 19), 17868 of (51, 17), 18180 of (42, 23) | the walks out | each leaves with a walk at progress 0 in trace tick 12171 to his own building's flag: 16370 to (32, 20), on its point at 12194, then from that tick to (32, 21) (one step, first moving in 12195); 16579 to (48, 18) (12194), then west over (47, 18) (12217); 17868 to (52, 16) (12194), then over (51, 16) (12217); 18180 to (43, 22) (a climb, 12199), then over (42, 22). The second and third soldiers of (47, 19) leave 40 and 80 ticks later the same way (16592: (48, 18) at 12234). Walking straight from the building's field (16370 east to (32, 21) from 12172) differs from 12172 on, and its free walk from the building's field draws 13 numbers in 12171 that the original does not draw. Experiment build (with T23, T47b and AI-MIL-4.4a): the war's settlers (animation aside) first differ at 12188 instead of 12172, its generator at 12199 instead of 12171 |
+| T25 | 3.3, 4.3 (the order): E-trace-019 (R6), player 2's first attack on player 3's guard house (31, 21) (an odd row), counter 12168; (31, 21) defends itself (D = the target) with 16370 | the meeting field | the search from (31, 21): the start (distance 0), then its neighbours in the order 5, 0, 1, 2, 3, 4: (32, 22) first at distance 1, kept; it is free, so the meeting field is (32, 22) for 16370 and the attacker paired with him (18180, waiting there from 12484); recorded: 16370 walks out to his flag (32, 20), on over (32, 21) without stopping, and waits on (32, 22) from 12239 (state 39). In the order 0 .. 5 the field would be (32, 21) and he would stop there in 12217. Experiment build (the tick-exact branch's head with 4.1a and this order): the war's settlers (animation aside) first differ at 12227 instead of 12217, its generator at 12476 instead of 12199 (the attacker's free walk to (32, 22) draws as the original's) |
 
 ## Evidence
 
@@ -403,6 +431,9 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-015 | code reading and data | (session 2026-11-16 night) | 1.3: which enemy buildings open the attack dialog (headquarters, or a soldier limit above 0 and occupied), T1b |
 | E-mil-016 | code reading | (session 2026-11-16 night) | 4.4: the waiting attacker's return to his own building's flag; the return refused when that building is gone |
 | E-mil-017 | code reading | (session 2026-11-16 day) | 4.4: the soldier's per-tick test of his four links; with none left he goes home as a settler without a building (Q-142) |
+| E-mil-020, E-trace-019 | code reading, recording, heap dumps | (session 2026-11-17 day): the per-building share's x87 sequence and its constants; R6's attackers and garrisons at counter 12168, player 2's attack strength 1.0 and the soldiers' links in the heap dump of 12000 | 1.1 item 7 (the distance factor), T23 |
+| E-mil-021, E-trace-019 | recording and experiment build | (session 2026-11-17 day): the settler rows of R6's first attack's six soldiers from trace tick 12169 | 4.1a (T24) |
+| E-mil-022, E-trace-019 | code reading, recording, experiment build | (session 2026-11-17 day): the two searches' neighbour order; R6's interceptor 16370 and attacker 18180 on (32, 22) | 3.3, 4.3 (T25) |
 | data | script | `military.lua`, `ai.lua` | fighting time, AI profile values |
 
 ## Open questions
