@@ -77,6 +77,13 @@ impl Plugin for View3dPlugin {
             ),
         );
         let _ = shaders.insert(
+            &TERRAIN_PREPASS_SHADER,
+            Shader::from_wesl(
+                include_str!("../shaders/terrain_prepass.wesl"),
+                "s2_viewer/terrain_prepass.wesl",
+            ),
+        );
+        let _ = shaders.insert(
             &crate::render::models3d::OBJECT_SHADOW_SHADER,
             Shader::from_wesl(
                 include_str!("../shaders/object_shadow.wesl"),
@@ -342,6 +349,9 @@ pub struct View3d {
     game_shadows: GameShadows,
     /// SET-4b: the shadow map the light was last set for (none: not yet).
     shadows_drawn: Option<Option<usize>>,
+    /// GFX-VIEW-1.5 (Q-1067): the terrain sectors' list of the frame last
+    /// drawn, which the pick walks.
+    pub(crate) sectors: world3d::sectors::FrameSectors,
 }
 
 /// The player's headquarters: the first warehouse of theirs with soldiers.
@@ -447,6 +457,7 @@ impl View3d {
             fixed_eye: None,
             game_shadows: GameShadows::default(),
             shadows_drawn: None,
+            sectors: world3d::sectors::FrameSectors::default(),
         }
     }
 }

@@ -2,10 +2,42 @@
 
 use super::*;
 
+/// Hook W17b: what Bevy's occlusion (its visibility-bitmask GTAO at High
+/// quality, 3 samples per slice side, 6 sectors a slice) gives a flat
+/// surface: a sample lying on the surface marks the sector at the
+/// hemisphere's edge, one of six, so open ground reads 1 - 1/6 (measured
+/// 0.80 to 0.83 on Storm Coast's ground). The shaders divide by it
+/// (`AO_FLAT` in terrain.wesl and object.wesl), so open ground is
+/// unoccluded and only real occlusion darkens. The shaders hold the number;
+/// this one is the tests' account of it.
+#[cfg(test)]
+pub(crate) const AO_FLAT: f32 = 1.0 - 1.0 / 6.0;
+
+/// Hook W17b: the map camera's parts for a project's ambient occlusion:
+/// Bevy's screen-space ambient occlusion (which brings the depth and normal
+/// prepasses the terrain and object materials draw) and no multisampling,
+/// which it needs; none by default.
+pub(crate) fn ambient_occlusion(
+    on: bool,
+) -> Option<(
+    bevy::pbr::ScreenSpaceAmbientOcclusion,
+    bevy::render::view::Msaa,
+)> {
+    on.then(|| {
+        (
+            bevy::pbr::ScreenSpaceAmbientOcclusion {
+                quality_level: bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::High,
+                ..default()
+            },
+            bevy::render::view::Msaa::Off,
+        )
+    })
+}
+
 pub fn setup_3d(mut commands: Commands, menu: Res<crate::menus::menu::MenuState>) {
     let render = crate::extend::render();
     let shadow_map = drawn_shadow_map(&menu.settings);
-    commands.spawn((
+    let mut camera = commands.spawn((
         MapCamera3d,
         Camera3d::default(),
         Camera {
@@ -41,6 +73,9 @@ pub fn setup_3d(mut commands: Commands, menu: Res<crate::menus::menu::MenuState>
         RenderLayers::layer(MAP_LAYER),
         Transform::from_xyz(0.0, 50.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
+    if let Some(occlusion) = ambient_occlusion(render.ambient_occlusion) {
+        camera.insert(occlusion);
+    }
     // GFX-VIEW-2.5: the light's shadow map (where it differs from the
     // spec: docs/shadows.md, Q-215). The shaders do their own
     // lighting (GFX-VIEW-2.3) and only read its shadow; its frustum is

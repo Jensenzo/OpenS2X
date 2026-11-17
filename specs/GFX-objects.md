@@ -651,6 +651,12 @@ lightColour`, pixel `D = ambient + L x shadow` (shadow = 4-tap shadow map,
 - **GFX-OBJ-2.10 Border markers (border_shader).** Instanced by position
   vectors; `rgb = D x lerp(playerColour x 1.8, tex.rgb, tex.a)`, alpha = tex.a
   x fog-of-war alpha, alpha test 127 and blending. Confidence: high.
+  **Seen (2026-11-17 night, Q-207 c; E-trace-033, pictures of the original at 2560 x 1440):** a border
+  stone is drawn whole: a grey stone foot and a **player-coloured dome** on it (blue, red, green or
+  yellow, flat-shaded), standing on the border fields. So the player-coloured part (tex.a 0) is **not**
+  cut away: the alpha test of 127 above does not act on the border markers as the game draws them
+  (which render state turns it off was not traced). Drawing them without the alpha test, as the flag
+  (2.9), gives the seen picture (high for the look).
 - **GFX-OBJ-2.11 Player colours.** The eight player colours are set by
   `scripts/menu.cfg`: 0 (0.01, 0.10, 0.60), 1 (0.60, 0, 0), 2 (0.20, 0.50, 0),
   3 (0.75, 0.46, 0.05), 4 (0.50, 0.50, 0.50), 5 (0.09, 0.09, 0.09), 6 (0.45,

@@ -1149,7 +1149,9 @@ pub fn ray_ground(
 }
 
 /// As [`ray_ground`], with the vertex of the hit triangle nearest the hit
-/// point (GFX-VIEW-1.5).
+/// point: the drawn fine triangles (the pick itself goes over the field
+/// points, [`sectors`]).
+#[cfg(test)]
 pub fn ray_hit(
     heights: &impl Heights,
     origin: [f32; 3],
@@ -1347,6 +1349,18 @@ fn triangle_normal([a, b, c]: [[f32; 3]; 3]) -> [f32; 3] {
     n.map(|v| v / length)
 }
 
+/// [`ray_triangle`] for the tests of other modules.
+#[cfg(test)]
+pub(crate) fn ray_triangle_for_tests(
+    origin: [f32; 3],
+    direction: [f32; 3],
+    a: [f32; 3],
+    b: [f32; 3],
+    c: [f32; 3],
+) -> Option<f32> {
+    ray_triangle(origin, direction, a, b, c)
+}
+
 /// The distance along the ray to where it meets the triangle (either
 /// side), if it does.
 fn ray_triangle(
@@ -1382,24 +1396,7 @@ fn ray_triangle(
     Some(dot(e2, q) / det)
 }
 
-/// GFX-VIEW-1.5: the field under a ray (game frame) of length 1000: the
-/// first of the terrain's lattice triangles it meets (the ones the terrain
-/// mesh is drawn with), then the vertex of that triangle nearest the hit
-/// point. The drawn lattice is the fine one; a vertex that is not a field's
-/// own sample gives the field nearest it (Q-202). No hit picks nothing.
-pub fn ray_field(
-    heights: &impl Heights,
-    origin: [f32; 3],
-    direction: [f32; 3],
-) -> Option<(u32, u32)> {
-    const REACH: f32 = 1000.0;
-    let (_, (c, r)) = ray_hit(heights, origin, direction, REACH)?;
-    let frame = heights.frame();
-    let [x, z] = frame.sample_xz(c, r);
-    let [u, v] = frame.to_plane(x, z);
-    let (width, height) = ((frame.columns - 1) / 4, (frame.rows - 1) / 4);
-    crate::render::terrain::nearest_field(u, v, width, height).map(|f| (f.x, f.y))
-}
+pub mod sectors;
 
 #[cfg(test)]
 mod tests;

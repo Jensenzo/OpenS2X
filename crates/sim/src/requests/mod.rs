@@ -130,6 +130,9 @@ pub struct Request {
     pub player: PlayerId,
     pub requester: Requester,
     pub profession: u32,
+    /// SHIP-4.1 (Q-063): the harbour it is attached to (it counts in that
+    /// harbour's need of the profession).
+    pub harbour: Option<Point>,
 }
 
 /// An order for one unit of `good` for the building `target` (ECO-REQ-4).
@@ -144,6 +147,9 @@ pub struct Order {
     /// ECO-REQ-5.3f: its place in the order the orders were made (a served
     /// order keeps it).
     pub made: u64,
+    /// SHIP-4.1 (Q-063): the harbour it is attached to (it counts in that
+    /// harbour's need of the good) while it is open.
+    pub harbour: Option<Point>,
 }
 
 /// A message to a player.
@@ -287,7 +293,11 @@ impl World {
         // building drops its open order of the good that was made first
         // (the served one when it is the oldest).
         if let Some(order) = served.filter(|o| o.target.at == target.at && o.good == good) {
-            self.orders.push(order);
+            // SHIP-4.1: open again, attached to no harbour.
+            self.orders.push(Order {
+                harbour: None,
+                ..order
+            });
             let first = self
                 .orders
                 .iter()
@@ -296,7 +306,8 @@ impl World {
                 .min_by_key(|(_, o)| o.made)
                 .map(|(i, _)| i);
             if let Some(i) = first {
-                self.orders.remove(i);
+                let dropped = self.orders.remove(i);
+                self.detach_orders(&[dropped]);
             }
         }
         // MIL-UPG-2.3: an upgrading building takes what its construction
@@ -570,6 +581,7 @@ impl World {
                 player,
                 requester,
                 profession,
+                harbour: None,
             });
             // SIM-START-4.2: a request filed takes a number.
             self.new_number();
@@ -580,12 +592,21 @@ impl World {
     /// lose their link where they stand in the queue, which deletes them
     /// unserved on their turn.
     pub(crate) fn unlink_requests(&mut self, player: PlayerId, requester: Requester) {
+        let mut detached = Vec::new();
         for request in self
             .queue
             .iter_mut()
             .filter(|r| r.player == player && r.requester == requester)
         {
             request.requester = Requester::Unlinked;
+            // SHIP-4.1: a request whose requester is gone leaves its
+            // harbour's need at once.
+            if let Some(h) = request.harbour.take() {
+                detached.push((h, request.profession));
+            }
+        }
+        for (h, profession) in detached {
+            self.detach_need(h, profession);
         }
     }
 
@@ -650,6 +671,7 @@ impl World {
             // 2.3
             if !self.request_wanted(&request) {
                 self.queue.remove(index);
+                self.detach_request(&request);
                 continue;
             }
             // 2.5: the try before it, of any player.
@@ -658,8 +680,9 @@ impl World {
                 continue;
             }
             // 2.4
-            if self.serve(request.player, request) {
-                self.queue.remove(index);
+            if self.serve(request.player, request, index) {
+                let served = self.queue.remove(index);
+                self.detach_request(&served);
                 // T36: a success does not clear the failed key.
                 continue;
             }
@@ -752,8 +775,34 @@ impl World {
         }
     }
 
-    /// ECO-REQ-3: serve a request if a warehouse can; true if served.
-    fn serve(&mut self, player: PlayerId, request: Request) -> bool {
+    /// SHIP-4.1 (Q-063): a settler request leaving the queue, or served
+    /// over land, leaves its harbour's need.
+    fn detach_request(&mut self, request: &Request) {
+        if let Some(h) = request.harbour {
+            self.detach_need(h, request.profession);
+        }
+    }
+
+    /// SHIP-4.1 (Q-063): the settler request at `index` of the queue found
+    /// no warehouse able to send the settler: it is attached as a ware
+    /// order is ([`World::harbour_for`] from the requester's flag), if it
+    /// is not attached yet.
+    fn settler_harbour_step(&mut self, index: usize) {
+        let request = self.queue[index];
+        if request.harbour.is_some() || !self.has_harbour(request.player) {
+            return;
+        }
+        let flag = self.request_destination(request.requester);
+        let costs = self.route_costs_to(request.player, flag, Search::Settler);
+        if let Some(h) = self.harbour_for(request.player, request.profession, &costs) {
+            self.queue[index].harbour = Some(h);
+            self.attach_need(h, request.profession);
+        }
+    }
+
+    /// ECO-REQ-3: serve a request if a warehouse can; true if served. The
+    /// request is the queue's entry `index`.
+    fn serve(&mut self, player: PlayerId, request: Request, index: usize) -> bool {
         // MIL-SOL-4.7: a warehouse never makes a soldier for a request.
         if let Requester::Military(target) = request.requester {
             return self.serve_soldier(player, target);
@@ -802,12 +851,21 @@ impl World {
             }
             (Some((a, _)), _) => a,
             (None, Some((b, _))) => b,
-            (None, None) => return false,
+            (None, None) => {
+                self.settler_harbour_step(index);
+                return false;
+            }
         };
         // 3.5
         let warehouse = &self.warehouses[&chosen];
         let in_stock = warehouse.count(profession) > 0;
-        if warehouse.cooldown > 0 || !(in_stock || can_make(&chosen)) {
+        let sendable = warehouse.cooldown == 0 && (in_stock || can_make(&chosen));
+        // SHIP-4.1 (Q-063): a request that finds a warehouse over land is
+        // detached before it is served.
+        if let Some(h) = self.queue[index].harbour.take() {
+            self.detach_need(h, profession);
+        }
+        if !sendable {
             return false;
         }
         // 3.6
@@ -1000,6 +1058,7 @@ impl World {
             target,
             stamp: 0,
             made,
+            harbour: None,
         });
         // SIM-START-4.4 d: material files no request and takes no number;
         // its helper and ware do when it leaves the warehouse (f).
@@ -1008,14 +1067,17 @@ impl World {
     /// Drop up to `count` open orders of `good` for the building on `at`.
     pub(crate) fn cancel_orders(&mut self, at: Point, good: u32, count: u32) {
         let mut left = count;
+        let mut removed = Vec::new();
         self.orders.retain(|o| {
             if left > 0 && o.target.at == at && o.good == good {
                 left -= 1;
+                removed.push(*o);
                 false
             } else {
                 true
             }
         });
+        self.detach_orders(&removed);
     }
 
     /// ECO-REQ-5.1
@@ -1150,11 +1212,63 @@ impl World {
                 }
             }
         }
+        // SHIP-4.1 (Q-063 end (1), (2)): an order that took its ware, or
+        // whose building is gone, leaves its harbour's need at once.
+        for i in (0..self.orders.len()).filter(|&i| served[i]) {
+            if let Some(h) = self.orders[i].harbour.take() {
+                self.detach_need(h, self.orders[i].good);
+            }
+        }
         let mut i = 0;
         self.orders.retain(|_| {
             i += 1;
             !served[i - 1]
         });
+    }
+
+    /// SHIP-4.1 (Q-063): the harbour step of the order `i` the pass chose
+    /// with no warehouse over land to serve it. Unattached: it is attached
+    /// to the harbour [`World::harbour_for`] gives, if any, adding one to
+    /// that harbour's need of the good. Attached: it stays while its
+    /// harbour still accepts the good and is reachable over the roads from
+    /// the order's flag, else it is detached (and may attach again at a
+    /// later pass).
+    fn harbour_step(&mut self, i: usize) {
+        let order = self.orders[i];
+        if order.harbour.is_none() && !self.has_harbour(order.player) {
+            return;
+        }
+        let Some(flag) = self.target_flag(order.target) else {
+            return;
+        };
+        let costs = self.route_costs_to(order.player, flag, Search::Ware);
+        match order.harbour {
+            Some(h) => {
+                let keeps = self.harbour_at(h).is_some()
+                    && self.warehouse_accepts(h, order.good)
+                    && costs.from(self.flag_of(h)).is_some();
+                if !keeps {
+                    self.orders[i].harbour = None;
+                    self.detach_need(h, order.good);
+                }
+            }
+            None => {
+                if let Some(h) = self.harbour_for(order.player, order.good, &costs) {
+                    self.orders[i].harbour = Some(h);
+                    self.attach_need(h, order.good);
+                }
+            }
+        }
+    }
+
+    /// SHIP-4.1 (Q-063 end (2)): orders leaving the open orders without a
+    /// ware leave their harbours' needs.
+    pub(crate) fn detach_orders(&mut self, removed: &[Order]) {
+        for o in removed {
+            if let Some(h) = o.harbour {
+                self.detach_need(h, o.good);
+            }
+        }
     }
 
     /// ECO-DIST-3.3a: an order of the building on `at` is in list 0: a
@@ -1184,7 +1298,12 @@ impl World {
             && self.free_wares(player, good).any(|(_, at)| in_network(at))
         {
             let d1 = self.choose_order(player, good, group)?;
-            let order = self.orders[d1];
+            // SHIP-4.1: a served order leaves its harbour (match_orders);
+            // the copy filed with its ware is attached to none.
+            let order = Order {
+                harbour: None,
+                ..self.orders[d1]
+            };
             let d1_flag = self.target_flag(order.target).expect("a flag");
             // (a) when a free ware for D1 lies off its flag; either way the
             // good is done in this network.
@@ -1199,12 +1318,18 @@ impl World {
         match self.stocked_warehouse(player, warehouses.clone(), good, flag, &costs) {
             None => {
                 // No H: an order is chosen (and marked); nothing is sent.
-                self.choose_order(player, good, group);
+                // SHIP-4.1 (Q-063): then its harbour step.
+                if let Some(i) = self.choose_order(player, good, group) {
+                    self.harbour_step(i);
+                }
                 None
             }
             Some((h, _)) if self.can_send(h) => {
                 let d2 = self.choose_order(player, good, group)?;
-                let order = self.orders[d2];
+                let order = Order {
+                    harbour: None,
+                    ..self.orders[d2]
+                };
                 let d2_flag = self.target_flag(order.target).expect("a flag");
                 // T34: the warehouse nearest to D2's flag, other than D2's
                 // own building, only has to pass the three tests; H sends.

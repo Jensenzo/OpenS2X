@@ -227,10 +227,20 @@ is engine driven, keyed by one global step index.
   destroyed all enemies!", 2 "You have conquered the map!", 3 "You have enough Coins in your
   depots!", 4 "You have reached the magic gate!"), per player / team VICTORY or DEFEAT, buttons
   "EXIT MAP", "Statistics", "CONTINUE". The defeat screen says "You have lost the Map!" with the
-  picture `ui_briefing_screen_lost`. The game clock is stopped (time scale 0) when the end dialog opens, and
+  picture `ui_briefing_screen_lost`. When the end dialog opens
   the music changes: the playlist stops and `Winning Jingle` (VICTORY) or `Loosing Jingle` (DEFEAT)
   plays (`SND-sound-music.md` SND-2.2; corrected 2026-11-08 b, E-gfx-041). Closing it: target 4 goes to the campaign menu, any other
   target to the main menu.
+  **The world runs on behind the end screen (corrected 2026-11-17 night, E-trace-033 pictures and
+  E-cam-018 code reading).** Opening the end screen of 3.6a does not stop the game clock. In a free
+  game lost by the human, the world went on for the whole time the end screen was open (about five
+  real minutes): the winner's soldiers walked, its new buildings went up on our former land, and the
+  counter kept rising. The earlier "time scale 0 when the end dialog opens" came from the campaign
+  victory book's outro (3.6b). That outro holds the clock only while its film plays and lets it run
+  again when the film ends or is closed. Nothing in the end screen's own code holds the clock (the
+  player's pause, UI-GAME-12.1, is a separate switch the end screen does not touch). Confidence:
+  high for the free game's end screen (seen, and the code has no other hold); medium that the victory
+  book holds the clock only during its film (code only).
 - **CAM-3.6b The victory book in a campaign mission (2026-11-15 night, Q-187 f; E-trace-028, pictures
   of campaign01 won with the cheat `INeedSomeHelp`; E-cam-012).** When a campaign mission's target is
   met, the game shows the **victory book**: the book dialog of 1.3c (frame `uiBriefing`, centred)
@@ -304,6 +314,28 @@ is engine driven, keyed by one global step index.
   end screen's left half; the end screen stayed behind it, its `Exit map` and `CONTINUE` still
   reachable under the window, and the window's close button returned to the end screen. **Exit map**
   went straight to the main menu (as 3.6: any target but 4). Test T20b.
+  **Seen, a free game's defeat (2026-11-17 night, E-trace-033, Summer Breeze (`MP_2P_Summer_Breeze`),
+  one Hard computer player, Low resources, the TooFast speed, no soldier cheat, 2560 x 1440).** The
+  computer player's first attack was on our headquarters. The end screen opened within about 5000
+  counters of that first under-attack message, when the headquarters fell. It is the end screen of
+  3.6a, not the defeat screen of 3.6c. Every place agrees with 3.6a and with the victory picture
+  above:
+  - title `SUMMER BREEZE`; **`DEFEAT`** centred on (374, 110); 25 px lower **"Your headquarters has
+    been destroyed!"** (the key `!Castle destroyed!`);
+  - two rows: `Player #1:` in blue, `Look`, `Team 1`, **`DEFEAT`** in the olive defeated colour;
+    `Player #2:` in red, `AI`, `Team 2`, **`VICTORY`** in the bright yellow. So after a real
+    defeat the winner's row does show `VICTORY` (unlike the cheat's victory above, where no row
+    did);
+  - the three buttons in their places. **CONTINUE is disabled, as 3.6a says, but its text is not
+    greyed.** Its label is as light as the other two; only its face is darker (about 55 grey levels
+    against about 77 for the other two buttons, and against 76 for the same button on the victory
+    screen); the face's sheen is gone. With the pointer on it, CONTINUE showed no hover highlight
+    (`Exit map` under the pointer turned teal). A click on it did nothing: the end screen stayed.
+  **Statistics** worked as on the victory screen: the statistics window over the end screen's left
+  half, `15 minutes`, `Size of territory`, our line flat at the bottom and the winner's line ending
+  at 26 %; its close button returned to the end screen. **Exit map** opened the main menu. The world
+  ran on behind the end screen the whole time (3.6). Confidence: high (pictures; one game). Test
+  T20c.
 - **CAM-3.6c The defeat screen's layout (2026-11-15 day; E-cam-015, code reading).** The defeat
   screen ("You have lost the Map!", 3.6) is made on the book dialog (1.3c: the same `uiBriefing`
   frame, 728 x 568, centred, the same title from the map's name). The defeat screen changes the
@@ -317,7 +349,8 @@ is engine driven, keyed by one global step index.
   - plays the losing jingle (music slot 3, as the end screen's defeat, SND).
 
   There is no CONTINUE and no Statistics button on this screen. Confidence: high (code); not seen
-  in a picture (no defeat was reached in the original). Test T20a.
+  in a picture. A free game's defeat shows the end screen of 3.6a instead (seen 2026-11-17 night,
+  above), so this screen is a campaign mission's (code only, as ours builds it). Test T20a.
 - **CAM-3.7** Cheats typed in the game (exact strings): `INeedSomeHelp` marks the map completed
   with the current target; `TooFast` changes the speed; `ShowMeTheWorld` reveals the map;
   `FreedomOfMovement`; `GiveMeSomeMore` adds 10 of every good to the headquarters.
@@ -577,9 +610,10 @@ Pointer fields: 0x01 (104,56), 0x04 (103,60), 0x08 (101,63), 0x0a (127,35), 0x0f
 | T19 | 5.3c (Q-100 b): lesson 1 at step 0x25 (`T01_SawMill_SelectPage`), the build menu open on the small page | a click on the large tab, then on the medium tab, then at step 0x26 a click on cell 2 | the large tab shows "Select the highlighted flag." and nothing changes; the medium tab switches the page and advances to 0x26; cell 2 shows "Click the highlighted button to continue!"; only cell 1 (the sawmill) advances |
 | T19a | 1.3c (missing key): the book of tutorial lesson 2 (map `tutorial02`) opens with the English texts | the book's title | TUTORIAL02 (the map name itself, no key `tutorial02` in `controls.txt`); lesson 1 shows TUTORIAL 1 (its key gives `Tutorial 1`); campaign01 MISSION 1 |
 | T19b | 5.3c (Q-100 b, the other dialogs): lesson 4 at step 5 with the harbour window open; then lesson 3 at step 0x1a with the tools page open | highlights, clicks, errors | harbour: the expedition tab highlighted; a click on the goods tab shows "Select the highlighted flag." (`T01_ERROR_SelectStreetIcon`) and nothing advances; the expedition tab: the expedition page, step 6, its start button highlighted; the start button: `prepare-expedition` sent, step 7, the close button highlighted; the close button: step 8. Tools page at 0x1a: the military tab highlighted; a click on the distribution tab shows `T01_ERROR_SelectStreetIcon`; the military tab: the military page opens at step 0x1b with its close button highlighted; its close button: the dialog closes, step 0x1c |
-| T20a | 3.6a, 3.6c: a free game with three players lost by the human; then a campaign mission lost | the end screen; the defeat screen | end screen: DEFEAT at (374, 110), `Castle destroyed!` 25 px lower; rows at y 190, 215, 240 with `Player #1` at x 140, the name at 230, `Team n` at 400, the result at 500; CONTINUE greyed; Statistics and EXIT MAP work. Defeat screen: the book frame and title, DEFEAT at (260, 90), `You have lost the Map!` in the text box, the lost picture, only EXIT MAP at (190, 465), no page arrows |
+| T20a | 3.6a, 3.6c: a free game with three players lost by the human; then a campaign mission lost | the end screen; the defeat screen | end screen: DEFEAT at (374, 110), `Castle destroyed!` 25 px lower; rows at y 190, 215, 240 with `Player #1` at x 140, the name at 230, `Team n` at 400, the result at 500; CONTINUE disabled (its label as light as the others', its face darker, no hover highlight, a click does nothing); Statistics and EXIT MAP work. Defeat screen: the book frame and title, DEFEAT at (260, 90), `You have lost the Map!` in the text box, the lost picture, only EXIT MAP at (190, 465), no page arrows |
 | T20b | 3.6, 3.6a: a free game on Keyhole with three computer players, one of them beaten by another; the human sends `INeedSomeHelp`; then Statistics, its close button, Exit map | the end screen, the statistics window, the menu | end screen: `KEYHOLE`, `VICTORY` at (374, 110), "You have defeated all enemies!" 25 px lower; rows `Player #1:` .. `Player #4:` in the players' colours at x 140, y 190 + 25 k, names `Look`, `AI`, `AI`, `AI`, `Team 1` .. `Team 4` at x 400, `DEFEAT` only in the beaten player's row, nothing in the human's row; Statistics opens the statistics window over the end screen (15 minutes, Size of territory), its close returns to the end screen; Exit map opens the main menu |
 | T20b | 3.6a (Q-1057): a free game on a four-player map, the human in slot 1 with profile name `Anna`, computer players in slots 2 and 4, slot 3 closed; the human wins | the end screen's rows | three rows: `Player #1` `Anna` `Team 1` VICTORY; `Player #2` `AI` ...; `Player #4` `AI` ...; no row for slot 3, so the three rows stand at y 190, 215 and 240; in a German game the computer players' name is the German text of `!AI` |
+| T20c | 3.6, 3.6a (2026-11-17 night): a free game on Summer Breeze, the human against one Hard computer player; the computer player takes the human's headquarters | the end screen, the world behind it, the buttons | end screen: `SUMMER BREEZE`, `DEFEAT` at (374, 110), "Your headquarters has been destroyed!" 25 px lower; rows `Player #1:` (blue) `Look` `Team 1` `DEFEAT` (190, 190, 90) and `Player #2:` (red) `AI` `Team 2` `VICTORY` (255, 255, 155); the world keeps stepping while the end screen is open (the winner's soldiers and builders go on); CONTINUE drawn with a darker face, its label unchanged, no hover highlight, a click does nothing; Statistics opens the statistics window over the end screen and its close returns to it; Exit map opens the main menu |
 | T21 | 3.3 target 3 (Q-1063): a free game with "Collect 100 gold coins", the human alone on his team | (a) `GiveMeSomeMore` until the headquarters holds 106 coins, no mint; (b) then a mint of his finishes its 100th coin cycle (coins spent on promotions meanwhile); (c) the same with two allied players whose mints made 60 and 40 | (a) no victory, the briefing panel reads `(0/100)`; (b) victory at the next tick's test with the target 3 text, whatever the stock; (c) victory for both once 60 + 40 is reached, each panel showing its own figure (60/100 and 40/100) |
 
 ## Evidence
@@ -604,6 +638,8 @@ Pointer fields: 0x01 (104,56), 0x04 (103,60), 0x08 (101,63), 0x0a (127,35), 0x0f
 | E-cam-015 | code reading | (session 2026-11-15 day) | 3.6a: the end screen's row columns (0, 90, 260, 360 from (140, 190)), the defeat branch disabling CONTINUE; 3.6c: the defeat screen built on the book (hidden arrows, label and CONTINUE, the DEFEAT label, the text, the picture, EXIT MAP moved) |
 | E-cam-016 | code reading, saves of the original | (session 2026-11-16 night) | 3.6a: the name column is the player's name; computer players are named `!AI` at the game's start; only players made at the start have a row, and the rows close up; the original's Keyhole saves name their players `default`, `AI`, `AI`, `AI` |
 | E-cam-017 | code reading | S2DNG.exe: the result record's per-tick update (target 3 copies the statistics' coins-produced total), the mint's statistics count, the briefing panel's coin line | CAM-3.3 target 3, T21; UI-GAME-2.4 |
+| E-cam-018 | code reading | (session 2026-11-17 night) | 3.6: the clock's hold is set only by the campaign victory book's outro (held while its film plays, running again when it ends or is closed); the end screen's code sets none |
+| E-trace-033 | pictures of the original | (session 2026-11-17 night) | 3.6, 3.6a: a free game's defeat end screen on Summer Breeze (Hard computer player), the disabled CONTINUE's look, Statistics, Exit map, the world running behind the end screen |
 | E-trace-031 | pictures of the original | (session 2026-11-16 night) | 4.2: the campaign map before and after mission 1 won (markers, the description box); 3.3: a coins game not ended by 106 coins in the headquarters |
 | E-trace-032 | pictures of the original | (session 2026-11-16 day) | 3.6a: a free game's victory end screen after `INeedSomeHelp`, its Statistics window and Exit map |
 

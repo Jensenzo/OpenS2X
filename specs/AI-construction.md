@@ -340,6 +340,12 @@ locksmith's tools need, AI-CON-10.2, which has no consumer). Stages advance once
     **whatever order placed it**: the cell system's own woodcutter or stone pit, a military producer.
   - A cell's need list holds its needs in the order they were given that cell. Its production list holds
     its productions in the order they were added.
+    **The order is the order of giving, not of making (2026-11-17 night; E-ai-069, the R6 heap dumps
+    and measured, high).** A need that loses its cell (its producer torn down, 9.3) leaves its cell's
+    list, and when the needs arrangement gives it a cell again it goes to the **end** of that cell's
+    list, behind needs made after it, even when it is the same cell. So the first need a new
+    production is tied to is the earliest one *given the cell* among the waiting needs of its good,
+    which can be a younger need than the oldest waiting one. Test T102a.
   - So a producer that no need ordered still becomes the producer of a waiting need of its good in its
     cell. That decides, for one, which building the route optimizer takes as the need's producer
     (8.3 b).
@@ -739,11 +745,19 @@ Multiplicative factors, starting at 1; v = 0 means unusable.
   around p (0..2 for a large type) are walked outward, p itself first; if a
   field with the ForHarbor state bit (`ECO-building-placement.md`
   ECO-PLACE-1: harbour pavement) is found, the first such field must have an
-  own building within 3 fields (4 for a large type), else v = 0. No pavement
-  field within the rings: no constraint. Confidence: medium (the building
-  list used is one of the building system's lists; which subset it holds was
-  not identified; the game effect is that the AI builds next to harbour
-  pavement only once it already has a building there).
+  own **harbour** within 3 fields (4 for a large type), else v = 0. No pavement
+  field within the rings: no constraint.
+  **The building must be a harbour (corrected 2026-11-17 night, E-ai-070, code reading and
+  measured; was "an own building", the list being unidentified).** The test looks through the
+  game's list of harbours, which holds every building whose type is a harbour (in any state: a
+  harbour enters the list when it is placed, so a harbour's building site counts). It takes the
+  player's own harbours from it. Any other building near the pavement does not count: a guard
+  house, a woodcutter or the headquarters. So the computer player keeps harbour pavement and the
+  fields next to it free (v = 0) until it has a harbour there. Measured (T103): with every own building
+  counted, R6's player 3 puts the woodcutter of counter 9772 on (19, 30) instead of the recorded
+  (28, 24), and the fight game's generator parts at 9801. With harbours only, the site is the
+  recorded one, and the generator stays equal to 9909; the Storm Coast pairs are unchanged (Weak
+  51724, Hard 49218). Confidence: high.
 - **AI-CON-6.2 Base value.** Type without product, shipyard or hunter: if T
   has a planting good (forester): v = the supplier value of that good (for
   the forester's wood: the woodcutter). Type with product g: deposits good and
@@ -807,7 +821,12 @@ Multiplicative factors, starting at 1; v = 0 means unusable.
   map's indices to the recorded (138, 57); E-ai-013). The fields are walked in
   ring order (MAP-GRID-3) out to the range, skipping those outside the map. Harbour: 0 if an own harbour is within < 5 fields,
   else 1. Depot: 0 if any own warehouse is within < 11 fields, else 1.
-  Confidence: high.
+  **The warehouses in any state (corrected 2026-11-17 night, T105, E-ai-072; code and measured).**
+  The depot test looks through the game's list of warehouses: every building whose type is a
+  depot (headquarters, storehouse, harbour). A building enters that list when it is placed, as
+  the harbour list of 6.1 does. So **a warehouse's or harbour's building site counts** as soon as
+  it is placed; there is no test of the building's state. (The supplier value of 6.2, by
+  contrast, wants a finished warehouse.) Confidence: high (all of 6.3).
 - **AI-CON-6.4 Penalties.** Not a mine or harbour: an own farm **in any
   state (a farm's building site counts)** within distance 4 (3 for a farm)
   makes v = 0 for non-military types and halves v for military types
@@ -1017,7 +1036,25 @@ Multiplicative factors, starting at 1; v = 0 means unusable.
     2026-10-28, measured T68, T64; E-ai-039: a field holding an
     object of the field-object layer 0 is refused before its step cost is
     worked out);
-  - **a field on which a settler stands blocks** unless it is a (not one in
+  - **No settler blocks a walk path (corrected 2026-11-17 night, T104, E-ai-071;
+    measured).** A field is not refused because a settler stands on it, not even
+    R's own carrier waiting on R's idle field. The settler test written below
+    (2026-10-27 to 2026-10-31) is **withdrawn**. None of its cases needs it:
+    - T61's blocked field was a field of the same attempt's road-stop path, which
+      the second leg may not enter anyway (the exclusion added later, T74);
+    - T64's field also held the tree, and a tree field is closed;
+    - T79's hunter was walking;
+    - in T80 and T95, R's carrier stood on R's idle field and the second leg went
+      over it, read then as a donkey's field and as a cleared mark;
+    - in T104 R's carrier had stood on its idle field for over 200 ticks, nobody had
+      crossed it, and the second leg still went over it.
+
+    With no settler test, every recorded pair still reproduces those cases. The
+    fields closed to a walk path are those of the usability test, the excluded
+    positions, flags, roads but R, and trees and stone piles. Confidence:
+    medium-high (measured on all pairs; the code's field-object test was read for
+    flags, trees and stones, not for settlers).
+    *Withdrawn text, kept for the cases' history:* a field on which a settler stands blocks unless it is a (not one in
     the middle of a step: a carrier waiting on his idle field, a worker in a
     timed action on his work spot; a settler walking through does not block; nor does a
     worker on his walk back from a work spot off the field points to his own field,
@@ -1610,6 +1647,10 @@ Multiplicative factors, starting at 1; v = 0 means unusable.
 | T100 | 10.4 step 0 (the order of "first found", the end state): E-trace-013 (R3, the Hard game), player 1, the goods arrangement run of counter 45647; finished storehouses with planks: the castle 90180 (139, 51) 45, 92510 (130, 33) 1, 93353 (120, 59), 94007 (138, 26) and 94359 (146, 36) none (`stocks.csv`); every one has a plank record with both flags clear from step 1 | the plank flags after the run (`goodflags.csv`, stop:out) | 0 + 40 < 45: the castle 1:1, the harbour 90366 and 92510, 93353, 94007 1:0, 94359 0:0: the first storehouse with the smallest stock in cell-list order is 94359 (in the experiment build's cell list the storehouses' cells come as (8, 3), (8, 2), (9, 2), (7, 3), (8, 1)). Sorting by field (row, then column) takes 94007 (138, 26); skipping the "clear stop" step because the record was already clear leaves every storehouse stopped, so the plank of T59 in `TRN-carriers-transport.md` finds no warehouse: the Hard game against R3 differs from settlers 45670 (experiment build); with both fixed and T59, settlers 45723, buildings 46985 |
 | T101 | 8.3 a (state kept, E-ai-066): R6 player 2, route task on its hunter's hut (k 0, i 3, t 2, X ending on (51, 20)); the hut torn down at counter 6631; next record building 14678 on (58, 24), flag on (58, 23) | the runs of 6649 and 6686 | 6649: cursor moved to 14678, nothing else changed (i 3, t 2, X kept); 6686: 14678 taken up with that state; the direct variant asks the road from (58, 23) to the flag on (51, 20) and it is built: "58,23 58,22 57,21 57,20 56,19 56,18 55,17 55,16 54,16 53,16 52,17 52,18 51,19 51,20"; after the run k 1, i 0, t 0, X empty. Clearing the state at the take-up builds no road there |
 | T102 | 2.5b, 8.3 b: E-trace-019 (R6, the fight game), player 3. Its sawmill site (25, 22) of counter 322 makes a wood need (2.5), which gets the home cell and the square (4, 4) before counter 500 and no production (heap 500: need 14258, production none). The cell system's own woodcutter order places a woodcutter on (30, 22) at counter 622 | the woodcutter's announcement; the route optimizer's run of 6829 on the sawmill | the woodcutter's production is tied to the sawmill's wood need (heap 1000: need 14258, production 14315 of the woodcutter 14314). The sawmill's k = 2 partner at 6829 is that woodcutter, flag (30, 21), not the later woodcutter (26, 19) of counter 1786; the route task's rows from 6792 to 6903 follow (E-ai-067's emulation). Experiment build with both ties: the fight game's generator is equal to 8340 (was 8205); the Hard game's generator to 49 218 (was 48 043), its settlers to 49 500 and buildings to 50 700 (were 48 200); the Weak, one-player and two-player 40 000 games unchanged (no regression) |
+| T102a | 2.5b (the list order), 9.3, 8.3 b: E-trace-019 (R6, the fight game), player 2. Its wood needs 15177 (sawmill (55, 24)) and 15245 (sawmill (54, 22)) are made in that order; 15177 is tied to the woodcutter (56, 22), which is torn down at counter 5810 (heap 5500: 15177 production 14908, square (12, 5); heap 6000: no production, square (14, 4)), so 15177 is given its cell again and goes to the end of the cell's need list (heap 8500, the cell's list: ... 14266, 15245, ..., 15862, 15480, 15177, 16800). The cell system's woodcutter (59, 30) is placed at counter 8824 | which wood need its production is tied to; the route optimizer | the production of (59, 30) is tied to 15245, the first waiting wood need in the list (heap 9000: 15245 production 17058; 15177 still none); so the sawmill (54, 22)'s partner list (8.3 b) becomes [the woodcutter (59, 30), the headquarters]: at counter 8832 its k = 2 run takes the woodcutter and steps on to k = 3 (the recorded route table: k 3 at 8832, the road (52, 23) -> (54, 24) at 9387). Tying by making order (to 15177) keeps the headquarters as k = 2, builds that road at 9276 and makes the fight game's generator differ from trace tick 9311; with the rule it moves to 9371 (experiment build) |
+| T103 | 6.1 (the harbour list): E-trace-019 (R6, Keyhole, three Hard computer players), player 3's woodcutter order searched from its cell's position (24, 24) between counters 9737 and 9772; (18, 30) is harbour pavement, and the pavement runs over (15 .. 18, 30), (14 .. 17, 31), (16 .. 17, 32); player 3's only building within 3 of (18, 30) is a finished guard house on (21, 30); it has no harbour | the values of (18, 30) and (19, 30) and the site | both 0 (the first pavement field in their rings is (18, 30), with no own harbour within 3); the best stays (28, 24) (value 4, route 5, score 4 x 11 / 16 = 2.75), placed in counter 9772 as recorded. Counting the guard house, (19, 30) would win with 10 x 8 / 16 = 5.0 |
+| T104 | 8.1e (no settler blocks), 8.1 b: E-trace-019 (R6, Keyhole, three Hard computer players), player 2's street work on F (57, 26) with T (58, 28); R = road "58,28 57,27 58,26 58,25", P = (58, 25); R's carrier has stood on its idle field (58, 26) since counter 9678 and nobody has crossed it; (57, 25) is an inner field of another road at P; the road-stop path of attempts 3 to 5 is F, (57, 27), T | attempts 1 to 6 (counters 9873 .. 9908) and the execution | attempts 1, 2, 3 count nothing; attempt 4: the second leg F -> P is 2 steps over (58, 26): L 3, L2 2, best 4 (`ai_street`); attempt 5 changes nothing; attempt 6 (9908) repeats the road-stop search (two draws), removes R and builds "57,26 57,27 58,28" and "57,26 58,26 58,25" (streets table). Counting the carrier as standing leaves no second leg, attempt 6 does nothing and draws nothing, and the fight game's generator differs from 9909 |
+| T105 | 6.3 (the depot test counts sites): E-trace-019 (R6, Keyhole, three Hard computer players), player 1's storehouse order searched from its cell's position (54, 47) between counters 10412 and 10456; player 1's headquarters stands on (52, 56) and its harbour is a building site on (62, 49) (placed, levelling under way) | the values and the site | with the harbour site counted: (55, 45) (distance 9 from it), (56, 44) (9), (55, 43) (10) and the fields east of them are worth 0, (54, 44) (distance 11) is worth 1 with route 3: score 13 / 16 = 0.8125, and the storehouse site goes on (54, 44) in counter 10456, as recorded; counting only finished warehouses, (55, 45) is worth 1 with route 2 (score 0.875) and wins |
 
 ## Evidence
 
@@ -1689,6 +1730,10 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ai-054, E-trace-013 | code reading and recording | E-trace-013 `objects.csv.gz` (need 93032, cell 90199), `buildings.csv.gz` (93115) | AI-CON-3.3, T85 |
 | E-ai-025, E-trace-011 | code reading and recording | E-trace-011 `flags.csv.gz`, `streets.csv.gz`, `wares.csv.gz` (flag 90626, road 90634, plank 90927) | AI-CON-9.5 (T47) |
 | E-ai-026, E-trace-011 | code reading and memory reads of the running game | heap dumps 7500, 8000, 9500, 10000 (cell (9, 3)'s position) | AI-CON-1.1a (T49) |
+| E-ai-069 | code reading, heap dumps and measured | the R6 heap dumps 4500 .. 9000 (player 2's need map and its home cell's need list), the recorded route table, an experiment build | AI-CON-2.5b list order, T102a |
+| E-ai-070 | code reading and measured | the building system's list registration (the harbour list filled by the type's harbour flag), the pavement test's lookup, the R6 heap dump of 9500 (field state bits around (18, 30)) and buildings table of 9762, an experiment build | AI-CON-6.1, T103 |
+| E-ai-071 | recorded tables and measured | R6's `ai_street`, streets and settler rows around counters 9678 .. 9910, the field state bits of the heap dump 9500, the street task's field test read for its road and field-object checks, an experiment build without the settler test (fight generator 9909 -> 10698, Weak 51724 and Hard 49218 unchanged) | AI-CON-8.1e, T104 |
+| E-ai-072 | code reading and measured | the site value's depot test (it walks the building system's depot list, filled at placement, and tests owner and distance only), R6's buildings table at 10440, an experiment build (fight generator 10698 -> 11964, buildings 10457 -> 12067, settlers to 11686; Weak 51724 and Hard 49218 unchanged) | AI-CON-6.3, T105 |
 | E-ai-020 | code reading and experiment | experiment build exp4: the route task equals E-trace-010 run for run to counter 3472 (from 2584), dense settlers 4218 -> 4308 |
 | E-ai-021 | code reading, memory reads of the running game and experiment | E-trace-010 heap dumps 3500, 4000, 4500 (the AI player's destruction cursor) |
 | E-ai-022 | code reading, memory reads of the running game and experiment | E-trace-010 heap dumps 4500, 5000, 5500 (the AI player's construction part: budget, state, hunter holder; cell (8, 2)'s hunter id) |

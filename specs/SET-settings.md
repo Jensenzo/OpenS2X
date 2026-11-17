@@ -95,6 +95,11 @@ Every slider value is kept clamped to 0..1.
   11 = 0.75, 12 = 2/3, 17 = 1, 3 = 1, 7 = 14 = 15 = 18 = 0.75, shader 3. VeryHigh: all 1, shader 3.
   Custom sets no value. After any preset (Custom included): **field 10 = (field 12 above 1/6)**,
   **field 13 = (field 14 above 0)**.
+- **Without a profile file (2026-11-17 night, Q-188 b; E-gfx-056 addendum, code reading, high):** the
+  scene settings start as their constructor makes them: field 1 = 4 (VeryHigh) with that preset
+  applied, so fields 3, 7, 11, 12, 14, 15, 17, 18 are 1, field 16 (shader detail) is 3, fields 10 and
+  13 are on; fields 2, 4, 8 and 9 are off; fields 5 and 6 (width, height) are -1, unset; field 19
+  (`DayNightCycle`) is on. What the window then takes for an unset size was not read (Q-188 e).
 - **Slider moves:** the first move of any slider switches the preset to Custom (which applies the two
   recomputations above once). `SHADOW QUALITY` moved: field 10 = (new value above 0), then field 11 =
   the value. `SHADOW DETAIL` moved: field 12 only. `MIRROR QUALITY` or `MIRROR DETAILS` moved: that

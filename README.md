@@ -66,7 +66,7 @@ the game's behaviour, with no code of the original in it.
 
 ## Status
 
-**Version 0.11.2**. Free games, the campaign and
+**Version 0.11.3**. Free games, the campaign and
 the tutorial are playable, through the original's menus. The last measured differences from the
 original are being closed; see
 [How close it is](#how-close-it-is-to-the-original).
@@ -145,7 +145,7 @@ with them. The random generator is the strictest
 measure: it stays equal only while every part of the game has drawn from it
 exactly as often as the original. After the first difference the two games
 drift apart; closing those first differences is the remaining work. These
-are version 0.11.2's numbers.
+are version 0.11.3's numbers.
 
 **The picture.** The same scenes are shot in both programs from the same
 camera at the same tick: 12 pairs at 2560 x 1440, by day and at night. The
@@ -164,7 +164,7 @@ with the word, and with the question that asks for the answer where there is
 one ([`docs/stand-ins.md`](docs/stand-ins.md) lists them). The open
 questions to the investigation (the side that studies the original, see
 [How it works](#how-it-works)) are in
-[`specs/OPEN_QUESTIONS.md`](specs/OPEN_QUESTIONS.md): 454 so far, 48 open and 49 partly answered. The full
+[`specs/OPEN_QUESTIONS.md`](specs/OPEN_QUESTIONS.md): 456 so far, 48 open and 48 partly answered. The full
 record, with every recorded game: [`docs/fidelity.md`](docs/fidelity.md).
 
 ## How it works
@@ -202,8 +202,8 @@ flowchart LR
   Where the original computes in 32-bit floats and the outcome depends on
   it, OpenS2X rounds the same way. The same map, seed and commands give the
   same game on Linux and Windows.
-- **Tested.** About 1,830 tests written from the specifications' test
-  cases, state hashes of whole games on Linux and Windows, 63 reference
+- **Tested.** About 1,840 tests written from the specifications' test
+  cases, state hashes of whole games on Linux and Windows, 64 reference
   pictures, and a harness that plays the real program with the mouse and
   keyboard through the menus, the tutorial and the campaign.
 - **Every rule is traceable.** Each rule has an id such as `ECO-DIST-1.6`;

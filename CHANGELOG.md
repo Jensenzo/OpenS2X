@@ -8,6 +8,57 @@ the working name s2-reborn. The public repository starts with its first
 public release; the sections before it describe releases made in the
 maintainer's working repository, which have no tag or download there.
 
+## OpenS2X 0.11.3 (2026-11-17)
+
+Ships carry what your islands lack; the pointer picks the field the original
+picks; the end screen's Statistics button works; ambient occlusion and the
+effects' own colours for projects.
+
+### What is new
+
+- **Ships supply your islands**, as in the original: a construction site or
+  building whose roads reach no storehouse with the goods it needs (or no
+  storehouse that can send a settler) is put on the list of the nearest
+  harbour of yours on its island that has a ship of yours on its sea. That
+  harbour asks your other harbours, which gather the goods and ship them
+  over; once they are unloaded, the waiting buildings are served from the
+  harbour. Before, ships carried goods only for expeditions.
+- **The field under the pointer** is found as the original finds it: over
+  the fields' own points, the first one hit along the line of sight in the
+  order the original goes through the map's pieces on screen. On slopes and
+  behind ridges a click now lands on the field the original would choose.
+- **The end screen's Statistics button** opens the statistics window over the
+  end screen, as in the original; its close button returns to the end
+  screen.
+- **A geologist's find** names the geologist in its message, as in the
+  original: "Iron ore found! (Geologist)".
+- **Under attack**: "Military building lost to enemy!" and "Territory lost
+  to enemy!" no longer name a building (the original's do not); a building's
+  window closes by itself when an enemy takes the building.
+- **The end screen of a free game** no longer stops the game: the world goes
+  on behind it, as in the original (after a defeat you watch the winner take
+  your land), and the winner's row says VICTORY. On a defeat, CONTINUE keeps
+  its label's colour and only its bar is darker.
+
+### For projects built on OpenS2X: breaking changes
+
+- **SHIP-4.1**: a harbour's need comes from the rule: `s2_sim::Order` and
+  `s2_sim::Request` have a new field `harbour` (the harbour they are attached
+  to); a struct literal needs it. `World::add_harbour_need` is gone (it stood
+  in for the rule), and unloaded goods no longer lower the need: the orders
+  they serve do. The world snapshot version is 82; saves of 0.6.0 on load.
+  The golden state hashes changed in their world, wares, settlers and
+  players parts only (the new field); no game plays differently where no
+  harbour and ship are involved, and the fidelity measure is unchanged.
+- New hook **W17b**, off by default (docs/extending.md): screen-space ambient
+  occlusion on the map, `RenderOptions::ambient_occlusion`; a struct literal
+  of `RenderOptions` needs it or `..Default::default()`. The terrain and object
+  materials now draw a depth and normal prepass for any camera that asks for
+  one.
+- **W33**: a project's particle effects (`Extensions::effects`) are drawn in
+  the effect file's own colours, as the collapse dust is (they were drawn
+  white, showing the texture's own colour).
+
 ## OpenS2X 0.11.2 (2026-11-16)
 
 Military buildings keep their distance as in the original; the coins

@@ -52,7 +52,8 @@ source scripts/windows-copy.sh
 # stand-in).
 windows_copy "${S2_VIEWER_EXE:-target/x86_64-pc-windows-gnu/release/s2-viewer.exe}"
 viewer="$copy"
-app=target/release/s2-app
+# S2_APP: another s2-app (the test's stand-in; CI builds none in target/).
+app="${S2_APP:-target/release/s2-app}"
 game="$(wslpath -w "$S2_GAME_DIR")"
 mkdir -p "$out/actual" "$out/diff" "$out/log" "$out/profile"
 "$app" profile-seed "$out/profile/seed.cfg"

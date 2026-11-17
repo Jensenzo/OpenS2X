@@ -297,7 +297,9 @@ pub struct Captions {
 /// Hook W18: a particle effect (a `.pfx` script, GFX-OBJ-8.3a) a project
 /// plays at a settler of a profession while his work loop runs: started
 /// when the loop begins, at his feet as drawn, played on the animation
-/// clock (game time) and gone when the loop ends.
+/// clock (game time) and gone when the loop ends. Its particles are drawn
+/// in the effect file's own colours (its start colour times its colour
+/// curve) on the texture cell, as the collapse dust (hook W33).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EffectRule {
     /// The effect's path in the game data (`data/scripts/effects/<name>.pfx`,
@@ -356,6 +358,15 @@ pub struct RenderOptions {
     /// Hook W21: the look of a paved road (W19, `World::is_paved`). Default
     /// `None` (the original has no paving): the street pass draws as ever.
     pub paved_road: Option<StreetLook>,
+    /// Hook W17b: screen-space ambient occlusion on the map (Bevy's, with
+    /// its depth and normal prepasses): the ground's and the objects'
+    /// ambient light (GFX-VIEW-2.3's ambient colour, not the sun's) is
+    /// multiplied by the occlusion at the pixel, darkening the contact of
+    /// houses, trees and stones with the ground. It needs the map camera
+    /// without multisampling, so edges are not smoothed while it is on.
+    /// Default `false` (the original has none): no prepass, no texture read,
+    /// the pixels as without the hook.
+    pub ambient_occlusion: bool,
 }
 
 /// Hook W21 (S2N-030): the textures a paved road is drawn with, in place
@@ -424,6 +435,7 @@ impl Default for RenderOptions {
             shadow_map_scale: None,
             shore_foam: None,
             paved_road: None,
+            ambient_occlusion: false,
         }
     }
 }

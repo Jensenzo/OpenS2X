@@ -487,6 +487,21 @@ fn atlas_image(rect: AtlasRect, handle: Handle<Image>) -> ImageNode {
     }
 }
 
+/// UI-MENU-1.4: a bar button's face, label colour and dimming: enabled, the
+/// normal face and a white label; disabled, the pressed face and a grey
+/// label, or (a bar with `disabled_dim`, CAM-3.6a as seen) the normal face
+/// darkened and the label as when enabled.
+pub(crate) fn bar_look(
+    bar: &super::widgets::Bar,
+    enabled: bool,
+) -> ([u32; 2], [u8; 3], Option<f32>) {
+    match (enabled, bar.disabled_dim) {
+        (true, _) => (bar.normal, [255, 255, 255], None),
+        (false, Some(k)) => (bar.normal, [255, 255, 255], Some(k)),
+        (false, None) => (bar.pressed, [170, 170, 170], None),
+    }
+}
+
 /// The colour of a button's image by its state.
 fn tint(enabled: bool) -> Color {
     if enabled {
@@ -511,8 +526,9 @@ fn z_of(id: PanelId) -> i32 {
         PanelId::Chat => 16,
         PanelId::Tutorial => 17,
         PanelId::Book => 18,
-        PanelId::Pause => 19,
-        PanelId::Menu => 20,
+        PanelId::OverEnd => 19,
+        PanelId::Pause => 20,
+        PanelId::Menu => 21,
         PanelId::Notice => 25,
         PanelId::Tooltip => 30,
     }
@@ -726,18 +742,16 @@ fn spawn_panel(
                 let Some(handle) = atlas(assets, Atlas::Elements0) else {
                     continue;
                 };
-                // UI-MENU-1.4: a disabled button wears the pressed bar.
-                let look = if *enabled { bar.normal } else { bar.pressed };
+                let (look, colour, dim) = bar_look(bar, *enabled);
                 let rect = [look[0], look[1], bar.size[0] as u32, bar.size[1] as u32];
-                let colour = if *enabled {
-                    [255, 255, 255]
-                } else {
-                    [170, 170, 170]
-                };
+                let mut image = atlas_image(rect, handle);
+                if let Some(k) = dim {
+                    image.color = Color::srgb(k, k, k);
+                }
                 let e = commands
                     .spawn((
                         abs_node(*at, bar.size),
-                        atlas_image(rect, handle),
+                        image,
                         FocusPolicy::Block,
                         carried(action),
                         UiButton {
@@ -1343,6 +1357,7 @@ mod tests {
                 normal: [0, 0],
                 hover: [0, 0],
                 pressed: [0, 0],
+                disabled_dim: None,
             },
             raise: 0.0,
             action,

@@ -1,4 +1,4 @@
-save format 2, world format 80
+save format 2, world format 81
 s2_ai::AiSystem
     counter: u64
     players: seq<Option<s2_ai::player::AiPlayer>>
@@ -889,6 +889,7 @@ s2_sim::requests::Message
     text: string
     until: u64
     building: Option<u32>
+    ship @81: Option<u32>
 s2_sim::requests::Order
     player: s2_sim::PlayerId
     good: u32

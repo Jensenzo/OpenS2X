@@ -1393,6 +1393,7 @@ fn t36_the_skip_is_keyed_by_profession_and_network() {
         player: P0,
         requester: Requester::Road(road),
         profession: HELPER,
+        harbour: None,
     };
     assert!(
         world.same_request_key(&carrier(r1), &carrier(r2)),
@@ -1403,12 +1404,14 @@ fn t36_the_skip_is_keyed_by_profession_and_network() {
         player: P0,
         requester: Requester::Specialist { flag: z, order: 1 },
         profession: HELPER,
+        harbour: None,
     };
     assert!(!world.same_request_key(&carrier(r1), &lone));
     let other = Request {
         player: P0,
         requester: Requester::Road(r2),
         profession: BUILDER,
+        harbour: None,
     };
     assert!(
         !world.same_request_key(&carrier(r1), &other),
@@ -1428,6 +1431,7 @@ fn an_unlinked_request_is_deleted_on_its_turn() {
         player: P0,
         requester: Requester::Unlinked,
         profession: BUILDER,
+        harbour: None,
     };
     (world.queue, world.queue_cursor) = (vec![unlinked; 5], 0);
     world.process_requests();
@@ -2712,6 +2716,7 @@ fn t31_lost_wares_join_the_list_in_the_reverse_order_of_their_orders() {
         target,
         stamp: 0,
         made,
+        harbour: None,
     };
     // Lower ware number, later order.
     let a = world.new_ware_at(PLANK, HQ_FLAG, Some(shed_flag), Some(target));

@@ -626,6 +626,7 @@ adds a hook does not break the build.
 | `clear_color` | `[0.02, 0.03, 0.06]` | the colour behind everything |
 | `shadow_filter` | `ShadowFilter::Hardware2x2` (GFX-VIEW-2.5c) | the map camera's shadow filter; `ShadowFilter::Gaussian` is Bevy's wider filter, soft edges over several texels (hook W17) |
 | `shore_foam` | `None` (the original has none) | foam on the water along the shores (hook W18, S2N-005): `ShoreFoam { reach, colour, strength }`, the foam colour mixed in by `strength` at the waterline, fading out where the ground lies `reach` below the water level (raw height units of the water's depth term, GFX-WATER-4.4: about 2 900 from the waterline to the deepest; 300 a narrow band) |
+| `ambient_occlusion` | `false` (the original has none) | screen-space ambient occlusion on the map's ambient light, the map camera without multisampling (hook W17b, below) |
 | `shadow_map_scale` | `None` (the profile's size) | the profile's shadow map size (`SHADOW QUALITY`) times this factor, at most `MAX_SHADOW_MAP` (8192); the Shadows switch, quality 0 and shader detail 1 still turn shadows off. `shadow_map_size` wins when both are set (hook W17) |
 
 A project that draws sharper or softer shadows than the original (hook
@@ -642,12 +643,39 @@ render: RenderOptions {
 
 The viewer's own shaders read the shadow map through Bevy's lookup
 (`fetch_directional_shadow`), so the filter acts on the ground, the
-objects and the water alike. What W17 does not cover: **screen-space
-ambient occlusion** (the third part asked for). It needs the depth and
-normal prepasses on the viewer's own materials and their shaders to read
-the occlusion texture, which touches every map material and the water's
-mirror camera (a further material or prepass setup has blanked that
-camera before); it is not built, and no option for it exists yet.
+objects and the water alike.
+
+**Ambient occlusion** (hook W17b, S2N-004's third part):
+
+```rust
+render: RenderOptions {
+    ambient_occlusion: true,
+    ..default()
+},
+```
+
+The map camera gets Bevy's screen-space ambient occlusion
+(`ScreenSpaceAmbientOcclusion` at High quality, its default radius) with
+the depth and normal prepasses it needs: the terrain draws them with its
+own prepass shader, the objects with their shadow shader (skinned, swaying
+and waving as drawn, alpha-tested at 0.5, a house being built cut at its
+plane); both write the surface's own normal (from the screen derivatives
+of the position, toward the camera), which agrees with the depth. Bevy's
+occlusion reads 1 - 1/6 on any flat surface at that quality (a sample on
+the surface marks the sector at the hemisphere's edge); the shaders divide
+that out, so open ground stays as it was. The ground's and the objects'
+**ambient term** (GFX-VIEW-2.3's ambient colour; a settler's ambient
+luminance) is multiplied by the occlusion at the pixel: measured on Storm
+Coast's headquarters at zoom 0, the open ground keeps 0.99 of its colour,
+a wall 0.91, a column's foot 0.82. The sun's
+light, the shadows, the water, the roads and decals (blended, not in the
+prepass) and the water's mirror image are as without it. It needs the map
+camera **without multisampling** (`Msaa::Off`): edges are not smoothed
+while it is on. Off (the default) no camera has a prepass, no shader reads
+the occlusion (the texture is read only under Bevy's
+`SCREEN_SPACE_AMBIENT_OCCLUSION` definition) and the pixels are the
+original's. `crates/viewer/examples/extended.rs` turns it on with the
+environment variable `EXTENDED_AO`.
 
 ### Bevy's derives in a project
 
@@ -908,7 +936,11 @@ the logic asks for that work loop (`SettlerView::request`): the effect
 starts at his feet as drawn when the loop begins, is played on the
 animation clock (game time) as the original's effects are, with the
 original's particle texture, and is gone when the loop ends or he is no
-longer drawn. Render side only: nothing of it is game state, and with no
+longer drawn. Each particle takes the colour the effect file gives it (its
+start colour times its colour curve) over its texture cell, as the
+collapse dust does (hook W33; until 0.11.2 a project's particle was drawn
+white, so it showed its cell's own colour): a wood-coloured chip is a
+`.pfx` with a brown start colour on a light cell. Render side only: nothing of it is game state, and with no
 rules the system is not even in the app. `crates/viewer/examples/extended.rs`
 plays `StoneDust` at the builders.
 

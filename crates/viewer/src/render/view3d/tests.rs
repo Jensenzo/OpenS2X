@@ -225,9 +225,11 @@ impl Screen {
     }
 }
 
-// Picking over hills: a field's ground point drawn on the screen picks
-// that field again, at every zoom and turn of the camera, wherever the
-// point is not hidden behind a nearer hill. A flat plane at height 0
+// Picking over hills (GFX-VIEW-1.5, Q-202 a, Q-1067): a field's point drawn
+// on the screen picks that field again, at every zoom and turn of the
+// camera, over the sectors in the walk's order from the eye, wherever the
+// ray meets the field-point surface only there (a ray that meets it twice
+// picks by the list's order, tested in world3d). A flat plane at height 0
 // would pick other fields for many of them.
 // spec: GFX-VIEW-1.5
 #[test]
@@ -249,6 +251,10 @@ fn screen_points_over_hills_pick_their_field() {
                 eye = rig.update(&hills);
             }
             let screen = Screen::new(eye, size);
+            let mut tree = world3d::sectors::SectorTree::new(&hills);
+            let p = [0, 1, 2].map(|i| eye.position[i] + 0.7 * (rig.target[i] - eye.position[i]));
+            let list = tree.walk(p, 1.0e6, &|_| world3d::sectors::Seen::Straddles);
+            assert_eq!(list.len(), 100);
             // The edge fields' points lie on the mesh's border, where a
             // ray can pass under the mesh.
             for y in 1..39 {
@@ -275,14 +281,12 @@ fn screen_points_over_hills_pick_their_field() {
                     if above(s - 0.3) && above(s + 0.3) {
                         continue;
                     }
-                    let hit = world3d::ray_ground(&hills, origin, direction, 2000.0)
-                        .unwrap_or_else(|| panic!("no ground under ({x}, {y})"));
-                    // Hidden behind a nearer hill: the ray meets that one.
-                    if dist(hit) < s - 0.05 {
+                    // Every place the ray meets the field-point surface.
+                    if surface_hits(&hills, origin, direction) != 1 {
                         continue;
                     }
                     assert_eq!(
-                        world3d::ray_field(&hills, origin, direction),
+                        tree.pick(&hills, &list, origin, direction),
                         Some((x, y)),
                         "zoom {zoom}, turn {turns}, cursor {cursor}"
                     );
@@ -1124,4 +1128,202 @@ fn a_soldier_walking_out_holds_the_door_open() {
         world.building_at(barracks).map(|b| b.under_construction),
         world.tick()
     );
+}
+
+/// Hook W33 (with GFX-OBJ-8.7 (3), 8.3c): an effect's particle is drawn in
+/// its own colour from the effect file and its alpha, whichever effect it
+/// is (a project's, the collapse dust, a clip's: one function draws all
+/// three); a quad without a particle shows nothing.
+// spec: GFX-OBJ-8.7, GFX-OBJ-8.3c, GFX-VIEW-2.6 (hook W33)
+#[test]
+fn an_effects_particles_take_the_files_colour() {
+    let mut materials = Assets::<StandardMaterial>::default();
+    let pool: Vec<(Entity, Handle<StandardMaterial>)> = (0..2u32)
+        .map(|n| {
+            (
+                Entity::from_raw_u32(n + 1).unwrap(),
+                materials.add(StandardMaterial::default()),
+            )
+        })
+        .collect();
+    let wood = crate::world::decor::Particle {
+        at: [1.0, 2.0, 3.0],
+        size: 0.25,
+        alpha: 0.5,
+        colour: [0.6, 0.3, 0.0],
+    };
+    let drawn = draw_particles(
+        &pool,
+        vec![Some(wood), None],
+        [10.0, 20.0, 0.0],
+        Quat::IDENTITY,
+        &mut materials,
+    );
+    let colour = materials.get(&pool[0].1).unwrap().base_color;
+    assert_eq!(colour, Color::linear_rgba(0.6, 0.3, 0.0, 0.5));
+    assert_ne!(colour, Color::srgba(1.0, 1.0, 1.0, 0.5));
+    assert_eq!(drawn[0].0, pool[0].0);
+    assert_eq!(drawn[0].1.scale, Vec3::splat(0.25));
+    assert_eq!(
+        drawn[0].1.translation,
+        Vec3::from(world3d::to_bevy([11.0, 22.0, 3.0]))
+    );
+    assert_eq!(drawn[1].1.scale, Vec3::ZERO);
+    assert_eq!(
+        materials.get(&pool[1].1).unwrap().base_color,
+        StandardMaterial::default().base_color
+    );
+}
+
+/// How many places (0.05 apart) a ray of length 1000 meets the field-point
+/// surface of `heights` (GFX-VIEW-1.5's triangles, every cell).
+fn surface_hits(heights: &impl world3d::Heights, origin: [f32; 3], direction: [f32; 3]) -> usize {
+    use world3d::sectors::field_point;
+    let frame = heights.frame();
+    let (w, h) = ((frame.columns - 1) / 4, (frame.rows - 1) / 4);
+    let mut ts: Vec<f32> = Vec::new();
+    for y in 0..h - 1 {
+        for x in 0..w - 1 {
+            let tris = if y % 2 == 0 {
+                [
+                    [(x, y), (x + 1, y), (x, y + 1)],
+                    [(x + 1, y), (x + 1, y + 1), (x, y + 1)],
+                ]
+            } else {
+                [
+                    [(x, y), (x + 1, y + 1), (x, y + 1)],
+                    [(x, y), (x + 1, y), (x + 1, y + 1)],
+                ]
+            };
+            for tri in tris {
+                let [a, b, c] = tri.map(|(x, y)| field_point(heights, x, y));
+                if let Some(t) = world3d::ray_triangle_for_tests(origin, direction, a, b, c) {
+                    if (0.0..=1000.0).contains(&t) && ts.iter().all(|u| (u - t).abs() > 0.05) {
+                        ts.push(t);
+                    }
+                }
+            }
+        }
+    }
+    ts.len()
+}
+
+// GFX-VIEW-1.5 (Q-1067) walk step 1: a box against the view's six planes
+// (the camera's frustum, Bevy frame; boxes in the game frame, z turned):
+// in front and small, wholly inside; behind the eye, outside; around the
+// eye, across.
+// spec: GFX-VIEW-1.5
+#[test]
+fn a_box_against_the_views_planes() {
+    use bevy::camera::CameraProjection;
+    use world3d::sectors::{Bounds, Seen};
+    let projection = PerspectiveProjection {
+        fov: 0.8,
+        aspect_ratio: 1.6,
+        near: 1.0,
+        far: 500.0,
+        ..default()
+    };
+    // At the origin looking along the game's +z (Bevy's -z).
+    let eye = Transform::from_translation(Vec3::ZERO).looking_to(Vec3::NEG_Z, Vec3::Y);
+    let frustum = projection.compute_frustum(&GlobalTransform::from(eye));
+    let cube = |z: f32, half: f32| Bounds {
+        min: [-half, -half, z - half],
+        max: [half, half, z + half],
+    };
+    assert_eq!(seen_by(&frustum, &cube(50.0, 2.0)), Seen::Inside);
+    assert_eq!(seen_by(&frustum, &cube(-50.0, 2.0)), Seen::Outside);
+    assert_eq!(seen_by(&frustum, &cube(0.0, 5.0)), Seen::Straddles);
+    // Beyond the far plane.
+    assert_eq!(seen_by(&frustum, &cube(600.0, 2.0)), Seen::Outside);
+}
+
+// Hook W17b: off (the default) the map camera gets nothing more, and every
+// pixel is the original's: the shaders read the occlusion only under Bevy's
+// SCREEN_SPACE_AMBIENT_OCCLUSION definition, which only a view with the
+// component sets (1 otherwise), and only multiply the ambient term by it.
+// On: Bevy's occlusion with multisampling off; the terrain and the objects
+// draw the depth and normal prepass it needs (their own prepass shaders).
+// spec: none (hook W17b: no ambient occlusion by default, a project's on the ambient term only)
+#[test]
+fn ambient_occlusion_is_a_projects_option() {
+    assert!(!crate::extend::RenderOptions::default().ambient_occlusion);
+    assert!(ambient_occlusion(false).is_none());
+    let (ssao, msaa) = ambient_occlusion(true).expect("the parts");
+    assert_eq!(
+        ssao.quality_level,
+        bevy::pbr::ScreenSpaceAmbientOcclusionQualityLevel::High
+    );
+    assert_eq!(msaa, bevy::render::view::Msaa::Off);
+    // The flat surface's value divided out: 1 - 1/6 at High quality, the
+    // same number in both shaders.
+    assert!((AO_FLAT - 0.8333333).abs() < 1e-6);
+    for (name, src) in [
+        ("terrain", include_str!("../shaders/terrain.wesl")),
+        ("object", include_str!("../shaders/object.wesl")),
+    ] {
+        assert!(
+            src.contains(
+                "@if(SCREEN_SPACE_AMBIENT_OCCLUSION) {\n        let p = vec2<i32>(frag.xy - view.viewport.xy);\n        ao = min(textureLoad(screen_space_ambient_occlusion_texture, p, 0i).r / AO_FLAT, 1.0);"
+            ),
+            "{name}"
+        );
+        assert!(src.contains("var ao = 1.0;"), "{name}");
+        assert!(src.contains("const AO_FLAT: f32 = 0.8333333;"), "{name}");
+    }
+    let terrain = include_str!("../shaders/terrain.wesl");
+    assert!(terrain.contains("+ params.ambient.rgb * occlusion;"));
+    let object = include_str!("../shaders/object.wesl");
+    assert!(object.contains("let ambient = light.ambient.rgb * occlusion;"));
+    assert!(object.contains("+ light.ambient.w * occlusion;"));
+    // Every prepass writes the surface's own normal (screen derivatives of
+    // the world position, toward the camera) in Bevy's encoding.
+    for src in [
+        include_str!("../shaders/terrain_prepass.wesl"),
+        include_str!("../shaders/object_shadow.wesl"),
+    ] {
+        assert!(src.contains("@if(NORMAL_PREPASS)"));
+        assert!(src.contains("normalize(cross(dpdx(p), dpdy(p)))"));
+        assert!(src.contains("if direction_world_to_view(n).z < 0.0 {"));
+        assert!(src.contains("* 0.5 + vec3<f32>(0.5), 1.0)"));
+    }
+}
+
+// GFX-ANIM-3.8a (Q-202 c, E-gfx-077): a felled tree's top moves toward the
+// woodcutter's left as he faces it, (z, 0, -x) for the unit vector (x, 0, z)
+// from the tree to him: woodcutter at (0, 0, -3), the top toward -x; at
+// (3, 0, 0), toward -z (game frame). The axis is the scene's, the yaw of
+// the line to him.
+// spec: GFX-ANIM-3.8a
+#[test]
+fn a_felled_tree_falls_to_the_woodcutters_left() {
+    let top = |woodcutter: [f32; 3]| {
+        let axis = woodcutter[2].atan2(woodcutter[0]);
+        let placed = crate::world::scene3d::Placed {
+            key: (crate::world::scene3d::Kind::Deposit, (0, 0), 0),
+            file: String::new(),
+            units_per_metre: crate::render::models3d::DEFAULT_SCALE,
+            at: [0.0; 3],
+            heading: 0.7,
+            scale: [1.0; 3],
+            tilt_axis: axis,
+            tilt: 0.5,
+            tint: [1.0; 4],
+            family: crate::render::models3d::Family::Plain,
+            player: [0.0; 3],
+            extra: [0.0; 4],
+            shadow: true,
+            pieces: None,
+            plane_of: None,
+            parts: crate::world::scene3d::Parts::All,
+            sink: None,
+        };
+        let t = placed_transform(&placed);
+        world3d::from_bevy((t.rotation * Vec3::Y).to_array())
+    };
+    let s = 0.5f32.sin();
+    let a = top([0.0, 0.0, -3.0]);
+    assert!((a[0] + s).abs() < 1e-5 && a[2].abs() < 1e-5, "{a:?}");
+    let b = top([3.0, 0.0, 0.0]);
+    assert!((b[2] + s).abs() < 1e-5 && b[0].abs() < 1e-5, "{b:?}");
 }

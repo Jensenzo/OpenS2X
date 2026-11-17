@@ -201,7 +201,14 @@ impl World {
         if production.enabled {
             self.file_input_orders(at);
         } else {
+            let removed: Vec<crate::Order> = self
+                .orders
+                .iter()
+                .filter(|o| o.target.at == at)
+                .copied()
+                .collect();
             self.orders.retain(|o| o.target.at != at);
+            self.detach_orders(&removed);
         }
         Ok(())
     }

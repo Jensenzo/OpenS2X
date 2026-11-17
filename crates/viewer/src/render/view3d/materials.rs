@@ -6,6 +6,9 @@ pub(crate) const TERRAIN_SHADER: Handle<Shader> =
     uuid_handle!("6c0f5a52-35c4-4b4e-9a3c-6f8a1d0e2b71");
 pub(crate) const WATER_SHADER: Handle<Shader> =
     uuid_handle!("0d3b8f7e-9a14-4c55-8e21-4b7c9e6a3f02");
+/// Hook W17b: the terrain's depth and normal prepass.
+pub(crate) const TERRAIN_PREPASS_SHADER: Handle<Shader> =
+    uuid_handle!("8e2a6c1d-5b3f-4a97-b0d4-7f19c2e85a36");
 
 /// GFX-WATER-2.2: the depth haze of a terrain vertex.
 pub(crate) const ATTRIBUTE_HAZE: MeshVertexAttribute =
@@ -149,8 +152,17 @@ impl Material for TerrainMaterial {
     fn fragment_shader() -> ShaderRef {
         ShaderRef::Handle(TERRAIN_SHADER)
     }
+    /// Hook W17b: the depth and normal prepass a map camera with a
+    /// project's ambient occlusion runs (no camera of the original's look
+    /// has a prepass, so it is never drawn there).
     fn enable_prepass() -> bool {
-        false
+        true
+    }
+    fn prepass_vertex_shader() -> ShaderRef {
+        ShaderRef::Handle(TERRAIN_PREPASS_SHADER)
+    }
+    fn prepass_fragment_shader() -> ShaderRef {
+        ShaderRef::Handle(TERRAIN_PREPASS_SHADER)
     }
     fn enable_shadows() -> bool {
         false
@@ -357,9 +369,11 @@ mod tests {
         let house = &house[..house.find("} else if f == TREE {").unwrap()];
         let frame = &house[house.find("if params.extra.w >= 1.0 {").unwrap()..];
         let (frame, rest) = frame.split_at(frame.find("} else {").unwrap());
-        assert!(frame.contains(
-            "let frame = light.light_color.rgb * in.color.x * shadow + light.ambient.rgb;"
-        ));
+        // The ambient is the light's, times hook W17b's occlusion (1 without).
+        assert!(
+            frame.contains("let frame = light.light_color.rgb * in.color.x * shadow + ambient;")
+        );
+        assert!(fragment.contains("let ambient = light.ambient.rgb * occlusion;"));
         assert!(frame.contains("rgb = frame * tex.rgb;"));
         assert!(frame.contains("alpha_test = false;"));
         for sampled in ["second", "third", "params.extra.x"] {

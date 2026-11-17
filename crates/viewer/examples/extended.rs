@@ -12,7 +12,8 @@
 //!     cargo run -p s2-viewer --example extended -- --menu
 //!
 //! The asset folder is `S2_NEXT_ASSETS` when set (laid out like the
-//! install: `data/...`).
+//! install: `data/...`). With `EXTENDED_AO` set the map has screen-space
+//! ambient occlusion (hook W17b).
 
 use s2_viewer::bevy::prelude::*;
 use s2_viewer::extend::{
@@ -116,6 +117,7 @@ fn main() -> std::process::ExitCode {
             .collect(),
         render: RenderOptions {
             shadow_map_size: Some(4096),
+            ambient_occlusion: std::env::var_os("EXTENDED_AO").is_some(),
             ..RenderOptions::default()
         },
         plugins: vec![Box::new(|app: &mut App| {

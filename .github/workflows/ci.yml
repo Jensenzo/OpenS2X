@@ -37,10 +37,16 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-      # The hosted image ships toolchains we never use; the build needs the
-      # space.
+      # The hosted image ships toolchains we never use. Removing them takes
+      # about two minutes, and the image of November 2026 has over 80 GB
+      # free without it (the build needs about 20): only when short of space.
       - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+        run: |
+          avail=$(df --output=avail -BG / | tail -1 | tr -dc 0-9)
+          if [ "$avail" -lt 40 ]; then
+            sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          fi
+          df -h /
       # The toolchain of rust-toolchain.toml (the golden hashes need one).
       - run: rustup toolchain install && rustc --version
       # Bevy (the viewer crate) needs these to build on Linux.

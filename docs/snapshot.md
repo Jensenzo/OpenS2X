@@ -125,6 +125,7 @@ What an older game shows, by format:
 
 | Saved in | What it shows when loaded |
 |---|---|
+| 81 (before 2026-11-17 night) | Nothing different: no game of that format has a ware order or settler request attached to a harbour (SHIP-4.1, Q-063: the need of a harbour came from no rule then); the open ones attach at their next turn when the land cannot serve them. |
 | 80 (before 2026-11-16 day b) | A "Ship waiting for Orders" message posted before the load names no ship: its row shows the text without the ship's name in brackets. Those posted after the load name it. |
 | 79 (before 2026-11-16 day) | Nothing different: no game of that format has a command refused for the military clearance (ECO-PLACE-6.2, the result `TooCloseToMilitary`); a military site placed within 4 fields of another military building stays as it was. |
 | 78 (before 2026-11-15 day d) | Nothing different: no game of that format has a project's paving rule or paved roads (hook W19, `reborn.cfg_setPaving`). |

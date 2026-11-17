@@ -643,6 +643,17 @@ Headings use the heading font (1.7). The window is placed next to the bar.
   in Run B below: two soldier slots at (137, 45) and (193, 45), the coin slot at (369, 45), the
   separators at x 123 and 300 from y 32 to 208, the status lines `Coin supply stopped` and `Building
   evacuated` centred on y 220 and 236 with their left edge at x 20, the four buttons at y 212.
+  **Seen under attack (2026-11-17 night, E-trace-033):** the barracks' window, kept open while a Hard
+  neighbour attacked it, showed its soldiers present: two privates, then one, the other slot an **empty
+  frame** while that soldier was out fighting. Nothing else in the window marks the attack (no status
+  line, no colour). When the building was taken the window closed by itself.
+  **Seen again (2026-11-17 night, E-trace-033, a second game on Summer Breeze):** a guard house's
+  window was kept open while a Hard computer player attacked our headquarters and barracks nearby. One
+  of the guard house's three privates left before the guard house itself was attacked: its third
+  slot became an empty frame, the other two stayed. The coins line (`0/2`) and the buttons did not
+  change. When the guard house was taken, its window closed by itself and the building flew the
+  winner's flag. Confidence: high for the look (two games); the soldier leaving to help the
+  neighbouring buildings is read from the picture, not traced (medium).
   **Run B (2026-10-17, E-gfx-012, Q-203 a, Q-208 a, c):** the four buttons
   form a row, not a column: 50 x 50 each at y 212, placed right to left
   from x 407 (destroy 407, coins 357, move out 307, upgrade 257). The
@@ -1413,6 +1424,15 @@ are these four pages).
   The row text is the translated key, followed by " (" + translated name +
   ")" when the message carries a name (the building's type name for the
   building messages), e.g. "Building completed (Woodcutter's Hut)".
+  **A geologist's find (2026-11-17 night, Q-1068; E-ui-043, code reading, and the picture of
+  E-trace-032).** Each of the five "found" texts is posted by one call at the end of the
+  geologist's report, so all five carry the same name: the geologist's own settler type, shown
+  as its display name, "Geologist" in English (the text of the type's info title,
+  `dlg_ScholarSettler`; the scripts name the type `Scholar`, Jobs.lua). Seen: "Iron ore found!
+  (Geologist)". How the program gets from the type to that text was not found (medium); a
+  program that shows the settler type's display name gives the row as seen. A report that finds
+  nothing posts no "found" message. The duplicate test of a find (kind, text, about the same
+  field) does not look at the name (high). The scout's messages were not read.
   Duplicates: "found", "no resources", "building without worker" and "lost
   territory" are not added again while a message of the same kind and text
   exists at (about) the same field (for "found", "no resources" and
@@ -1494,10 +1514,39 @@ are these four pages).
     row per lost place**: six rows within about a minute while a stronger neighbour's new military
     buildings took our border fields (the duplicate rule of 11.1 keeps one per place, not one per
     event).
-  Still not seen: "You are under attack!" (no computer player attacked our buildings in about 30
+  Not seen that day (seen 2026-11-17 night, below): "You are under attack!" (no computer player attacked our buildings in about 30
   real minutes at speed 20; the Hard players' attack test (`AI-military.md` AI-MIL-5.4) never
   passed against our cheat-raised soldier strength, and the Medium neighbour never met the
   ring condition of `MIL-attack-combat.md` MIL-ATK-1.2) (Q-095).
+  **Seen, the attack messages (2026-11-17 night, E-trace-033, Keyhole, a Hard neighbour, our barracks at
+  the border, 2560 x 1440):**
+  - "You are under attack! (Barracks)" (`!You are under attack!` with the attacked building's type
+    name), crossed swords icon. It came twice for the same barracks, once for the first attack and
+    again for a later one (between counters about 17000 and 23800; the exact ticks were not caught);
+  - "Military building lost to enemy!" (`!Lost Military Building to enemy.`, English without a
+    building name), crossed swords icon, when the barracks was taken, followed by "Territory lost to
+    enemy!" rows;
+  - the rows stack oldest at the top, newest at the bottom (seven rows shown).
+  The sound of the under-attack message is not in pictures (`uiMessage1` from the code stands).
+  **Seen, up to the defeat (2026-11-17 night, E-trace-033, Summer Breeze, one Hard computer player,
+  Low resources, 2560 x 1440).** The rows came in this order, all with the crossed swords icon:
+  1. "You are under attack! (Headquarters)": the headquarters' type name is `Headquarters`. It was
+     the computer player's **first** attack, and it went straight to our headquarters;
+  2. "You are under attack! (Barracks)";
+  3. "Military building lost to enemy!";
+  4. "Territory lost to enemy!";
+  5. "You are under attack! (Guard House)";
+  6. "Military building lost to enemy!".
+
+  Rows 2 to 4 came within about 2500 counters of row 1; rows 5 and 6 and the end screen (`CAM-campaign-missions.md`
+  CAM-3.6a, the defeat) within the next 2500. Row 3 is the barracks' loss: the end screen was not
+  yet up and the guard house still ours when it showed. After row 4, two buildings fell, the
+  headquarters and the guard house (taken: it flew the winner's flag), but only **one** more "lost"
+  row came (row 6). This agrees with `MIL-conquest.md` MIL-CON-2.1: a taken headquarters is removed,
+  not conquered, so its owner gets no "lost" row (only the attacker gets "Enemy headquarters
+  destroyed."). Row 6 is therefore the guard house's. Later the rows were gone from the screen while
+  the end screen stayed open. Confidence: high for the texts and order (pictures every 12 real seconds); the
+  counters are the sampling's bounds, not the exact ticks.
 
 ### UI-GAME-10 Tutorial marks
 

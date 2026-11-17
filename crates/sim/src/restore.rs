@@ -961,6 +961,7 @@ impl World {
                         target: target.expect("checked"),
                         stamp,
                         made,
+                        harbour: None,
                     }
                 });
             let carrier = w

@@ -51,6 +51,8 @@ pub fn place_camera(
         Some((s, follow_matrix(&movers, &placed, r)))
     });
     let mut eye = None;
+    // GFX-VIEW-1.5 (Q-1067): the point looked at, for the sectors' P.
+    let mut look_at = None;
     match followed {
         Some((s, Some((p, f, side)))) => {
             // The building pose: he stands where a building is.
@@ -73,6 +75,7 @@ pub fn place_camera(
             view.rig.target[0] = p[0];
             view.rig.target[2] = p[2];
             eye = Some(next);
+            look_at = Some(look);
         }
         // Not drawn yet: the normal camera this frame.
         Some((_, None)) => {}
@@ -114,6 +117,29 @@ pub fn place_camera(
     let position = Vec3::from(world3d::to_bevy(eye.position));
     let direction = Vec3::from(world3d::to_bevy(eye.direction));
     *camera = Transform::from_translation(position).looking_to(direction, Vec3::Y);
+    // GFX-VIEW-1.5 (Q-1067): this frame's list of terrain sectors, for the
+    // pick: P = eye + 0.7 (target - eye), the view's planes and far distance.
+    {
+        use bevy::camera::CameraProjection;
+        let target = look_at.unwrap_or(view.rig.target);
+        let p = [0, 1, 2].map(|i| eye.position[i] + 0.7 * (target[i] - eye.position[i]));
+        let (frustum, far) = match projection.as_ref() {
+            Projection::Perspective(pp) => {
+                (pp.compute_frustum(&GlobalTransform::from(*camera)), pp.far)
+            }
+            other => (
+                other.compute_frustum(&GlobalTransform::from(*camera)),
+                world3d::FAR,
+            ),
+        };
+        let seen = |b: &world3d::sectors::Bounds| seen_by(&frustum, b);
+        let changes = world.height_changes();
+        let tree = view
+            .sectors
+            .tree_for(world.terrain(), viewer.loads, changes);
+        let list = tree.walk(p, far, &seen);
+        view.sectors.list = list;
+    }
     // GFX-VIEW-6.3: the cap is centred on the camera, 15 units above it.
     for mut t in &mut sky {
         t.translation = position + Vec3::Y * terrain3d::CAP_LIFT;
@@ -132,6 +158,45 @@ pub fn place_camera(
         *t = Transform::from_translation(centre)
             .looking_at(position, Vec3::Y)
             .with_scale(Vec3::splat(side));
+    }
+}
+
+/// GFX-VIEW-1.5 walk step 1: a box (game frame) against the frustum's six
+/// half-spaces (Bevy frame, normals inward): outside one wholly, inside all
+/// wholly, or across.
+pub(crate) fn seen_by(
+    frustum: &bevy::camera::primitives::Frustum,
+    b: &world3d::sectors::Bounds,
+) -> world3d::sectors::Seen {
+    use world3d::sectors::Seen;
+    // The game frame's z is Bevy's -z.
+    let lo = Vec3::new(b.min[0], b.min[1], -b.max[2]);
+    let hi = Vec3::new(b.max[0], b.max[1], -b.min[2]);
+    let mut inside = true;
+    for half in &frustum.half_spaces {
+        let n = Vec3::from(half.normal());
+        let d = half.d();
+        let far = Vec3::new(
+            if n.x >= 0.0 { hi.x } else { lo.x },
+            if n.y >= 0.0 { hi.y } else { lo.y },
+            if n.z >= 0.0 { hi.z } else { lo.z },
+        );
+        let near = Vec3::new(
+            if n.x >= 0.0 { lo.x } else { hi.x },
+            if n.y >= 0.0 { lo.y } else { hi.y },
+            if n.z >= 0.0 { lo.z } else { hi.z },
+        );
+        if n.dot(far) + d < 0.0 {
+            return Seen::Outside;
+        }
+        if n.dot(near) + d < 0.0 {
+            inside = false;
+        }
+    }
+    if inside {
+        Seen::Inside
+    } else {
+        Seen::Straddles
     }
 }
 
@@ -458,10 +523,13 @@ pub fn hover_3d(
             .ok()
     });
     let _ = map;
+    // GFX-VIEW-1.5 (Q-202 a, Q-1067): over the field points, the sectors of
+    // the frame last drawn in their order, the first triangle hit.
     hover.0 = ray.and_then(|ray| {
         let origin = world3d::from_bevy(ray.origin.to_array());
         let direction = world3d::from_bevy(ray.direction.as_vec3().to_array());
-        world3d::ray_field(world.terrain(), origin, direction)
+        view.sectors
+            .pick(world.terrain(), origin, direction)
             .map(|(x, y)| s2_assets::s2m::FieldPos { x, y })
     });
 }

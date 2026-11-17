@@ -83,12 +83,17 @@ health point off the other.
   building's soldier list on equal health), then the next, until the building's
   share is sent or the rank is exhausted. Confidence: high.
 - **MIL-ATK-2.3 What sending does.** The soldier is linked to the target as
-  attacker and unlinked from its home building's soldier list (so the home
-  building counts it no longer, MIL-SOL-4.2, and may request a replacement).
-  One attacker record is made per soldier, in sending order; making it draws
+  attacker and added to the target's attacker list. One attacker record is made per soldier, in sending order; making it draws
   **one random number** from the shared generator and sets the record's round
   counter to `draw mod 2` (0 or 1, MIL-ATK-6.2). Confidence: high for the draw
-  and the link; medium for the home building counting it out at once.
+  and the link.
+  **He stays on his home building's soldier list (corrected 2026-11-17 night, Q-1070; E-mil-018,
+  code reading, high).** Sending does not touch the home building's list: the sending loop goes
+  through that list from its start again after each soldier sent and passes over the ones already
+  sent by its test "in the building, idle" (MIL-SOL-4.4's present test). So the home building still
+  counts him (MIL-SOL-4.2's S; it requests no replacement for him) and treats him as **not present**:
+  a building that wants fewer soldiers releases him while he is out (MIL-SOL-4.4 step 2). Was: "unlinked
+  from its home building's soldier list at once" (medium), which the code does not do.
 
 ### MIL-ATK-3 Interceptors ("Intercepting Defenders")
 

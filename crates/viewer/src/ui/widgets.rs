@@ -227,6 +227,10 @@ pub struct Bar {
     pub normal: [u32; 2],
     pub hover: [u32; 2],
     pub pressed: [u32; 2],
+    /// Disabled: `None` wears the pressed look with a grey label; `Some(k)`
+    /// the normal face darkened to k of its values, the label as when
+    /// enabled (CAM-3.6a, the end screen's CONTINUE as seen).
+    pub disabled_dim: Option<f32>,
 }
 
 /// UI-MENU-1.4: the menus' 208 x 32 bar: red-brown, blue when hovered,
@@ -236,6 +240,7 @@ pub const MENU_BAR: Bar = Bar {
     normal: [8, 184],
     hover: [8, 224],
     pressed: [8, 264],
+    disabled_dim: None,
 };
 
 /// UI-MENU-1.4: the 152 x 22 bar of the smaller dialog buttons, teal when
@@ -245,6 +250,16 @@ pub const DIALOG_BAR: Bar = Bar {
     normal: [264, 224],
     hover: [264, 248],
     pressed: [264, 248],
+    disabled_dim: None,
+};
+
+/// CAM-3.6a (E-trace-033, seen): the end screen's buttons, the dialog bar;
+/// a disabled one (CONTINUE on a defeat) keeps its normal face, darker
+/// (about 55 grey levels against 77), and its label's colour; no hover, no
+/// click.
+pub const END_BAR: Bar = Bar {
+    disabled_dim: Some(55.0 / 77.0),
+    ..DIALOG_BAR
 };
 
 /// UI-MENU-1.4: the 224 x 19 bar with a drop-down arrow, teal when
@@ -254,6 +269,7 @@ pub const DROP_BAR: Bar = Bar {
     normal: [264, 8],
     hover: [264, 32],
     pressed: [264, 32],
+    disabled_dim: None,
 };
 
 /// UI-MENU-1.4: the 152 x 20 bar (with a drop-down arrow, OBS-20), teal
@@ -263,6 +279,7 @@ pub const SLOT_BAR: Bar = Bar {
     normal: [264, 176],
     hover: [264, 200],
     pressed: [264, 200],
+    disabled_dim: None,
 };
 
 /// Where a text sits on its point.
@@ -780,6 +797,9 @@ pub enum PanelId {
     Tutorial,
     /// CAM-1.3, 3.6: the book dialog and the end screen.
     Book,
+    /// CAM-3.6a (E-trace-032): the statistics family's window opened from
+    /// the end screen, over it.
+    OverEnd,
     /// UI-GAME-1.11: the paused view's layer over everything.
     Pause,
     Menu,

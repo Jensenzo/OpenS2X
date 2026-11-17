@@ -520,16 +520,14 @@ pub(crate) fn advance_world(
         Option<ResMut<crate::tools::bench::FrameSpans>>,
     ),
 ) {
-    // CAM-3.5: a completed map is recorded and acknowledged, and the game
-    // stops behind the end screen (CAM-3.6).
+    // CAM-3.5: a completed map is recorded and acknowledged. CAM-3.6
+    // (E-trace-033, E-cam-018): the world runs on behind the end screen,
+    // which holds no clock.
     if mission.record_completed(&mut menu.settings) {
         menu.settings.save();
     }
     if let Some(notice) = mission.notice.take() {
         viewer.refusal = Some(notice);
-    }
-    if mission.end.is_some() {
-        viewer.paused = true;
     }
     // The game pauses with P (UI-GAME-12.1, `crate::ui::game_keys`); the debug
     // mode with Space.
@@ -583,9 +581,6 @@ pub(crate) fn advance_world(
         crate::menus::campaign::after_step(world, &script, &mut mission);
         if let Some(check) = run_check.as_mut() {
             check.after_tick(world, spans.as_deref_mut());
-        }
-        if mission.end.is_some() {
-            break;
         }
         for result in world.last_results() {
             changed |= result.outcome.is_ok();

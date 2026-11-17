@@ -469,7 +469,8 @@ fn target_text(value: u8) -> &'static str {
 /// 230 (`dark_system`), the player's own result at 500 in (255, 255, 155)
 /// while in the game and (190, 190, 90) once defeated; `!Statistics` (300,
 /// 445), `!EXIT MAP` (300, 467) and `!CONTINUE` (300, 489), CONTINUE
-/// disabled on a defeat (and after a portal victory, CAM-3.5). Centring the
+/// disabled on a defeat (and after a portal victory, CAM-3.5); Statistics
+/// opens the statistics window over the end screen (E-trace-032). Centring the
 /// result lines on their points is ours (the spec gives the points only).
 /// The name column (Q-1057, T20b): the human's profile name, every computer
 /// player's the interface text `!AI`; only the game's players have a row
@@ -582,28 +583,44 @@ pub fn end_panel(
             );
         }
     }
-    dialog_button(
+    // CAM-3.6a (E-trace-033): the end screen's bar; a disabled one keeps its
+    // face (darker) and its label's colour.
+    let end_button = |p: &mut Panel, text: &str, y: f32, action: Action, enabled: bool| {
+        p.widgets.push(Widget::BarButton {
+            text: texts.get(text).to_owned(),
+            font: Font::Body,
+            at: [300.0, y],
+            bar: crate::ui::widgets::END_BAR,
+            raise: 0.0,
+            action,
+            enabled,
+        });
+    };
+    end_button(
         &mut p,
-        texts.get("!EXIT MAP").to_owned(),
-        [300.0, 467.0],
-        MenuAction::EndExit,
+        "!EXIT MAP",
+        467.0,
+        Action::Menu(MenuAction::EndExit),
         true,
     );
-    // No statistics screen of a finished game yet: shown, not usable.
-    dialog_button(
+    // CAM-3.6a (E-trace-032): Statistics opens the ordinary statistics
+    // window (UI-GAME-8.5a, on the series kept) over the end screen, which
+    // stays behind it; the window's close button returns to the end screen.
+    end_button(
         &mut p,
-        texts.get("!Statistics").to_owned(),
-        [300.0, 445.0],
-        MenuAction::EndExit,
-        false,
+        "!Statistics",
+        445.0,
+        Action::OpenGlobal(crate::ui::widgets::Global::Statistics(0)),
+        true,
     );
-    // A portal victory has left the game (CAM-3.5); a defeat cannot go on.
+    // A portal victory has left the game (CAM-3.5); a defeat cannot go on
+    // (E-trace-033: the button keeps its label's colour, no hover, no click).
     let continues = !matches!(end, EndScreen::Victory(4) | EndScreen::Defeat);
-    dialog_button(
+    end_button(
         &mut p,
-        texts.get("!CONTINUE").to_owned(),
-        [300.0, 489.0],
-        MenuAction::EndContinue,
+        "!CONTINUE",
+        489.0,
+        Action::Menu(MenuAction::EndContinue),
         continues,
     );
     p

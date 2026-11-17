@@ -8,6 +8,8 @@ import bevy_pbr::render::mesh_functions;
 import bevy_pbr::render::view_transformations::position_world_to_clip;
 import bevy_pbr::render::mesh_view_bindings::{globals, lights, view};
 import bevy_pbr::render::shadows;
+@if(SCREEN_SPACE_AMBIENT_OCCLUSION)
+import bevy_pbr::render::mesh_view_bindings::screen_space_ambient_occlusion_texture;
 
 const MAX_LAYERS: u32 = 64u;
 // MAP-GRID-5.3: field spacing along a row and between rows.
@@ -247,7 +249,7 @@ fn shadow_at(world_position: vec3<f32>, normal: vec3<f32>, frag: vec4<f32>) -> f
 // `bright` (the transition mask's term, GFX-PAT-5.3).
 fn shade(layer_in: u32, g: vec3<f32>, n: vec3<f32>, t: vec3<f32>, b: vec3<f32>,
         to_light: vec3<f32>, to_eye: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>, wobble: vec2<f32>,
-        haze: vec4<f32>, bright: f32, shadow: f32) -> vec3<f32> {
+        haze: vec4<f32>, bright: f32, shadow: f32, occlusion: f32) -> vec3<f32> {
     let layer = min(layer_in, MAX_LAYERS - 1u);
     let scales = params.layers[layer];
     let kind = kind_of(layer);
@@ -269,9 +271,10 @@ fn shade(layer_in: u32, g: vec3<f32>, n: vec3<f32>, t: vec3<f32>, b: vec3<f32>,
     // (T, B, N), normalised at the pixel, lights the normal-map normal.
     let l_ts = normalize(vec3<f32>(dot(to_light, t), dot(to_light, b), dot(to_light, n)));
     // GFX-VIEW-2.4: D = light x saturate(N . L) x shadow + ambient, not
-    // scaled down above 1.
+    // scaled down above 1 (hook W17b: the ambient times the occlusion, 1
+    // without it).
     let d = params.light_color.rgb * saturate(dot(n_ts, l_ts)) * shadow
-        + params.ambient.rgb;
+        + params.ambient.rgb * occlusion;
     var lit = d * (texel + vec3<f32>(bright));
     if kind == 1u {
         // GFX-WATER-2.3: underwater ground is blended toward the haze.
@@ -288,6 +291,22 @@ fn shade(layer_in: u32, g: vec3<f32>, n: vec3<f32>, t: vec3<f32>, b: vec3<f32>,
         lit += vec3<f32>(bump_texel.a * spec.x * pow(saturate(dot(r, v_ts)), spec.y));
     }
     return lit;
+}
+
+// Hook W17b: a project's screen-space ambient occlusion at the pixel `frag`
+// (its value in Bevy's occlusion texture, 1 unoccluded); 1 on every
+// camera without it (the original's look, the water's mirror).
+// Bevy's occlusion on a flat surface (High quality: 1 - 1/6, view3d's
+// `AO_FLAT`): divided out, so open ground reads 1.
+const AO_FLAT: f32 = 0.8333333;
+
+fn ambient_occlusion(frag: vec4<f32>) -> f32 {
+    var ao = 1.0;
+    @if(SCREEN_SPACE_AMBIENT_OCCLUSION) {
+        let p = vec2<i32>(frag.xy - view.viewport.xy);
+        ao = min(textureLoad(screen_space_ambient_occlusion_texture, p, 0i).r / AO_FLAT, 1.0);
+    }
+    return ao;
 }
 
 // GFX-WATER-2.6a: the mirror camera (`view3d/mirror.rs`) is the only one
@@ -329,6 +348,9 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
     let dy = dpdy(g);
     let time = globals.time;
     let shadow = shadow_at(in.world_position, normalize(n), in.clip);
+    // Hook W17b: the screen-space ambient occlusion at the pixel (1
+    // without the hook).
+    let occlusion = ambient_occlusion(in.clip);
 
     // GFX-PAT-5.1, 5.2: the corner pattern of lowest priority is the base;
     // every other corner pattern is laid over it in priority order.
@@ -345,7 +367,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
     let corners = array<vec2<i32>, 3>(tri.a, tri.b, tri.c);
     let base = layers[order[0]];
     var colour = shade(base, g, n, t, b, to_light, to_eye, dx, dy, in.wobble, in.haze, 0.0,
-        shadow);
+        shadow, occlusion);
     var done = base;
     var done2 = base;
     for (var k = 1u; k < 3u; k++) {
@@ -383,7 +405,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
             ((p.y - a.y) * MASK_SCALE + 1.0) * 0.5) + half_texel;
         let mask = textureSampleLevel(masks, masks_sampler, mask_uv, mask_set_of(layer), 0.0);
         let over = shade(layer, g, n, t, b, to_light, to_eye, dx, dy, in.wobble, in.haze,
-            mask.r * 2.0 - 1.0, shadow);
+            mask.r * 2.0 - 1.0, shadow, occlusion);
         colour = mix(colour, over, mask.a);
     }
 

@@ -165,6 +165,15 @@ if [ -n "${WRITE_PLAYER:-}" ]; then touch "$WRITE_PLAYER"; fi
     )
     .unwrap();
     std::fs::set_permissions(&viewer, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // The stand-in s2-app: writes a seed for `profile-seed`, compares
+    // nothing (`image-diff` fails: the stand-in's shot is no picture).
+    let app = dir.join("s2-app");
+    std::fs::write(
+        &app,
+        "#!/bin/bash\nif [ \"$1\" = profile-seed ]; then printf 'seed' > \"$2\"; exit 0; fi\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&app, std::fs::Permissions::from_mode(0o755)).unwrap();
     let out_dir = dir.join("out");
     let run = |write_player: bool| {
         let args = dir.join("args.txt");
@@ -176,6 +185,7 @@ if [ -n "${WRITE_PLAYER:-}" ]; then touch "$WRITE_PLAYER"; fi
             .env("NO_BUILD", "1")
             .env("S2_GAME_DIR", dir.join("game"))
             .env("S2_VIEWER_EXE", &viewer)
+            .env("S2_APP", &app)
             .env("GOLDEN_IMAGES_OUT", &out_dir)
             .env("STAND_IN_ARGS", &args)
             .env("S2_RECORDING_FLAG", dir.join("no-flag"))
@@ -211,7 +221,7 @@ if [ -n "${WRITE_PLAYER:-}" ]; then touch "$WRITE_PLAYER"; fi
     assert!(profile.join("settings.txt").exists());
     // The seed profile (`s2-app profile-seed`), the same in every scene.
     let seed = std::fs::read(profile.join("users/default01.cfg")).expect("the seed");
-    assert!(!seed.is_empty());
+    assert_eq!(seed, b"seed");
     assert!(!stderr.contains("player's own files"), "{stderr}");
 
     // A program that rewrites the player's profile fails the run.

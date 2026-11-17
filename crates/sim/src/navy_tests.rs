@@ -780,44 +780,187 @@ fn ship_t11_cancel() {
     assert_eq!(count(&w, nearer, BUILDER), 1);
 }
 
-// T12: a harbour that needs planks gets them from another harbour's
-// network by ship.
-// spec: SHIP-4.1, SHIP-4.2, SHIP-4.3, SHIP-4.4, SHIP-4.6 (T12)
-#[test]
-fn ship_t12_transfer_between_harbours() {
+/// A small building whose site needs two planks (SHIP T19).
+const HUT: u32 = 7;
+/// Its field on island B, east of H2.
+const HUT_AT: Point = (28, 16);
+
+/// SHIP T19's set-up: island A (the west) with a warehouse holding planks
+/// and helpers, its road to harbour H1, and a finished ship of player 0 on
+/// the sea; island B (the east) with harbour H2 (two helpers in stock, no
+/// planks) and a hut's site needing two planks, its flag on a road to H2.
+/// The site's orders are filed; no pass has run.
+fn t19_world() -> World {
     let mut w = sea_world();
+    w.building_types.insert(
+        HUT,
+        crate::BuildingType {
+            frame_costs: vec![(PLANK, 2)],
+            ..crate::BuildingType::new(HUT, BuildingSize::Small)
+        },
+    );
     warehouse(&mut w, (4, 10));
     harbour(&mut w, P0, WEST_HARBOUR);
     harbour(&mut w, P0, EAST_HARBOUR);
     stock(&mut w, (4, 10), PLANK, 3);
     stock(&mut w, (4, 10), HELPER, 10);
+    stock(&mut w, EAST_HARBOUR, HELPER, 2);
     road_between(&mut w, (4, 10), WEST_HARBOUR);
+    assert_eq!(
+        apply(
+            &mut w,
+            Command::PlaceBuilding {
+                player: P0,
+                building: HUT,
+                at: HUT_AT,
+            }
+        ),
+        Ok(())
+    );
+    road_between(&mut w, HUT_AT, EAST_HARBOUR);
+    w
+}
+
+/// H2's need of `good`: its count of attached requesters (0: no entry).
+fn need(w: &World, good: u32) -> u32 {
+    w.harbour_at(EAST_HARBOUR)
+        .unwrap()
+        .needs
+        .iter()
+        .find(|n| n.good == good)
+        .map_or(0, |n| n.count)
+}
+
+/// The hut site's open plank orders and the harbour each is attached to.
+fn hut_orders(w: &World) -> Vec<Option<Point>> {
+    w.orders()
+        .iter()
+        .filter(|o| o.target.at == HUT_AT && o.good == PLANK)
+        .map(|o| o.harbour)
+        .collect()
+}
+
+// T12: a harbour whose island needs planks gets them from another harbour's
+// network by ship: the hut's two plank orders attach to H2 (SHIP-4.1), H2
+// asks H1, the planks are gathered, shipped and unloaded into H2, and the
+// next passes serve the orders from H2's stock, which detaches them: the
+// need is gone and the hut gets its planks.
+// spec: SHIP-4.1, SHIP-4.2, SHIP-4.3, SHIP-4.4, SHIP-4.6 (T12)
+#[test]
+fn ship_t12_transfer_between_harbours() {
+    let mut w = t19_world();
     let s = ship(&mut w, P0, (20, 10));
-    w.add_harbour_need(EAST_HARBOUR, PLANK, 3);
     // H2 asks H1 in its first pass.
     run(&mut w, 102);
     assert_eq!(
         w.harbour_at(WEST_HARBOUR).unwrap().transfers,
         [crate::Transfer {
             good: PLANK,
-            count: 3,
+            count: 2,
             destination: EAST_HARBOUR
         }]
     );
-    assert_eq!(
-        w.harbour_at(EAST_HARBOUR).unwrap().needs[0].supplier,
-        Some(WEST_HARBOUR)
-    );
+    // (The site's builder request is attached too: no warehouse on either
+    // island has a builder.)
+    let planks = |w: &World| {
+        w.harbour_at(EAST_HARBOUR)
+            .unwrap()
+            .needs
+            .iter()
+            .find(|n| n.good == PLANK)
+            .cloned()
+    };
+    assert_eq!(planks(&w).unwrap().supplier, Some(WEST_HARBOUR));
+    assert_eq!(need(&w, BUILDER), 1);
     // Within a while: the planks arrive at H1, a ship is called, loads,
-    // sails and unloads at H2.
-    step_until(&mut w, 8000, |w| count(w, EAST_HARBOUR, PLANK) == 3);
+    // sails and unloads at H2; the passes send them on to the hut.
+    step_until(&mut w, 8000, |w| hut_orders(w).is_empty());
+    assert_eq!(need(&w, PLANK), 0);
     assert_eq!(count(&w, WEST_HARBOUR, PLANK), 0);
-    assert_eq!(count(&w, (4, 10), PLANK), 0);
-    assert!(w.harbour_at(EAST_HARBOUR).unwrap().needs.is_empty());
+    assert_eq!(count(&w, (4, 10), PLANK), 1);
     assert!(w.harbour_at(WEST_HARBOUR).unwrap().transfers.is_empty());
     assert!(w.ships()[s].vessel.cargo.is_empty());
-    // Nothing is left on the way.
-    assert_eq!(w.wares().count(), 0);
+}
+
+// T19 (SHIP-4.1, Q-063): each of the hut's plank orders finds no warehouse
+// with planks over island B's roads and, at its turn in the ware order pass
+// (every 11 ticks, one order chosen per pass), is attached to H2 (reachable
+// from the site's flag, a ship on its sea): H2's plank need is 2. With no
+// ship on the sea no order is attached and H2 has no plank need.
+// spec: SHIP-4.1 (T19)
+#[test]
+fn ship_t19_orders_attach_to_the_harbour() {
+    let mut w = t19_world();
+    ship(&mut w, P0, (20, 10));
+    assert_eq!(hut_orders(&w), [None, None]);
+    run(&mut w, 23);
+    assert_eq!(hut_orders(&w), [Some(EAST_HARBOUR), Some(EAST_HARBOUR)]);
+    assert_eq!(need(&w, PLANK), 2);
+    // A later pass attaches nothing again.
+    run(&mut w, 22);
+    assert_eq!(need(&w, PLANK), 2);
+    // No ship: nothing is attached.
+    let mut w = t19_world();
+    run(&mut w, 45);
+    assert_eq!(hut_orders(&w), [None, None]);
+    assert_eq!(need(&w, PLANK), 0);
+    assert!(w.harbour_at(EAST_HARBOUR).unwrap().needs.is_empty());
+}
+
+// T19a (SHIP-4.1, Q-063 end): T19 after a ship has unloaded one plank into
+// H2. At the next pass the first plank order is served from H2: it takes
+// the plank and is detached in that step (2 -> 1, before the plank leaves
+// H2). Then the site is torn down: the second order is cancelled and
+// detached at once (1 -> 0). With H2 torn down instead, both orders are
+// detached at once.
+// spec: SHIP-4.1 (T19a)
+#[test]
+fn ship_t19a_orders_leave_the_need() {
+    let mut w = t19_world();
+    ship(&mut w, P0, (20, 10));
+    run(&mut w, 23);
+    assert_eq!(need(&w, PLANK), 2);
+    // The plank the ship unloaded.
+    stock(&mut w, EAST_HARBOUR, PLANK, 1);
+    let ticks = step_until(&mut w, 12, |w| need(w, PLANK) == 1);
+    assert!(ticks <= 11);
+    assert_eq!(hut_orders(&w), [Some(EAST_HARBOUR)]);
+    // The plank is on its way out of H2 (its helper carries it).
+    assert_eq!(count(&w, EAST_HARBOUR, PLANK), 0);
+    assert_eq!(
+        apply(
+            &mut w,
+            Command::RemoveBuilding {
+                player: P0,
+                at: HUT_AT
+            }
+        ),
+        Ok(())
+    );
+    assert_eq!(need(&w, PLANK), 0);
+    assert!(w
+        .harbour_at(EAST_HARBOUR)
+        .unwrap()
+        .needs
+        .iter()
+        .all(|n| n.good != PLANK));
+    // H2 torn down instead: both orders detached at once.
+    let mut w = t19_world();
+    ship(&mut w, P0, (20, 10));
+    run(&mut w, 23);
+    assert_eq!(hut_orders(&w), [Some(EAST_HARBOUR), Some(EAST_HARBOUR)]);
+    assert_eq!(
+        apply(
+            &mut w,
+            Command::RemoveBuilding {
+                player: P0,
+                at: EAST_HARBOUR
+            }
+        ),
+        Ok(())
+    );
+    assert_eq!(hut_orders(&w), [None, None]);
+    assert!(w.harbour_at(EAST_HARBOUR).is_none());
 }
 
 // The run is deterministic.
@@ -832,8 +975,9 @@ fn ship_runs_are_deterministic() {
         stock(&mut w, (4, 10), PLANK, 3);
         stock(&mut w, (4, 10), HELPER, 10);
         road_between(&mut w, (4, 10), WEST_HARBOUR);
+        let _ = &mut w;
+        let mut w = t19_world();
         ship(&mut w, P0, (20, 10));
-        w.add_harbour_need(EAST_HARBOUR, PLANK, 3);
         run(&mut w, 3000);
         w.state_hash()
     };

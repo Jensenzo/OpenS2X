@@ -1186,3 +1186,220 @@ fn t41_the_settler_highlight() {
     assert!(shader.contains("let r = normalize(2.0 * d * n + light.light_dir.xyz);"));
     assert!(shader.contains("let d = saturate(dot(raw_n, -light.light_dir.xyz))"));
 }
+
+/// A flat map of `w` x `h` fields at height 0.
+fn flat(w: u32, h: u32) -> Grid {
+    Grid {
+        frame: Frame::new(w, h),
+        height: |_, _| 0,
+    }
+}
+
+/// The point above sector `(sx, sy)`'s middle field, 10 up.
+fn above_sector(g: &Grid, sx: u32, sy: u32) -> [f32; 3] {
+    let [x, z] = g.frame().field_xz(4 * sx + 2, 4 * sy + 2);
+    [x, 10.0, z]
+}
+
+// GFX-VIEW-1.5 (Q-1067) test (a): a 50 x 38 map has 13 x 10 sectors;
+// sector (0, 0) covers fields x 0..4, y 0..4; (11, 0) x 44..48; (12, 9)
+// x 48..49, y 36..37 (neighbours share a column and a row).
+// spec: GFX-VIEW-1.5
+#[test]
+fn sectors_and_their_field_ranges() {
+    use sectors::{sector_count, sector_fields};
+    assert_eq!(sector_count(50, 38), (13, 10));
+    assert_eq!(sector_fields(0, 0, 50, 38), ([0, 4], [0, 4]));
+    assert_eq!(sector_fields(11, 0, 50, 38).0, [44, 48]);
+    assert_eq!(sector_fields(12, 9, 50, 38), ([48, 49], [36, 37]));
+    assert_eq!(sector_fields(1, 0, 50, 38).0, [4, 8]);
+}
+
+// GFX-VIEW-1.5 (Q-1067) test (b): a 2 x 2-sector map (8 x 8 fields), flat,
+// the root across a plane, the four sectors in view, P above sector (1, 0):
+// the list (1, 0), (0, 0), (1, 1), (0, 1). A sector outside a plane, or too
+// far, is left out.
+// spec: GFX-VIEW-1.5
+#[test]
+fn the_list_starts_at_the_nearest_child() {
+    use sectors::{Bounds, SectorTree, Seen};
+    let g = flat(8, 8);
+    let mut tree = SectorTree::new(&g);
+    let p = above_sector(&g, 1, 0);
+    // Only the root (the whole map's box) is across a plane.
+    let whole = |b: &Bounds| {
+        // The root is 45 wide (fields 0..7 and the odd rows' half field),
+        // a leaf 27 at most.
+        if b.max[0] - b.min[0] > 35.0 {
+            Seen::Straddles
+        } else {
+            Seen::Inside
+        }
+    };
+    assert_eq!(
+        tree.walk(p, 500.0, &whole),
+        [(1, 0), (0, 0), (1, 1), (0, 1)]
+    );
+    // P above (0, 1): nearest 2, so 2, 0, 3, 1.
+    assert_eq!(
+        tree.walk(above_sector(&g, 0, 1), 500.0, &whole),
+        [(0, 1), (0, 0), (1, 1), (1, 0)]
+    );
+    // P above (1, 1): 3, 1, 2, 0.
+    assert_eq!(
+        tree.walk(above_sector(&g, 1, 1), 500.0, &whole),
+        [(1, 1), (1, 0), (0, 1), (0, 0)]
+    );
+    // Sector (0, 0) wholly outside a plane: left out.
+    let (x00, z00) = (g.frame().field_xz(2, 2)[0], g.frame().field_xz(2, 2)[1]);
+    let left_out = |b: &Bounds| {
+        let small = b.max[0] - b.min[0] < 35.0;
+        if small && b.min[0] <= x00 && b.max[0] >= x00 && b.min[2] <= z00 && b.max[2] >= z00 {
+            Seen::Outside
+        } else {
+            whole(b)
+        }
+    };
+    assert_eq!(tree.walk(p, 500.0, &left_out), [(1, 0), (1, 1), (0, 1)]);
+    // Too far: P outside every box, the far distance 0.
+    let high = [p[0], 1000.0, p[2]];
+    assert_eq!(tree.walk(high, 0.0, &whole), []);
+}
+
+// GFX-VIEW-1.5 (Q-1067) test (c): a 3 x 1-sector map, flat, a new tree, all
+// wholly in view, P above sector 2: the root appends child 1 (sector 2,
+// nearest) first, then child 0's subtree with its kept choice child 0: 2,
+// 0, 1. After a frame in which the root was across a plane (child 0 then
+// chose sector 1), the same view gives 2, 1, 0.
+// spec: GFX-VIEW-1.5
+#[test]
+fn a_wholly_seen_subtree_keeps_its_last_choice() {
+    use sectors::{Bounds, SectorTree, Seen};
+    let g = flat(12, 4);
+    let mut tree = SectorTree::new(&g);
+    let p = above_sector(&g, 2, 0);
+    let all = |_: &Bounds| Seen::Inside;
+    assert_eq!(tree.walk(p, 500.0, &all), [(2, 0), (0, 0), (1, 0)]);
+    // The root across a plane, its children in view.
+    let root_across = |b: &Bounds| {
+        if b.max[0] - b.min[0] > 10.0 * 3.0 {
+            Seen::Straddles
+        } else {
+            Seen::Inside
+        }
+    };
+    assert_eq!(tree.walk(p, 500.0, &root_across), [(2, 0), (1, 0), (0, 0)]);
+    assert_eq!(tree.walk(p, 500.0, &all), [(2, 0), (1, 0), (0, 0)]);
+}
+
+// GFX-VIEW-1.5 (Q-202 a): the pick over the field points. A ray straight
+// down onto a field point picks that field; onto a point inside an even
+// row's first triangle (x, y) (x + 1, y) (x, y + 1) near (x + 1, y), that
+// field; the triangles of an odd row run the other way. A ray that meets
+// the surface in two sectors picks in the list's first sector, not the
+// nearest hit. Nothing is picked off the map or with no sector listed.
+// spec: GFX-VIEW-1.5
+#[test]
+fn the_pick_takes_the_first_hit_in_the_list() {
+    use sectors::SectorTree;
+    let g = flat(12, 12);
+    let tree = SectorTree::new(&g);
+    let (nx, ny) = sectors::sector_count(12, 12);
+    let all: Vec<(u32, u32)> = (0..ny).flat_map(|y| (0..nx).map(move |x| (x, y))).collect();
+    let down = [0.0, -1.0, 0.0];
+    let at = |x: f32, z: f32| [x, 50.0, z];
+    let [fx, fz] = g.frame().field_xz(5, 6);
+    assert_eq!(tree.pick(&g, &all, at(fx, fz), down), Some((5, 6)));
+    // Even row 6, cell (5, 6): a point a quarter of the way from (6, 6)
+    // toward (5, 6), slightly toward (5, 7): (6, 6).
+    let [ax, az] = g.frame().field_xz(5, 6);
+    let [bx, bz] = g.frame().field_xz(6, 6);
+    let [cx, cz] = g.frame().field_xz(5, 7);
+    let p = [
+        0.75 * bx + 0.2 * ax + 0.05 * cx,
+        0.75 * bz + 0.2 * az + 0.05 * cz,
+    ];
+    assert_eq!(tree.pick(&g, &all, at(p[0], p[1]), down), Some((6, 6)));
+    // Odd row 7: its cell (5, 7) has (5, 7) (6, 8) (5, 8): the point near
+    // (6, 8) on that triangle picks (6, 8).
+    let [ax, az] = g.frame().field_xz(5, 7);
+    let [bx, bz] = g.frame().field_xz(6, 8);
+    let [cx, cz] = g.frame().field_xz(5, 8);
+    let p = [
+        0.1 * ax + 0.8 * bx + 0.1 * cx,
+        0.1 * az + 0.8 * bz + 0.1 * cz,
+    ];
+    assert_eq!(tree.pick(&g, &all, at(p[0], p[1]), down), Some((6, 8)));
+    // Off the map, and no list.
+    assert_eq!(tree.pick(&g, &all, at(-500.0, 0.0), down), None);
+    assert_eq!(tree.pick(&g, &[], at(fx, fz), down), None);
+    // A ridge along field column 6 (15 high) on flat ground: a ray from 20
+    // above field (2, 6) down to the ground at field (10, 6), between rows 6
+    // and 7, meets the ridge in sector (1, 1) and the ground behind it in
+    // sector (2, 1). The list's order decides: sector (2, 1) listed first
+    // gives the far field, (1, 1) first the ridge's; sector (0, 1) has no
+    // hit (the ray stays above it).
+    let ridge = Grid {
+        frame: Frame::new(12, 12),
+        height: |c, _| if (23..=27).contains(&c) { 15_000 } else { 0 },
+    };
+    let tree = SectorTree::new(&ridge);
+    let [x2, z6] = ridge.frame().field_xz(2, 6);
+    let [x10, _] = ridge.frame().field_xz(10, 6);
+    let [_, z7] = ridge.frame().field_xz(2, 7);
+    let z = z6 + 0.3 * (z7 - z6);
+    let origin = [x2, 20.0, z];
+    let dir = normalize([x10 - x2, -20.0, 0.0]);
+    let far_first = tree.pick(&ridge, &[(0, 1), (2, 1), (1, 1)], origin, dir);
+    let near_first = tree.pick(&ridge, &[(0, 1), (1, 1), (2, 1)], origin, dir);
+    assert!(
+        far_first.is_some_and(|(x, y)| (9..=11).contains(&x) && (6..=7).contains(&y)),
+        "{far_first:?}"
+    );
+    assert!(
+        near_first.is_some_and(|(x, y)| (5..=6).contains(&x) && (6..=7).contains(&y)),
+        "{near_first:?}"
+    );
+    assert_eq!(tree.pick(&ridge, &[(0, 1)], origin, dir), None);
+}
+
+// GFX-VIEW-1.5 (Q-1069): a sector tests every cell whose top-left point lies
+// in its inclusive range, so the cell starting on the column it shares with
+// the next sector is found in its own turn; a cell on the map's last column
+// reads its far corners past the map (an even row's x = width is sample
+// column 4w), and a hit nearest such a corner picks nothing.
+// spec: GFX-VIEW-1.5
+#[test]
+fn a_sector_tests_the_cells_of_its_shared_column() {
+    use sectors::SectorTree;
+    let g = flat(12, 12);
+    let tree = SectorTree::new(&g);
+    let down = [0.0, -1.0, 0.0];
+    // Inside cell (4, 6)'s first triangle, near (4, 6): sector (0, 1)
+    // alone finds it.
+    let [ax, az] = g.frame().field_xz(4, 6);
+    let [bx, bz] = g.frame().field_xz(5, 6);
+    let [cx, cz] = g.frame().field_xz(4, 7);
+    let p = [
+        0.8 * ax + 0.1 * bx + 0.1 * cx,
+        0.8 * az + 0.1 * bz + 0.1 * cz,
+    ];
+    let at = [p[0], 50.0, p[1]];
+    assert_eq!(tree.pick(&g, &[(0, 1)], at, down), Some((4, 6)));
+    assert_eq!(tree.pick(&g, &[(1, 1)], at, down), Some((4, 6)));
+    // The last column: field (11, 6) and the point past it, sample column 48.
+    assert_eq!(
+        sectors::field_point(&g, 12, 6)[0],
+        g.frame().sample_xz(48, 24)[0]
+    );
+    // An odd row's point past the map runs on into the next sample row.
+    assert_eq!(sectors::field_point(&g, 12, 7), {
+        let [x, z] = g.frame().sample_xz(1, 29);
+        [x, 0.0, z]
+    });
+    let [ex, ez] = g.frame().field_xz(11, 6);
+    let near_edge = [ex + 1.0, 50.0, ez + 0.5];
+    let past = [ex + 5.0, 50.0, ez + 0.5];
+    assert_eq!(tree.pick(&g, &[(2, 1)], near_edge, down), Some((11, 6)));
+    assert_eq!(tree.pick(&g, &[(2, 1)], past, down), None);
+}

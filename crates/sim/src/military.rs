@@ -939,6 +939,7 @@ impl World {
                     player,
                     requester: Requester::Military(target),
                     profession: placeholder,
+                    harbour: None,
                 });
                 // SIM-START-4.2: a request filed takes a number.
                 self.new_number();

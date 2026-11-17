@@ -129,6 +129,14 @@ attacking and defending are plan 4.4.
      of the queue (T18);
   2. soldiers that are **not present** (still on their way) are released,
      in list order;
+     **"Not present" is any linked soldier not standing inside the building (2026-11-17 night, Q-142;
+     E-mil-018, code reading, high):** a soldier counts as present only when he is linked to the
+     building, stands in it and has no attack target and no fight partner. So an attacker sent out from
+     the building, or one fighting or returning from an attack, is "not present" and is released here
+     like a soldier on his way in. A released attacker has no home building any more: when his attack
+     ends he is homeless and goes to a warehouse (`MIL-attack-combat.md` MIL-ATK-4.4, TRN-FREE-6.4). One
+     the building still keeps becomes present again the moment he arrives back (no test of the wanted
+     number then); a later pass releases a surplus by step 3.
   3. if `d` is still below 0, at least one soldier is left and the building's
      release cooldown is 0: **one** present soldier is released (MIL-SOL-4.5)
      and the cooldown is set to 40.

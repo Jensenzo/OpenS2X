@@ -346,9 +346,33 @@ pub fn game_frame(
         world,
         &player_name,
     ));
+    if mission.end.is_some() && ui.global_over_end {
+        over_end_screen(&mut frame.panels);
+    }
     // UI-GAME-1.11 (T46): paused by the player, a layer over everything.
     if viewer.pause_key && viewer.paused {
         frame.panels.push(game::pause_layer(&ctx));
+    }
+}
+
+/// UI-GAME-4.3 (E-trace-033): a building window stays open while its field
+/// holds a building of the local player.
+pub(crate) fn building_window_stays(world: &s2_sim::World, at: s2_sim::grid::Point) -> bool {
+    world
+        .building_at(at)
+        .is_some_and(|b| b.owner == crate::game::PLAYER)
+}
+
+/// CAM-3.6a (E-trace-032): the statistics window opened from the end screen
+/// lies over it (the end screen behind it, its buttons reachable where the
+/// window does not cover them): the global window's panel goes to the layer
+/// above the end screen.
+pub(crate) fn over_end_screen(panels: &mut [widgets::Panel]) {
+    for panel in panels
+        .iter_mut()
+        .filter(|p| p.id == widgets::PanelId::Global)
+    {
+        panel.id = widgets::PanelId::OverEnd;
     }
 }
 
@@ -846,6 +870,13 @@ pub fn apply_actions(
             viewer.open_building = false;
         }
     }
+    // UI-GAME-4.3 (E-trace-033, seen): a building's window closes by
+    // itself when the building is taken by an enemy (or is gone).
+    if let (Some(Context::Building { at, .. }), Some(world)) = (&ui.context, &viewer.world) {
+        if !building_window_stays(world, *at) {
+            ui.context = None;
+        }
+    }
     let actions = std::mem::take(&mut events.actions);
     for action in actions {
         let opens_dialog = matches!(action, Action::OpenGlobal(_) | Action::Hud(4..=7 | 21 | 22));
@@ -1062,12 +1093,19 @@ fn apply(
             ui.production_marks = Default::default();
             ui.production_read = None;
         }
-        Action::CloseGlobal => ui.global = None,
+        Action::CloseGlobal => {
+            ui.global = None;
+            ui.global_over_end = false;
+        }
         // UI-GAME-8.5a: the statistics page opens on the series kept.
         Action::OpenGlobal(Global::Statistics(_)) => {
             ui.global = Some(Global::Statistics(ui.statistics_series));
+            ui.global_over_end = mission.end.is_some();
         }
-        Action::OpenGlobal(g) => ui.global = Some(*g),
+        Action::OpenGlobal(g) => {
+            ui.global = Some(*g);
+            ui.global_over_end = mission.end.is_some();
+        }
         Action::BuildTab(t) => {
             if let Some(Context::Build { tab, .. }) = ui.context.as_mut() {
                 *tab = *t;

@@ -305,6 +305,10 @@ pub struct GameUi {
     /// UI-GAME-8.5a to 8.5d: the statistics family page open at the last
     /// update, for `STATS_MENUOPENED` at an opening.
     pub stats_page: Option<StatsPage>,
+    /// CAM-3.6a (E-trace-032): the global window was opened while the end
+    /// screen showed (its Statistics button, then the family's tabs), so it
+    /// lies over the end screen; one open before lies under it.
+    pub global_over_end: bool,
     /// UI-GAME-4.5: the names given to ships in their window, by the
     /// ship's index (kept by the interface, Q-228 b).
     pub ship_names: std::collections::BTreeMap<usize, String>,

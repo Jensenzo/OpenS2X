@@ -1,10 +1,15 @@
 // The objects drawn into the light's shadow map (specs/GFX-world-view.md
 // GFX-VIEW-2.5 a): each with its own shape (bone palette, a tree's sway, a
 // flag's wave, as object.wesl moves them), alpha-tested casters cut out
-// where the texture's alpha, sampled trilinearly, is below 0.5.
+// where the texture's alpha, sampled trilinearly, is below 0.5. The same
+// shader is the objects' depth and normal prepass of a map camera with a
+// project's ambient occlusion (hook W17b): there it also writes the
+// surface's own normal, from the screen derivatives of the world position
+// (so it agrees with the depth the occlusion reads; the models' smoothed
+// normals do not), turned toward the camera.
 
 import bevy_pbr::render::mesh_functions;
-import bevy_pbr::render::view_transformations::position_world_to_clip;
+import bevy_pbr::render::view_transformations::{direction_world_to_view, position_world_to_clip};
 import bevy_render::globals::Globals;
 
 const TREE: u32 = 3u;
@@ -41,6 +46,8 @@ struct VertexOutput {
     @builtin(position) clip: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) world_y: f32,
+    // Hook W17b: the world position (Bevy's frame) for the normal prepass.
+    @location(2) world_position: vec3<f32>,
 };
 
 @vertex
@@ -75,11 +82,13 @@ fn vertex(v: Vertex) -> VertexOutput {
     out.clip = position_world_to_clip(world_position.xyz);
     out.uv = v.uv;
     out.world_y = world_position.y;
+    out.world_position = world_position.xyz;
     return out;
 }
 
-@fragment
-fn fragment(in: VertexOutput) {
+// The shape test of both passes: a texel under the alpha cut, or the part
+// of a house being built that is not yet there, is discarded.
+fn cut(in: VertexOutput) {
     // GFX-VIEW-2.5 a: the caster's alpha is sampled as the original's
     // shadow pass does, trilinear with the texture's own mips chosen by the
     // shadow map's derivatives (not mip 0), then cut at 0.5: far and small
@@ -97,4 +106,26 @@ fn fragment(in: VertexOutput) {
     if alpha < 0.5 {
         discard;
     }
+}
+
+// The shadow map and a depth-only prepass write depth only.
+@if(!NORMAL_PREPASS)
+@fragment
+fn fragment(in: VertexOutput) {
+    cut(in);
+}
+
+// Hook W17b: the normal prepass (Bevy's encoding, n x 0.5 + 0.5) for the
+// screen-space ambient occlusion: the surface's normal toward the camera
+// (view space z > 0), the derivatives taken before the cut.
+@if(NORMAL_PREPASS)
+@fragment
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    let p = in.world_position;
+    var n = normalize(cross(dpdx(p), dpdy(p)));
+    cut(in);
+    if direction_world_to_view(n).z < 0.0 {
+        n = -n;
+    }
+    return vec4<f32>(n * 0.5 + vec3<f32>(0.5), 1.0);
 }

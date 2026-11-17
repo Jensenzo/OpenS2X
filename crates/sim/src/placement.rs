@@ -694,6 +694,19 @@ impl World {
         self.upgrades.remove(&at);
         self.builder_links.remove(&at);
         self.warehouses.remove(&at);
+        // SHIP-4.1 (Q-063 end (2)): its open orders are cancelled and leave
+        // their harbours' needs at once (the pass drops them).
+        let attached: Vec<crate::Order> = self
+            .orders
+            .iter_mut()
+            .filter(|o| o.target.at == at && o.harbour.is_some())
+            .map(|o| {
+                let order = *o;
+                o.harbour = None;
+                order
+            })
+            .collect();
+        self.detach_orders(&attached);
         self.harbour_removed(at);
         // Its leveller, builder, workers and soldiers go home (ECO-HQ-5.1);
         // its reservation ends (ECO-OUT-2.6).

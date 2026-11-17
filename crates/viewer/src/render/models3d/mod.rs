@@ -567,8 +567,11 @@ impl Material for ObjectMaterial {
     fn fragment_shader() -> ShaderRef {
         ShaderRef::Handle(OBJECT_SHADER)
     }
+    /// Hook W17b: the depth and normal prepass of a map camera with a
+    /// project's ambient occlusion (the shadow shader, writing normals
+    /// there); no camera of the original's look has a prepass.
     fn enable_prepass() -> bool {
-        false
+        true
     }
     /// GFX-VIEW-2.5a: objects cast shadows with their own shape.
     fn enable_shadows() -> bool {

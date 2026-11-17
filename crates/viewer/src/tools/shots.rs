@@ -54,6 +54,18 @@ pub(crate) fn shot_folder(project: Option<PathBuf>, option: &Path) -> PathBuf {
 /// `--compare`: frames drawn after the scene is built before the shot.
 pub(crate) const COMPARE_FRAMES: u32 = 1;
 
+/// `--compare` (play test 48): the captures of one flat colour retaken
+/// before one is saved as it is. A view with nothing but one colour (the
+/// sky or the ground beyond a map's edge, no interface) is a picture too;
+/// without the limit its shot never came and the viewer never quit.
+pub(crate) const COMPARE_TRIES: u32 = 120;
+
+/// `--compare`: whether a capture is saved: one that has drawn, or the last
+/// try allowed.
+pub(crate) fn keep_capture(drawn: bool, tries: u32) -> bool {
+    drawn || tries >= COMPARE_TRIES
+}
+
 /// `--compare`: where the shot stands.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(crate) enum CompareShot {
@@ -93,6 +105,7 @@ pub(crate) fn automatic_shot(
     mut viewer: ResMut<Viewer>,
     view: Res<crate::render::view3d::View3d>,
     mut built_frames: Local<u32>,
+    mut tries: Local<u32>,
     compare: Local<std::sync::Arc<std::sync::Mutex<CompareShot>>>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -109,11 +122,19 @@ pub(crate) fn automatic_shot(
             CompareShot::Saved => viewer.shot_taken_at = Some(viewer.frames_since_load),
             CompareShot::Waiting if *built_frames > COMPARE_FRAMES => {
                 *state = CompareShot::Asked;
+                *tries += 1;
+                let try_number = *tries;
                 let state = compare.clone();
                 commands.spawn(Screenshot::primary_window()).observe(
                     move |shot: On<ScreenshotCaptured>| {
                         let mut state = state.lock().expect("compare state");
-                        if drawn(&shot.image) {
+                        let has_drawn = drawn(&shot.image);
+                        if keep_capture(has_drawn, try_number) {
+                            if !has_drawn {
+                                warn!(
+                                    "the compare shot is one colour after {try_number} captures; saved as it is"
+                                );
+                            }
                             info!("saving the compare shot to {}", path.display());
                             save_to_disk(path.clone())(shot);
                             *state = CompareShot::Saved;
@@ -148,6 +169,15 @@ pub(crate) fn automatic_shot(
 mod tests {
     use super::*;
     use bevy::ecs::system::RunSystemOnce;
+
+    // spec: none (play test 48: a --compare shot of a one-colour view, the map's edge, is saved after the tries)
+    #[test]
+    fn a_flat_compare_shot_is_kept_after_the_tries() {
+        assert!(keep_capture(true, 1));
+        assert!(!keep_capture(false, 1));
+        assert!(!keep_capture(false, COMPARE_TRIES - 1));
+        assert!(keep_capture(false, COMPARE_TRIES));
+    }
 
     // spec: none (the golden pictures' --still: no hover depends on the desktop's pointer)
     #[test]

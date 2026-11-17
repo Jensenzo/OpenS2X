@@ -68,7 +68,8 @@ one of six headings. Build-help icons are billboards over buildable fields.
     two triangles are (x, y) (x + 1, y) (x, y + 1) and (x + 1, y) (x + 1, y + 1) (x, y + 1); for an
     **odd** row they are (x, y) (x + 1, y + 1) (x, y + 1) and (x, y) (x + 1, y) (x + 1, y + 1). With
     the half-field shift of the odd rows (1.1) these are exactly the lattice triangles.
-  - Order: the visible sectors' cell ranges in turn, in each range the rows from top to bottom
+  - Order: the visible sectors' cell ranges in turn (the sectors in the list order below, each
+    only when the ray meets its box), in each range the rows from top to bottom
     and in each row the cells from left to right, the first triangle of a cell before the second;
     the **first** triangle hit ends the search (not the nearest hit).
   - The picked field is the hit triangle's corner nearest to the hit point (squared distance in
@@ -76,6 +77,59 @@ one of six headings. Build-help icons are billboards over buildable fields.
     it is strictly nearer than both others, else the third.
   So a program that picks against the drawn fine triangles and then takes the nearest field can
   pick another field near ridges and slopes.
+  **The sectors and their order (2026-11-17 night, Q-1067; E-gfx-076, code reading, high unless marked).**
+  - **A sector** is GFX-VIEW-2.1's cell: sector (sx, sy) for sx < ceil(width / 4), sy < ceil(height / 4).
+    Its **field range** is x from 4 sx to min(4 sx + 4, width - 1) and y from 4 sy to
+    min(4 sy + 4, height - 1), both ends included, so neighbouring sectors share one column and one row
+    of fields (a cell on the shared column or row is tested in both sectors).
+    **Which cells (2026-11-17 night, Q-1069; E-gfx-074, E-gfx-076, code reading, high):** every cell
+    whose top-left point (x, y) lies in the range, both ends included (x from x0 to x1, y from y0
+    to y1), and on the map (0 <= x < width, 0 <= y < height); its corners x + 1 and y + 1 may lie
+    outside the range. So the cells starting on the shared column and row are tested in both
+    sectors, in whichever sector's turn comes first. A cell of the map's last column (x = width - 1)
+    or last row is tested too; its corners past the map are read from the fine samples without a
+    wrap: x + 1 = width gives sample column 4 width on an even row (the grid's last column) and
+    4 width + 2 on an odd row, which runs past the row's end into the next sample row (row-major
+    order, 4 width + 1 samples a row: sample (1, 4 y + 1)); y + 1 = height gives sample row
+    4 height, the last (medium: the vertex row width taken as the fine grid's). A program may
+    leave the last column's odd-row cells untested only if it accepts a different pick at the
+    map's east edge.
+  - **The list** the pick walks is the one the terrain drawing built for the frame last drawn (the same
+    list, the same order). It comes from a **quadtree** over the sector grid, built once:
+    node(x0..x1, y0..y1) over sector indices, both ends included; a single sector is a leaf. Otherwise
+    mx = floor((x0 + x1) / 2), my = floor((y0 + y1) / 2) and the node has up to four children:
+    child 0 = (x0..mx, y0..my), child 1 = (mx + 1..x1, y0..my), child 2 = (x0..mx, my + 1..y1),
+    child 3 = (mx + 1..x1, my + 1..y1). A range one sector wide has only children 0 and 2 (split in y);
+    one sector tall, only children 0 and 1 (split in x). The root is (0..nx - 1, 0..ny - 1). A leaf's box
+    is its sector's box (the box around the sector's terrain, medium); an inner node's box is the union
+    of its children's boxes.
+  - **The reference point** P = eye + 0.7 x (look-at target - eye) (float32), taken each drawn frame.
+  - **The walk**, each drawn frame, from the root; visiting a node:
+    1. a node whose box lies wholly outside one of the view's six frustum planes is skipped with its
+       subtree;
+    2. a node is skipped when P is outside its box and the squared distance from P to the box's centre
+       is greater than (far + the box's longest side)^2 (far: the view's far distance; its terms are not
+       followed, low);
+    3. an inner node then picks its **nearest child**: of the children present, in index order, the one
+       whose box centre ((min + max) / 2) has the smallest squared distance to P, a later child only when
+       strictly smaller; the node **keeps** this choice;
+    4. a leaf is appended to the list. An inner node wholly inside all six planes has its whole subtree
+       appended (5); an inner node that straddles a plane visits its children (1 to 4) in the order
+       given by its nearest child n: n = 0: 0, 1, 2, 3; n = 1: 1, 0, 3, 2; n = 2: 2, 0, 3, 1;
+       n = 3: 3, 1, 2, 0 (missing children skipped).
+    5. Appending a whole subtree goes through the children in the same table order, but each inner node
+       below the wholly visible one uses the nearest child it **kept** from the last time step 3 ran on
+       it (a new tree keeps child 0 for every node); step 3 does not run inside the subtree.
+    So the list is nearest-first by quadtree, and a sector's place can depend on earlier frames.
+  - No occlusion test applies to the terrain list (medium: the walk has one, but no occluder for it).
+  - Tests: (a) width 50, height 38: 13 x 10 sectors; sector (0, 0) covers fields x 0..4, y 0..4;
+    sector (11, 0) x 44..48; sector (12, 9) x 48..49, y 36..37. (b) A 2 x 2-sector map (8 x 8 fields),
+    flat, the root straddling a plane and all four sectors in view, P above sector (1, 0): list (1, 0),
+    (0, 0), (1, 1), (0, 1). (c) A 3 x 1-sector map, flat, a new tree, everything wholly in view, P
+    above sector 2: the root (child 0 = sectors 0..1, child 1 = sector 2) appends child 1 first (its
+    nearest), then child 0's subtree with its kept choice child 0: list 2, 0, 1. The same view after a
+    frame in which the root straddled a plane (child 0 was then visited by step 3 and chose sector 1):
+    list 2, 1, 0.
 
 ### GFX-VIEW-2 Terrain mesh and lighting
 
@@ -866,8 +920,20 @@ one of six headings. Build-help icons are billboards over buildable fields.
   Off explores the whole map for every player, the computer players included
   (`ECO-warehouse-construction.md` ECO-HQ-3.6). So it is not a drawing switch: the lit map is the
   explored map, and every simulation rule that tests exploration (the computer players' attack
-  candidates, the hunters' animal test, the scout) then sees every field explored. The first
-  counter at which the two recorded games part, and by which of these rules, was not measured. Pictures of the original
+  candidates, the hunters' animal test, the scout) then sees every field explored. **Where they
+  part (2026-11-17 night, Q-1049; E-trace-033, a recording of the fog-off game with the fixed step,
+  every tick to trace tick 23 305, against the fog-on recording E-trace-014):** the generator is equal
+  to trace tick 19 354 and first differs at **19 355** (counter 19 354: 5 draws instead of 4; the two
+  states meet again after 19 356 and part for good from 19 357). The world parts earlier, in the
+  animals: the animal tables are equal to counter 19 159 and differ at the next common sample, 19 169,
+  in two animals by the computer player's hunting ground, their homes (120, 63) and (122, 65), standing
+  near (121, 61) .. (122, 68). With fog of war On animal 90090 is put into state 4 with its countdown
+  stopped (in counter 19 161 by that countdown) and 90086 leaves state 4; with fog of war Off neither
+  happens. 90086's walk then ends on (121, 69). The rule that reads exploration there is the hunters'
+  search (`ECO-food-mining.md` ECO-FOOD-5.2: the field the animal's walk ends on must be explored by
+  the hut's owner); that it is this test that parts the games is the likely reading (medium; the
+  animal state values were not mapped to names). The hunters' own rows are still equal at counter
+  19 359. So pictures taken with fog of war Off stand for the recorded game up to counter 19 159. Pictures of the original
   taken with fog of war Off stand for the recorded game only up to counter 11 099 (the
   look comparison's `weakfogoff` pairs at 1500, 6000, 11000 are safe).
   **Where it acts on the ground (2026-11-08 b, E-gfx-041):** the

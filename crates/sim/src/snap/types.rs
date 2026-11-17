@@ -564,14 +564,16 @@ snap_enum!(crate::requests::Requester { Road(f0), Site(f0), Building(f0), Milita
 snap_struct!(crate::requests::Request {
     player,
     requester,
-    profession
+    profession,
+    harbour @ 82 = None
 });
 snap_struct!(crate::requests::Order {
     player,
     good,
     target,
     stamp,
-    made
+    made,
+    harbour @ 82 = None
 });
 snap_struct!(crate::requests::Message {
     tick,

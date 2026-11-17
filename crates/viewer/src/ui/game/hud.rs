@@ -96,6 +96,10 @@ pub fn message_window<T>(listed: &[T], scroll: usize) -> &[T] {
     &listed[end.saturating_sub(MESSAGE_ROWS)..end]
 }
 
+/// UI-GAME-11.1 (Q-1068): the display name of the geologist's settler type,
+/// the text of its info title (the scripts' `Scholar`).
+pub(crate) const GEOLOGIST_NAME: &str = "dlg_ScholarSettler";
+
 /// UI-GAME-11.1: a row's text: the translated text, and in brackets the
 /// ship's name for a message naming a ship (UI-GAME-4.5 c, "Ship is
 /// awaiting orders (Aurora)"), else the building's for the messages that
@@ -111,11 +115,27 @@ pub(crate) fn message_text(ctx: &Ctx, m: &s2_sim::Message) -> String {
     if let Some(name) = ship.filter(|n| !n.is_empty()) {
         return format!("{text} ({name})");
     }
+    // UI-GAME-11.1 (Q-1068, E-trace-032 seen): a find of the geologist's
+    // report names his settler type by its display name, its info title
+    // (`dlg_ScholarSettler`, "Iron ore found! (Geologist)"); only the
+    // geologist's report posts the five found texts.
+    if m.text.starts_with("Found ") {
+        return format!("{text} ({})", ctx.texts.name(GEOLOGIST_NAME));
+    }
+    // UI-GAME-11.1 (E-trace-033, seen): the lost building's and the lost
+    // territory's rows carry no name, though the building still stands
+    // when the first is posted ("Military building lost to enemy!").
+    if matches!(
+        m.text,
+        "Lost Military Building to enemy." | "Lost Territory."
+    ) {
+        return text;
+    }
     // E-trace-032 (seen): "No resources found (Fisherman's Hut)" names its
-    // building too; a geologist's find stands on no building.
+    // building too; E-trace-033: "You are under attack! (Barracks)".
     match m.building {
-        Some(b) if !m.text.starts_with("Found ") => format!("{text} ({})", title_of(ctx, b)),
-        _ => text,
+        Some(b) => format!("{text} ({})", title_of(ctx, b)),
+        None => text,
     }
 }
 

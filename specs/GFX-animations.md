@@ -287,6 +287,16 @@ same model and animation share one skeleton pose.
   tree when the fall starts. Confidence: high (E-gfx-014); the side it falls to (left or right
   of the woodcutter) medium; W + 30 exact to +-1 tick (whether the action's
   countdown already ran in its start tick), medium.
+  **The side (2026-11-17 night, Q-202 c; E-gfx-077, code reading, high for the formula):** the
+  axis a = (x, 0, z) is the unit vector from the tree to the woodcutter, turned into the tree's own
+  frame (its yaw and scale undone), and the turn is applied in that frame before the tree's own
+  matrix. Its rotation matrix, in the row-vector convention the world matrices use (the translation
+  is the fourth row, GFX-VIEW T16), has c + t x^2, c + t y^2, c + t z^2 on the diagonal (t = 1 - cos, s = sin,
+  c = cos) and off the diagonal: row 1 (t x y - s z, t x z + s y), row 2 (t x y + s z, t y z - s x),
+  row 3 (t x z - s y, t y z + s x). So the tree's up vector goes to (s z, c, -s x): the top moves
+  toward **(z, 0, -x)**, which is the woodcutter's **left** as he faces the tree (in the game's
+  left-handed frame, x right, y up, z away from the default camera). Test: tree at world (0, 0, 0),
+  woodcutter at (0, 0, -3): the top moves toward -x; woodcutter at (3, 0, 0): toward -z.
 - **GFX-ANIM-3.8b Tree growth (Run C, F20, E-gfx-013).** A tree (or any
   growing deposit) is one model throughout; there are no separate sapling
   models and no stages. While the deposit's size s is below 1.0 the model is

@@ -883,3 +883,262 @@ fn t19b_each_dialog_step_takes_its_one_control() {
         );
     }
 }
+
+/// A free game of three players (slots 1, 2 and 4) on open land, each with
+/// a headquarters: the end screen tests' world.
+fn three_players() -> s2_sim::World {
+    let n = 40 * 40;
+    let terrain = s2_sim::map::Terrain {
+        width: 40,
+        height: 40,
+        heights: vec![0; n],
+        height_floor: -100,
+        states: vec![s2_sim::map::state::FOR_BUILDING; n],
+        samples: Vec::new(),
+    };
+    let mut castle = s2_sim::BuildingType::new(9, s2_sim::BuildingSize::Large);
+    castle.territory_range = 4;
+    castle.warehouse = true;
+    castle.worker_limit = 0;
+    let rules = s2_sim::Rules {
+        building_types: vec![castle],
+        headquarters: Some(9),
+        ..s2_sim::Rules::empty()
+    };
+    let setup = s2_sim::GameSetup {
+        players: vec![
+            (PlayerId(0), (8, 8)),
+            (PlayerId(1), (30, 8)),
+            (PlayerId(3), (30, 30)),
+        ],
+        local_player: PlayerId(0),
+        ..Default::default()
+    };
+    s2_sim::World::new_game(1, terrain, rules, &setup)
+}
+
+// CAM-3.6a (E-trace-032, seen): a free game won with `INeedSomeHelp` (CAM-3.7)
+// shows VICTORY and the target's text, but the cheat marks no player won:
+// the human's row has no VICTORY, nor have the computer players still in the
+// game (the result column at x 500 is empty).
+// spec: CAM-3.6a, CAM-3.7
+#[test]
+fn after_the_cheat_no_row_shows_victory() {
+    let mut world = three_players();
+    world.set_mission(s2_sim::mission::Mission::new(1, Vec::new()));
+    world.submit(Command::Cheat {
+        player: HUMAN,
+        cheat: s2_sim::mission::Cheat::INeedSomeHelp,
+    });
+    world.step();
+    assert_eq!(world.mission().unwrap().completed, Some(1));
+    let texts = Texts::parse("!VICTORY\tVICTORY\n");
+    let panel = end_panel(
+        &texts,
+        SCREEN,
+        EndScreen::Victory(1),
+        &world,
+        "MP_4P_Keyhole",
+        "Look",
+    );
+    let victory: Vec<[f32; 2]> = panel
+        .widgets
+        .iter()
+        .filter_map(|w| match w {
+            Widget::Text { text, at, .. } if text == "VICTORY" => Some(*at),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(victory.len(), 1, "{victory:?}");
+    assert!(panel
+        .widgets
+        .iter()
+        .all(|w| !matches!(w, Widget::Text { at, .. } if at[0] == 500.0)));
+}
+
+// CAM-3.6a (E-trace-032, seen): the end screen's Statistics button opens the
+// ordinary statistics window (UI-GAME-8.5a) over the end screen, which stays
+// behind it: the window takes a click where it lies over the end screen's
+// buttons; elsewhere the end screen's buttons are reached; a window open
+// before the end screen lies under it.
+// spec: CAM-3.6a, UI-GAME-8.5a
+#[test]
+fn statistics_open_over_the_end_screen() {
+    use crate::ui::render::{widget_at, Hit};
+    use crate::ui::widgets::{Global, PanelId};
+    let world = three_players();
+    let texts = Texts::parse("!Statistics\tStatistics\n");
+    let end = end_panel(
+        &texts,
+        SCREEN,
+        EndScreen::Victory(1),
+        &world,
+        "MP_4P_Keyhole",
+        "Look",
+    );
+    let button = |text: &str| {
+        end.widgets
+            .iter()
+            .find_map(|w| match w {
+                Widget::BarButton {
+                    text: t,
+                    action,
+                    enabled,
+                    at,
+                    bar,
+                    ..
+                } if t == text => Some((action.clone(), *enabled, *at, bar.size)),
+                _ => None,
+            })
+            .expect(text)
+    };
+    let (action, enabled, at, size) = button("Statistics");
+    assert!(enabled);
+    assert!(matches!(action, Action::OpenGlobal(Global::Statistics(_))));
+    // A stand-in of the window: a button of its own over the Statistics
+    // button's place.
+    let on = [end.at[0] + at[0] + 2.0, end.at[1] + at[1] + 2.0];
+    let window = Panel {
+        id: PanelId::Global,
+        at: [on[0] - 10.0, on[1] - 10.0],
+        widgets: vec![Widget::BarButton {
+            text: "x".into(),
+            font: crate::ui::widgets::Font::Body,
+            at: [0.0, 0.0],
+            bar: crate::ui::widgets::DIALOG_BAR,
+            raise: 0.0,
+            action: Action::CloseGlobal,
+            enabled: true,
+        }],
+        tooltips: Vec::new(),
+    };
+    let mut sizes = |w: &Widget| match w {
+        Widget::BarButton { bar, .. } => Some(bar.size),
+        _ => None,
+    };
+    let mut panels = vec![window, end.clone()];
+    // Open before the end screen: under it.
+    assert_eq!(
+        widget_at(&panels, on, &mut sizes),
+        Some(Hit::Button {
+            action: action.clone(),
+            enabled: true
+        })
+    );
+    // Opened from it: over it.
+    crate::ui::over_end_screen(&mut panels);
+    assert_eq!(
+        widget_at(&panels, on, &mut sizes),
+        Some(Hit::Button {
+            action: Action::CloseGlobal,
+            enabled: true
+        })
+    );
+    // EXIT MAP where the window does not cover it.
+    let (exit, _, at, _) = button("!EXIT MAP");
+    let far = [
+        end.at[0] + at[0] + size[0] - 2.0,
+        end.at[1] + at[1] + size[1] - 2.0,
+    ];
+    assert_eq!(
+        widget_at(&panels, far, &mut sizes),
+        Some(Hit::Button {
+            action: exit,
+            enabled: true
+        })
+    );
+}
+
+/// UI-GAME-11.1 (Q-1068): the geologist's settler type's display name, the
+/// name a find's row shows, is the install's "Geologist". Skipped without
+/// `S2_GAME_DIR`.
+// spec: UI-GAME-11.1
+#[test]
+fn the_geologists_name_is_in_the_install_texts() {
+    let Some((_, _, texts)) = install() else {
+        return;
+    };
+    assert_eq!(
+        texts.entry(crate::ui::game::GEOLOGIST_NAME),
+        Some("Geologist")
+    );
+}
+
+// UI-GAME-4.3 (E-trace-033, seen): a building's window closes by itself when
+// the building is taken: it stays only while its field holds a building of
+// the local player (here player 0's headquarters; player 1's, as a taken
+// building would be, and an empty field close it).
+// spec: UI-GAME-4.3
+#[test]
+fn a_taken_buildings_window_closes() {
+    let world = three_players();
+    let own = world
+        .buildings()
+        .find(|b| b.owner == HUMAN)
+        .map(|b| b.at)
+        .expect("player 0's headquarters");
+    let other = world
+        .buildings()
+        .find(|b| b.owner == PlayerId(1))
+        .map(|b| b.at)
+        .expect("player 1's headquarters");
+    assert!(crate::ui::building_window_stays(&world, own));
+    assert!(!crate::ui::building_window_stays(&world, other));
+    assert!(!crate::ui::building_window_stays(&world, (20, 20)));
+}
+
+// CAM-3.6a (T20c, E-trace-033, seen): on a defeat the end screen's CONTINUE
+// is disabled but keeps its label's colour: its bar is the end screen's,
+// drawn with the normal face darkened to about 55/77 of its values, no
+// hover, no click; Statistics and EXIT MAP on the same bar, enabled. Other
+// disabled dialog bars keep the pressed face and the grey label.
+// spec: CAM-3.6a (T20c), UI-MENU-1.4
+#[test]
+fn a_disabled_continue_keeps_its_label() {
+    use crate::ui::render::bar_look;
+    use crate::ui::widgets::{DIALOG_BAR, END_BAR};
+    let world = three_players();
+    let texts = Texts::parse("!CONTINUE\tCONTINUE\n");
+    let panel = end_panel(
+        &texts,
+        SCREEN,
+        EndScreen::Defeat,
+        &world,
+        "MP_2P_Summer_Breeze",
+        "Look",
+    );
+    let continue_bar = panel
+        .widgets
+        .iter()
+        .find_map(|w| match w {
+            Widget::BarButton {
+                text, bar, enabled, ..
+            } if text == "CONTINUE" => Some((*bar, *enabled)),
+            _ => None,
+        })
+        .expect("CONTINUE");
+    assert_eq!(continue_bar, (END_BAR, false));
+    let (face, label, dim) = bar_look(&END_BAR, false);
+    assert_eq!(face, DIALOG_BAR.normal);
+    assert_eq!(label, [255, 255, 255]);
+    assert!((dim.unwrap() - 55.0 / 77.0).abs() < 1e-6);
+    assert_eq!(
+        bar_look(&END_BAR, true),
+        (DIALOG_BAR.normal, [255, 255, 255], None)
+    );
+    assert_eq!(
+        bar_look(&DIALOG_BAR, false),
+        (DIALOG_BAR.pressed, [170, 170, 170], None)
+    );
+    // Every button of the end screen is on the end bar.
+    let bars: Vec<_> = panel
+        .widgets
+        .iter()
+        .filter_map(|w| match w {
+            Widget::BarButton { bar, .. } => Some(*bar),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(bars.len(), 3);
+    assert!(bars.iter().all(|b| *b == END_BAR));
+}

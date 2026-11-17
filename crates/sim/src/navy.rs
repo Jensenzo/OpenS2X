@@ -306,22 +306,88 @@ impl World {
         self.regions[self.terrain.index(field)]
     }
 
-    /// SHIP-4.1: the harbour's island needs `count` of `good` from
-    /// overseas. How needs arise is not traced (Q-063); a game that fills
-    /// them calls this.
-    pub fn add_harbour_need(&mut self, harbour: Point, good: u32, count: u32) {
+    /// SHIP-4.1 (Q-063): a requester of `good` is attached to the harbour
+    /// on `harbour`: one more in its need entry of the good (made on its
+    /// first requester).
+    pub(crate) fn attach_need(&mut self, harbour: Point, good: u32) {
         let Some(h) = self.harbours.iter_mut().find(|h| h.at == harbour) else {
             return;
         };
         match h.needs.iter_mut().find(|n| n.good == good) {
-            Some(n) => n.count += count,
+            Some(n) => n.count += 1,
             None => h.needs.push(Need {
                 good,
-                count,
+                count: 1,
                 supplier: None,
                 asked: Vec::new(),
             }),
         }
+    }
+
+    /// SHIP-4.1 (Q-063): a requester of `good` is detached from the harbour
+    /// on `harbour`: one fewer at once; the entry goes with its last
+    /// requester (the original also waits for the goods under way, its
+    /// second count: medium; ours keeps no such count).
+    pub(crate) fn detach_need(&mut self, harbour: Point, good: u32) {
+        let Some(h) = self.harbours.iter_mut().find(|h| h.at == harbour) else {
+            return;
+        };
+        if let Some(n) = h.needs.iter_mut().find(|n| n.good == good) {
+            n.count = n.count.saturating_sub(1);
+        }
+        h.needs.retain(|n| n.count > 0);
+    }
+
+    /// SHIP-4.1 (Q-063): the harbour a request of `player` for `good` is
+    /// attached to: among the player's finished harbours whose flag is
+    /// reachable over the roads from the requester's flag (`costs`, the
+    /// routes towards it), which accept the good (their stock settings) and
+    /// have a docking place on a sea where the player has a finished ship,
+    /// the one with the lowest route cost; on equal cost the first in the
+    /// harbour list. None: the request stays unattached.
+    pub(crate) fn harbour_for(
+        &self,
+        player: PlayerId,
+        good: u32,
+        costs: &crate::transport::CostsTo,
+    ) -> Option<Point> {
+        let seas: Vec<u32> = self
+            .ships
+            .iter()
+            .filter(|s| s.owner == player && s.finished())
+            .map(|s| self.region_of(s.vessel.walker.at))
+            .filter(|&sea| sea != 0)
+            .collect();
+        if seas.is_empty() {
+            return None;
+        }
+        let mut best: Option<(Point, u32)> = None;
+        for h in &self.harbours {
+            if self.harbour_owner(h.at) != Some(player)
+                || !self.warehouse_accepts(h.at, good)
+                || !h
+                    .docks
+                    .iter()
+                    .any(|d| seas.contains(&self.region_of(d.field)))
+            {
+                continue;
+            }
+            let Some(cost) = costs.from(self.flag_of(h.at)) else {
+                continue;
+            };
+            if best.is_none_or(|(_, c)| cost < c) {
+                best = Some((h.at, cost));
+            }
+        }
+        best.map(|(at, _)| at)
+    }
+
+    /// SHIP-4.1 (Q-063): whether the player has a harbour (only then can a
+    /// request be attached).
+    pub(crate) fn has_harbour(&self, player: PlayerId) -> bool {
+        self.harbours
+            .iter()
+            .any(|h| self.harbour_owner(h.at) == Some(player))
     }
 
     // ---- Harbours (SHIP-1) ----
@@ -375,6 +441,15 @@ impl World {
         let Some(index) = self.harbours.iter().position(|h| h.at == at) else {
             return;
         };
+        // SHIP-4.1 (Q-063 end, 4): every ware order and settler request
+        // attached to it is detached at once, and its need list goes with
+        // it; they may attach elsewhere at their next turn.
+        for o in self.orders.iter_mut().filter(|o| o.harbour == Some(at)) {
+            o.harbour = None;
+        }
+        for r in self.queue.iter_mut().filter(|r| r.harbour == Some(at)) {
+            r.harbour = None;
+        }
         let gone = self.harbours.remove(index);
         for ship in &mut self.ships {
             let v = &mut ship.vessel;
@@ -794,7 +869,9 @@ impl World {
                     w.add(good, count);
                 }
             }
-            self.needs_met(destination, &first.goods);
+            // SHIP-4.6: the requests waiting are told by the goods being
+            // there: the next ware order pass serves them from the harbour's
+            // stock, which detaches them (SHIP-4.1, Q-063 end (1)).
             return;
         }
         self.release_links(i);
@@ -812,19 +889,6 @@ impl World {
         }
         // The destination cannot be reached: the entry is lost (Q-066).
         self.ships[i].vessel.cargo.remove(0);
-    }
-
-    /// SHIP-4.6: the requests waiting for the goods are told.
-    fn needs_met(&mut self, harbour: Point, goods: &[(u32, u32)]) {
-        let Some(h) = self.harbours.iter_mut().find(|h| h.at == harbour) else {
-            return;
-        };
-        for &(good, count) in goods {
-            if let Some(n) = h.needs.iter_mut().find(|n| n.good == good) {
-                n.count = n.count.saturating_sub(count);
-            }
-        }
-        h.needs.retain(|n| n.count > 0);
     }
 
     /// SHIP-6.1, 2.3 case 2: the ship starts waiting for orders.

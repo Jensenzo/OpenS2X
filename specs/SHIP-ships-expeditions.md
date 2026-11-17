@@ -188,8 +188,30 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
     or another harbour) at a later pass (high).
   - **A ware order served over land:** the branch that finds a warehouse with the good does not
     detach the order there; its harbour link ends with the order itself when the ware is
-    assigned and the order is used up (medium: the order's end was not followed, so the harbour's
-    need may count it until then).
+    assigned and the order is used up.
+  **The order's end (2026-11-17 night, Q-063 end; E-ship-010, code reading, high).** An attached
+  ware order counts as one requester in its harbour's need for that good from the attach until it
+  is detached, and nothing else changes that count in between. It is detached, which lowers the
+  need by one at once, at the first of:
+  1. **a ware is assigned to it**: at the moment the order takes its ware, whether a warehouse
+     sends one (ECO-REQ-5.3, any warehouse, the harbour itself included once the good is there)
+     or the matching gives it a free ware. The order leaves the open orders in the same step, so
+     the need drops when the ware is assigned, not when it arrives;
+  2. **it is cancelled**: when its requester's open order for that good is withdrawn (a site's or
+     building's requests cancelled, the building removed), the order is detached and then
+     deleted;
+  3. the re-check of a pass fails (above);
+  4. **its harbour is removed**: when a harbour building is torn down, every ware order and every
+     settler request attached to it is detached at once, and its need list is cleared. They are
+     free to be attached to another harbour at their next turn. Capture was not followed (Q-066).
+  A need entry is deleted when its last requester is detached and its second count is zero too
+  (that count is taken to be the goods already under way for it, SHIP-4.2 to 4.6; medium).
+  Test T19a: in T19, a ship has unloaded one plank into H2. At the next pass the first plank
+  order is served from H2 (it takes that plank): H2's plank requesters fall from 2 to 1 in that
+  pass, before the plank leaves H2. The site is then torn down: the second order is cancelled and
+  detached, and the requesters fall to 0. With H2 torn down instead, both orders are detached at
+  once, and with a ship on its sea they are attached to another harbour of island B at their
+  next pass, if one is reachable.
 - **SHIP-4.2 Asking another harbour.** For each needed good with no supplier
   yet: among the player's other **finished** harbours, in harbour list
   order, the first one that (a) has not already been asked for this good by
@@ -412,6 +434,7 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
 | T17 | SHIP-2.5, 2.7: a ship docks at a harbour on (40, 40) at a docking place 3 fields away; then it is loaded for an expedition (SHIP-5.5) | last port position after docking; options | (40, 40) (the harbour's field, land), not the docking place; the expedition's options skip the spots of the harbour's continent within 3 fields of the ship |
 | T18 | SHIP-2.7, 6.4: an expedition ship stops on a Water field F whose neighbours in directions 4 and 5 are Water and in direction 0 land | arrival | its last port position is F's neighbour in direction 0. A ship stopping on a field with six Water neighbours has none, and `!Construct harbor.` is not shown there |
 | T19 | SHIP-4.1 (Q-063): player 1 has island A (headquarters, harbour H1, a finished ship on the sea) and island B (harbour H2, a site needing 2 planks, no warehouse with planks on B), both harbours finished and accepting planks | the site's plank orders' turn | each order finds no warehouse with planks over B's roads and is attached to H2 (reachable from the site's flag, a ship on its sea); H2's plank need is 2; SHIP-4.2 then asks H1. With the ship removed (none on the sea) no order is attached and H2 has no plank need |
+| T19a | SHIP-4.1 (Q-063 end): T19 after a ship has unloaded one plank into H2 | the next ware order pass; then the site torn down | the first plank order takes H2's plank and is detached in that step (H2's plank requesters 2 -> 1 before the plank leaves H2); the site's removal cancels and detaches the second (1 -> 0). With H2 torn down instead, both orders are detached at once |
 
 ## Evidence
 
@@ -433,6 +456,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ship-004 | code reading | `tutorial04.s2m` continents and state layer (2026-11-05) | SHIP-6.1, 6.1a, T15 |
 | E-ship-006 | code reading | (2026-11-16 night) | SHIP-4.1, T19 |
 | E-ship-007 | code reading | (2026-11-16 day) | SHIP-4.1 retry and detach: the attach inside the 11-tick ware order pass; an attached order re-checked each pass (harbour accepts the good and is road-reachable, else detached) |
+| E-ship-010 | code reading | (2026-11-17 night) | SHIP-4.1 the order's end: detached when it takes its ware, when cancelled, at the pass re-check, or when its harbour is torn down; T19a |
 | E-ship-008 | code reading | (2026-11-16 day) | SHIP-7.2: the order of the harbour founding: site, builder made on its field, the load into its store, its orders cancelled (Q-157) |
 | E-ship-005 | code reading and map data | `tutorial04.s2m` continents and state layer (2026-11-16) | SHIP-2.5, 2.7, 6.4, 7.1, T16 to T18 |
 | data | script | `ship.lua`, `buildings.lua` (harbor, shipYard), `dialogs.txt` dialog3_3 / dialog32_0, `tutorial.txt` T04_* | values and the player's view |

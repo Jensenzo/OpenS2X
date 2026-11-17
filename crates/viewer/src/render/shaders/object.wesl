@@ -10,6 +10,8 @@ import bevy_pbr::render::mesh_functions;
 import bevy_pbr::render::view_transformations::position_world_to_clip;
 import bevy_pbr::render::mesh_view_bindings::{globals, lights, view};
 import bevy_pbr::render::shadows;
+@if(SCREEN_SPACE_AMBIENT_OCCLUSION)
+import bevy_pbr::render::mesh_view_bindings::screen_space_ambient_occlusion_texture;
 
 const PLAIN: u32 = 0u;
 const SETTLER: u32 = 1u;
@@ -169,6 +171,23 @@ fn vertex(v: Vertex) -> VertexOutput {
     return out;
 }
 
+// Hook W17b: a project's screen-space ambient occlusion at the pixel `frag`
+// (its value in Bevy's occlusion texture, 1 unoccluded); 1 on every
+// camera without it and for blended draws (the original's look, the
+// water's mirror, decals and roads).
+// Bevy's occlusion on a flat surface (High quality: 1 - 1/6, view3d's
+// `AO_FLAT`): divided out, so open ground reads 1.
+const AO_FLAT: f32 = 0.8333333;
+
+fn ambient_occlusion(frag: vec4<f32>) -> f32 {
+    var ao = 1.0;
+    @if(SCREEN_SPACE_AMBIENT_OCCLUSION) {
+        let p = vec2<i32>(frag.xy - view.viewport.xy);
+        ao = min(textureLoad(screen_space_ambient_occlusion_texture, p, 0i).r / AO_FLAT, 1.0);
+    }
+    return ao;
+}
+
 // GFX-VIEW-2.3, 2.5: the factor of the direct light at a point: 1 where
 // lit, the shadow factor (light_dir.w) in a shadow.
 fn shadow_at(world_position: vec3<f32>, normal: vec3<f32>, frag: vec4<f32>) -> f32 {
@@ -190,10 +209,11 @@ fn shadow_at(world_position: vec3<f32>, normal: vec3<f32>, frag: vec4<f32>) -> f
 // D = saturate(N . L) x lum(light) x shadow + lum(ambient), the
 // luminances in the fourth values; N the interpolated vertex normal as it
 // is, not renormalised (T41).
-fn settler(in: VertexOutput, n: vec3<f32>, raw_n: vec3<f32>, visible: f32, shadow: f32) -> vec4<f32> {
+fn settler(in: VertexOutput, n: vec3<f32>, raw_n: vec3<f32>, visible: f32, shadow: f32,
+        occlusion: f32) -> vec4<f32> {
     let texel = textureSampleLevel(base, base_sampler, in.uv, 0.0);
     let d = saturate(dot(raw_n, -light.light_dir.xyz)) * light.light_color.w * shadow
-        + light.ambient.w;
+        + light.ambient.w * occlusion;
     let half_texel = 0.5 / 1024.0;
     let u = saturate(texel.g * d) * params.extra.z + params.extra.x + half_texel;
     let v = texel.r * params.extra.w + params.extra.y + half_texel;
@@ -252,8 +272,12 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
     // GFX-VIEW-2.5 b, GFX-OBJ-2.3a d (Run D): every object receives
     // shadows, the ground decal too.
     let shadow = shadow_at(in.world_position, n, in.clip);
+    // Hook W17b: the ambient light times the screen-space ambient occlusion
+    // at the pixel (1 without the hook: the ambient as it is).
+    let occlusion = ambient_occlusion(in.clip);
+    let ambient = light.ambient.rgb * occlusion;
     if f == SETTLER {
-        return settler(in, n, raw_n, seen, shadow);
+        return settler(in, n, raw_n, seen, shadow, occlusion);
     }
     // GFX-OBJ-8.2: a border flag's texture shifted down by its row.
     var uv = in.uv;
@@ -270,12 +294,12 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
         let bump = textureSample(second, second_sampler, in.uv).rgb * 2.0 - 1.0;
         let nn = normalize(tangent * bump.x + bitangent * bump.y + n * bump.z);
         let lit = light.light_color.rgb * saturate(dot(nn, to_light)) * shadow
-            + light.ambient.rgb;
+            + ambient;
         return vec4<f32>(saturate(lit * tex.rgb * seen), tex.a);
     }
     // GFX-OBJ-2.1 (T31): a house's light term with its own normal.
     let lambert = saturate(dot(ln, to_light));
-    let d = light.light_color.rgb * lambert * shadow + light.ambient.rgb;
+    let d = light.light_color.rgb * lambert * shadow + ambient;
     if f == DECAL {
         // GFX-OBJ-2.3, 2.3a d: the ground decal, (ambient + N.L x light x
         // shadow) x texture with its own up normal, blended by its alpha.
@@ -299,7 +323,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
             // GFX-OBJ-2.6a (T37), 2.2a (6): the site's frame pass: (ambient +
             // light x N . L per vertex x shadow) x texel, nothing else: no
             // colour column, no light map, opaque (no alpha test).
-            let frame = light.light_color.rgb * in.color.x * shadow + light.ambient.rgb;
+            let frame = light.light_color.rgb * in.color.x * shadow + ambient;
             rgb = frame * tex.rgb;
             alpha_test = false;
         } else {
@@ -319,7 +343,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
         // direct light only, the ambient stays whole
         // (`world3d::DayLight::tree_d`).
         let direct = light.light_color.rgb * lambert * in.color.rgb * shadow;
-        rgb = (direct + light.ambient.rgb) * tex.rgb;
+        rgb = (direct + ambient) * tex.rgb;
     } else if f == HAZE {
         // GFX-OBJ-2.5: the underwater haze by world height.
         let a = saturate((in.world_position.y + 7.05) / 7.0);

@@ -3300,18 +3300,49 @@ fn a_ship_message_names_the_ship() {
 
 /// UI-GAME-11.1, 11.4 (E-trace-032, seen): "No resources found" names its
 /// building in brackets, as "Building completed (Woodcutter's Hut)" does;
-/// a geologist's find stands on no building and shows its text alone.
+/// a geologist's find names the geologist's settler type by its display
+/// name, "Iron ore found! (Geologist)" (Q-1068), with or without a building
+/// on the field.
 // spec: UI-GAME-11.1, UI-GAME-11.4
 #[test]
 fn no_resources_names_its_building() {
     let world = flat_world(12, 12);
-    let texts = Texts::parse("!No resources found.\tNo resources found\nhut\tFisherman's Hut\n");
+    let texts = Texts::parse(
+        "!No resources found.\tNo resources found\nhut\tFisherman's Hut\n!Found Iron Ore!\tIron ore found!\ndlg_ScholarSettler\tGeologist\n",
+    );
     let mut catalog = Catalog::default();
     catalog.building_names.insert(1, "hut".into());
     let c = ctx(&world, &texts, &catalog);
     let m = message(10, "No resources found.");
     assert_eq!(message_text(&c, &m), "No resources found (Fisherman's Hut)");
-    let mut found = message(10, "Found Coal!");
+    let mut found = message(10, "Found Iron Ore!");
     found.building = None;
-    assert_eq!(message_text(&c, &found), "!Found Coal!");
+    assert_eq!(message_text(&c, &found), "Iron ore found! (Geologist)");
+    found.building = Some(1);
+    assert_eq!(message_text(&c, &found), "Iron ore found! (Geologist)");
+}
+
+/// UI-GAME-11.1 (E-trace-033, seen): "You are under attack! (Barracks)"
+/// names the attacked building; "Military building lost to enemy!" and
+/// "Territory lost to enemy!" name nothing, even when the lost building
+/// still stood as the message was posted.
+// spec: UI-GAME-11.1
+#[test]
+fn the_attack_rows_name_as_seen() {
+    let world = flat_world(12, 12);
+    let texts = Texts::parse(
+        "!You are under attack!\tYou are under attack!\n!Lost Military Building to enemy.\tMilitary building lost to enemy!\n!Lost Territory.\tTerritory lost to enemy!\nbarracks\tBarracks\n",
+    );
+    let mut catalog = Catalog::default();
+    catalog.building_names.insert(1, "barracks".into());
+    let c = ctx(&world, &texts, &catalog);
+    let attacked = message(10, "You are under attack!");
+    assert_eq!(
+        message_text(&c, &attacked),
+        "You are under attack! (Barracks)"
+    );
+    let lost = message(10, "Lost Military Building to enemy.");
+    assert_eq!(message_text(&c, &lost), "Military building lost to enemy!");
+    let land = message(10, "Lost Territory.");
+    assert_eq!(message_text(&c, &land), "Territory lost to enemy!");
 }

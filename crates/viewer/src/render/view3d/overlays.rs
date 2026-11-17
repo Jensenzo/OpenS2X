@@ -388,6 +388,9 @@ pub(crate) fn add_effects(app: &mut App, rules: Vec<crate::extend::EffectRule>) 
 /// work loop runs (`SettlerView::request`), started at his feet as drawn
 /// when the loop begins and played on the animation clock (game time) as
 /// GFX-OBJ-8.3a's effects are; gone when the loop ends or he is not drawn.
+/// Each particle is drawn in its own colour from the effect file, as the
+/// collapse dust (hook W33; before it white, so a particle showed its
+/// texture cell's colour).
 #[allow(clippy::too_many_arguments, clippy::map_entry)]
 pub fn project_effects(
     mut commands: Commands,
@@ -522,24 +525,50 @@ pub fn project_effects(
         } << 8
             | key.1 as u64;
         let pool = crate::world::decor::particles(&effect, seed, now - shown.started);
-        for ((entity, material), particle) in shown.quads.iter().zip(pool) {
-            let transform = match particle {
-                Some(p) => {
-                    let at = [0, 1, 2].map(|k| start[k] + p.at[k]);
-                    if let Some(mut m) = materials.get_mut(material) {
-                        m.base_color = Color::srgba(1.0, 1.0, 1.0, p.alpha);
-                    }
-                    Transform::from_translation(Vec3::from(world3d::to_bevy(at)))
-                        .with_rotation(camera.rotation)
-                        .with_scale(Vec3::splat(p.size))
-                }
-                None => Transform::from_scale(Vec3::ZERO),
-            };
-            if let Ok(mut t) = transforms.get_mut(*entity) {
+        // Hook W33: each particle in its own colour, as the collapse dust.
+        for (entity, transform) in
+            draw_particles(&shown.quads, pool, start, camera.rotation, &mut materials)
+        {
+            if let Ok(mut t) = transforms.get_mut(entity) {
                 *t = transform;
             }
         }
     }
+}
+
+/// GFX-OBJ-8.7 (3), 8.3c and hook W33: one frame of an effect's pool of
+/// quads. Each live particle's material takes the particle's own colour
+/// (the effect file's start colour times its colour curve) and alpha, as
+/// the map camera's stored values (GFX-VIEW-2.6 c1); its quad stands at
+/// `start` (game frame) plus the particle's offset, facing the camera
+/// (`facing`), at the particle's size. A quad without a particle is
+/// scaled to nothing. Gives each quad's transform.
+pub(crate) fn draw_particles(
+    pool: &[(Entity, Handle<StandardMaterial>)],
+    particles: Vec<Option<crate::world::decor::Particle>>,
+    start: [f32; 3],
+    facing: Quat,
+    materials: &mut Assets<StandardMaterial>,
+) -> Vec<(Entity, Transform)> {
+    pool.iter()
+        .zip(particles)
+        .map(|((entity, material), particle)| {
+            let transform = match particle {
+                Some(p) => {
+                    let at = [0, 1, 2].map(|k| start[k] + p.at[k]);
+                    if let Some(mut m) = materials.get_mut(material) {
+                        m.base_color =
+                            Color::linear_rgba(p.colour[0], p.colour[1], p.colour[2], p.alpha);
+                    }
+                    Transform::from_translation(Vec3::from(world3d::to_bevy(at)))
+                        .with_rotation(facing)
+                        .with_scale(Vec3::splat(p.size))
+                }
+                None => Transform::from_scale(Vec3::ZERO),
+            };
+            (*entity, transform)
+        })
+        .collect()
 }
 
 /// GFX-OBJ-8.3a: `particles_texture.tga`, sampled as stored (the map
@@ -705,23 +734,10 @@ pub fn collapse_dust(
             done.push(i);
             continue;
         }
-        for ((entity, material), particle) in pool.iter().zip(particles) {
-            let transform = match particle {
-                Some(p) => {
-                    let at = [0, 1, 2].map(|k| start[k] + p.at[k]);
-                    if let Some(mut m) = materials.get_mut(material) {
-                        // The stored values of the map camera: the
-                        // particle's colour as it is (GFX-VIEW-2.6 c1).
-                        m.base_color =
-                            Color::linear_rgba(p.colour[0], p.colour[1], p.colour[2], p.alpha);
-                    }
-                    Transform::from_translation(Vec3::from(world3d::to_bevy(at)))
-                        .with_rotation(camera.rotation)
-                        .with_scale(Vec3::splat(p.size))
-                }
-                None => Transform::from_scale(Vec3::ZERO),
-            };
-            if let Ok(mut t) = quads.get_mut(*entity) {
+        for (entity, transform) in
+            draw_particles(pool, particles, *start, camera.rotation, &mut materials)
+        {
+            if let Ok(mut t) = quads.get_mut(entity) {
                 *t = transform;
             }
         }
@@ -944,23 +960,15 @@ pub fn clip_particles(
             done.push(i);
             continue;
         }
-        for ((entity, material), particle) in shown.quads.iter().zip(pool) {
-            let transform = match particle {
-                Some(p) => {
-                    let at = [0, 1, 2].map(|k| shown.at[k] + p.at[k]);
-                    if let Some(mut m) = materials.get_mut(material) {
-                        // As the collapse dust: the particle's colour as
-                        // it is (GFX-VIEW-2.6 c1).
-                        m.base_color =
-                            Color::linear_rgba(p.colour[0], p.colour[1], p.colour[2], p.alpha);
-                    }
-                    Transform::from_translation(Vec3::from(world3d::to_bevy(at)))
-                        .with_rotation(camera.rotation)
-                        .with_scale(Vec3::splat(p.size))
-                }
-                None => Transform::from_scale(Vec3::ZERO),
-            };
-            if let Ok(mut t) = quads.get_mut(*entity) {
+        // As the collapse dust.
+        for (entity, transform) in draw_particles(
+            &shown.quads,
+            pool,
+            shown.at,
+            camera.rotation,
+            &mut materials,
+        ) {
+            if let Ok(mut t) = quads.get_mut(entity) {
                 *t = transform;
             }
         }
