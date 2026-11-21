@@ -28,6 +28,18 @@ const ANIMAL: u32 = 11u;
 const ROAD: u32 = 12u;
 const DECAL: u32 = 13u;
 const SKY: u32 = 14u;
+// Hook W30: a project's model and its ground (`models3d/project.rs`).
+const FACET: u32 = 15u;
+const FACET_GROUND: u32 = 16u;
+// Hook W30b: a project's tree.
+const FACET_TREE: u32 = 17u;
+// Hook W30b: a project's building at night is darkened as the original's
+// houses are by their light map (`project::NIGHT_LIGHT_MAP`), by how much
+// of the night it is: the light's and ambient's luminances added, 1.4377
+// at noon, 0.5993 at night (`project::night_amount`).
+const NIGHT_LIGHT_MAP: f32 = 0.533;
+const NIGHT_DAY: f32 = 1.4377;
+const NIGHT_DARK: f32 = 0.5993;
 
 struct ObjectParams {
     // Multiplies the texture: white, or a player colour.
@@ -67,6 +79,11 @@ struct SceneLight {
     ambient: vec4<f32>,
 };
 @group(3) @binding(10) var<storage, read> light: SceneLight;
+
+// Hook W30b: how much of the night it is for a project's building.
+fn night_amount() -> f32 {
+    return saturate((NIGHT_DAY - (light.light_color.w + light.ambient.w)) / (NIGHT_DAY - NIGHT_DARK));
+}
 
 fn family() -> u32 {
     return u32(params.mode.x + 0.5);
@@ -125,8 +142,8 @@ fn vertex(v: Vertex) -> VertexOutput {
     let m22 = length(world_from_local[1].xyz);
     let t = globals.time;
     let f = family();
-    if f == TREE {
-        // GFX-OBJ-2.4: the tops sway.
+    if f == TREE || f == FACET_TREE {
+        // GFX-OBJ-2.4: the tops sway (hook W30b: a project's tree too).
         let p = local.xyz;
         let s = saturate(dot(p, p) * 0.003) * m22;
         local.x += s * sin(0.35 * 3.14159265 * tx + t);
@@ -238,6 +255,11 @@ fn mirror_view() -> bool {
 
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    // Hook W30b: the normal of the face as drawn (the screen derivatives of
+    // its world position), taken before anything is discarded: a project
+    // tree's face stays one plane with one normal while the wind moves its
+    // corners.
+    let face_normal = cross(dpdx(in.world_position), dpdy(in.world_position));
     // GFX-WATER-2.6a: the mirror image's clip plane at the surface's level
     // (-0.1, GFX-WATER-3.3) keeps the eye's side, above it.
     let mirrored = mirror_view();
@@ -264,10 +286,21 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
     var raw_n = in.normal;
     var ln = normalize(in.light_normal);
     // GFX-WATER-2.6a 3: the reflection reverses the winding.
-    if front == mirrored && f != DECAL {
+    if front == mirrored && f != DECAL && f != FACET_GROUND {
         n = -n;
         raw_n = -raw_n;
         ln = -ln;
+    }
+    if f == FACET_TREE {
+        // Hook W30b: the moved face's own normal, turned to the eye (both
+        // sides drawn, as the file's normals are).
+        let to_eye = view.world_position - in.world_position;
+        n = normalize(face_normal);
+        if dot(n, to_eye) < 0.0 {
+            n = -n;
+        }
+        raw_n = n;
+        ln = n;
     }
     // GFX-VIEW-2.5 b, GFX-OBJ-2.3a d (Run D): every object receives
     // shadows, the ground decal too.
@@ -305,6 +338,12 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
         // shadow) x texture with its own up normal, blended by its alpha.
         return vec4<f32>(saturate(d * tex.rgb * seen), tex.a);
     }
+    if f == FACET_GROUND {
+        // Hook W30: a project model's ground, laid on the terrain as the
+        // decal: (ambient + N.L x light x shadow) x palette x vertex colour,
+        // blended by the vertex alpha (its fade).
+        return vec4<f32>(saturate(d * tex.rgb * in.color.rgb * seen), in.color.a);
+    }
     let player = params.player.rgb * 1.8;
     var rgb = d * tex.rgb;
     var alpha_test = true;
@@ -338,6 +377,38 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
             let result = d * tex.rgb * colour_map;
             rgb = mix(result, result * light_map, saturate(vec3<f32>(1.5) - d));
         }
+    } else if f == FACET || f == FACET_TREE {
+        // Hook W30: a project's model. Cut by the rising plane as a house
+        // (GFX-OBJ-2.6b, 8.4). Colour: palette x vertex colour (the face's
+        // occlusion), times the owner's colour on the team part (mode.z).
+        // W30b: a project's tree the same, never cut.
+        if f == FACET && params.extra.z > 1.5 {
+            if in.world_position.y < params.extra.y {
+                discard;
+            }
+        } else if f == FACET && params.extra.z > 0.5 && in.world_position.y > params.extra.y {
+            discard;
+        }
+        var albedo = tex.rgb * in.color.rgb;
+        albedo = mix(albedo, albedo * params.player.rgb, params.mode.z);
+        // Roughness (green) and metallic (blue) of the second image: a
+        // highlight of the sun that is small and bright on smooth faces,
+        // none on rough ones, in the face's colour on metal.
+        let orm = textureSample(third, third_sampler, in.uv).rgb;
+        let rough = orm.g;
+        let metal = orm.b;
+        let to_eye = normalize(view.world_position - in.world_position);
+        let h = normalize(to_light + to_eye);
+        let lit = select(0.0, 1.0, lambert > 0.0);
+        let spec = pow(saturate(dot(n, h)), mix(64.0, 4.0, rough)) * (1.0 - rough)
+            * mix(0.04, 1.0, metal) * lit * shadow;
+        rgb = d * albedo * (1.0 - 0.5 * metal)
+            + light.light_color.rgb * spec * mix(vec3<f32>(1.0), albedo, metal);
+        if f == FACET {
+            // W30b: a building at night, as by the original's light maps.
+            rgb = mix(rgb, rgb * NIGHT_LIGHT_MAP, night_amount());
+        }
+        alpha_test = false;
     } else if f == TREE {
         // GFX-OBJ-2.4 (GFX-VIEW-2.3d f): the mesh's vertex colour scales the
         // direct light only, the ambient stays whole

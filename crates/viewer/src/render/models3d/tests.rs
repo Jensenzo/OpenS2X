@@ -219,3 +219,116 @@ fn the_ship_models_parts_with_the_install() {
     assert!(!frame.is_empty());
     assert!(frame.iter().all(|p| p.group == 0), "the frame's parts");
 }
+
+/// Hook W30b (item 6, project buildings at night): the original's houses
+/// are darkened at night by their light map (GFX-OBJ-2.1: the result times
+/// the light map, by saturate(1.5 - d)); its value where a house's faces
+/// sample it (the area-weighted mean over each Roman house's meshes but
+/// the ground, at the triangles' middles in `TextureCoordinates1`), the
+/// median over the houses, is the night factor a project's building takes
+/// (`project::NIGHT_LIGHT_MAP`). Skipped without `S2_GAME_DIR`.
+// spec: GFX-OBJ-2.1
+#[test]
+fn the_houses_light_maps_at_night() {
+    let Ok(dir) = std::env::var("S2_GAME_DIR") else {
+        eprintln!("skipped: S2_GAME_DIR is not set");
+        return;
+    };
+    let root = std::path::Path::new(&dir);
+    let mut means = Vec::new();
+    let mut entries: Vec<_> = std::fs::read_dir(root.join("data/buildings"))
+        .expect("data/buildings")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| {
+            let l = n.to_ascii_lowercase();
+            l.starts_with("pb_r_") && l.ends_with("01.gr2")
+        })
+        .collect();
+    entries.sort();
+    for name in entries {
+        let stem = &name[..name.len() - 4];
+        let rel = format!("data/buildings/{name}");
+        let path = s2_rules::resolve(root, &rel).expect(&rel);
+        let Ok(gr2) = s2_assets::gr2::load(&rel, &std::fs::read(&path).expect(&rel)) else {
+            continue;
+        };
+        let light_rel = format!("data/buildings/{stem}_L.dds");
+        let Ok(light_path) = s2_rules::resolve(root, &light_rel) else {
+            continue;
+        };
+        let Ok(light) =
+            s2_assets::dds::load(&light_rel, &std::fs::read(&light_path).expect(&light_rel))
+        else {
+            continue;
+        };
+        let texel = |uv: [f32; 2]| {
+            let (x, y) = decal_texel(uv, light.width, light.height);
+            let i = 4 * (y * light.width + x) as usize;
+            let c = &light.rgba[i..i + 3];
+            (0.299 * c[0] as f64 + 0.587 * c[1] as f64 + 0.114 * c[2] as f64) / 255.0
+        };
+        let (mut sum, mut area) = (0.0f64, 0.0f64);
+        for m in &gr2.meshes {
+            if m.name.eq_ignore_ascii_case("GROUND") || m.vertices.uvs.len() < 2 {
+                continue;
+            }
+            let p = &m.vertices.positions;
+            let uv = &m.vertices.uvs[1];
+            for t in m.indices.as_chunks::<3>().0 {
+                let [a, b, c] = [t[0], t[1], t[2]].map(|i| Vec3::from(p[i as usize]));
+                let w = (b - a).cross(c - a).length() as f64 * 0.5;
+                let mid = [0, 1].map(|k| {
+                    (uv[t[0] as usize][k] + uv[t[1] as usize][k] + uv[t[2] as usize][k]) / 3.0
+                });
+                sum += w * texel(mid);
+                area += w;
+            }
+        }
+        if area > 0.0 {
+            println!("{stem}: {:.3}", sum / area);
+            means.push(sum / area);
+        }
+    }
+    assert!(means.len() >= 20, "{} houses", means.len());
+    means.sort_by(|a, b| a.total_cmp(b));
+    let median = means[means.len() / 2];
+    println!("median {median:.3} of {}", means.len());
+    assert!(
+        (median - f64::from(project::NIGHT_LIGHT_MAP)).abs() < 0.01,
+        "median {median:.3}"
+    );
+}
+
+/// Hook W30b: a project's building is darkened by none of the night at
+/// noon, all of it at night (the shipped day cycle's numbers, GFX-VIEW-2.3),
+/// half of it halfway; the shader holds the same numbers.
+// spec: GFX-VIEW-2.3
+#[test]
+fn a_project_buildings_night() {
+    use crate::render::world3d::{luminance, AMBIENT, LIGHT_COLOR};
+    let noon = (luminance(LIGHT_COLOR), luminance(AMBIENT));
+    let night = (
+        luminance([0.2, 0.2275, 0.6]),
+        luminance([0.2196, 0.3490, 0.5882]),
+    );
+    assert!((noon.0 + noon.1 - project::NIGHT_DAY).abs() < 1e-4);
+    assert!((night.0 + night.1 - project::NIGHT_DARK).abs() < 1e-4);
+    assert!(project::night_amount(noon.0, noon.1) < 1e-3);
+    assert!(project::night_amount(night.0, night.1) > 0.999);
+    let half = 0.5 * (project::NIGHT_DAY + project::NIGHT_DARK);
+    assert!((project::night_amount(half, 0.0) - 0.5).abs() < 1e-5);
+    assert_eq!(project::night_amount(3.0, 0.0), 0.0);
+    assert_eq!(project::night_amount(0.0, 0.0), 1.0);
+    let shader = include_str!("../shaders/object.wesl");
+    for (name, value) in [
+        ("NIGHT_LIGHT_MAP", project::NIGHT_LIGHT_MAP),
+        ("NIGHT_DAY", project::NIGHT_DAY),
+        ("NIGHT_DARK", project::NIGHT_DARK),
+    ] {
+        assert!(
+            shader.contains(&format!("const {name}: f32 = {value};")),
+            "{name}"
+        );
+    }
+}

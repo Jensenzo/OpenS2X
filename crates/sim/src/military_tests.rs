@@ -702,7 +702,7 @@ fn a_homeless_settler_wanders_between_tries_then_dies() {
                 last = tries;
                 steps += 1;
             }
-            SettlerJob::Dying if died.is_none() => died = Some(world.tick()),
+            SettlerJob::Dying { .. } if died.is_none() => died = Some(world.tick()),
             _ => {}
         }
         if s.walker.next.is_none() {
@@ -768,7 +768,7 @@ fn t44_a_homeless_soldier_loses_health_every_52nd_failure() {
                 }
                 wandering = true;
             }
-            SettlerJob::Dying if died.is_none() => {
+            SettlerJob::Dying { .. } if died.is_none() => {
                 died = Some(world.tick());
                 wandering = false;
             }

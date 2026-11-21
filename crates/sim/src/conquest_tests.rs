@@ -160,6 +160,73 @@ fn con_t3_conquest() {
     assert!(m.coin_switch && !m.move_out);
 }
 
+// T18 (MIL-CON-1.2, 2.3 as corrected, E-mil-028): an attacker reaching the
+// door (the target's flag) with the condition holding only turns to
+// capturing in that update (the building still the enemy's); in his next
+// update he takes it and stands on the flag (the walk to the flag, of no
+// step, ordered then); the step from the flag into the building starts at
+// progress 0 in the update after and moves from the next.
+// spec: MIL-CON-1.2 (T18), MIL-CON-2.3, MIL-CON-2.2
+#[test]
+fn con_t18_the_take_over_one_update_after_the_arrival() {
+    let mut world = scene();
+    fill(&mut world, P1, TOWER, TARGET, &[(0, 3)]);
+    fill(&mut world, P0, GUARD, (40, 20), &privates(2));
+    let door = world.flag_of(TARGET);
+    let attacker = waiting_attacker(&mut world, (40, 20), door);
+    kill_defenders(&mut world, TARGET);
+    // He walks to the door from its neighbour west, the field emptied.
+    world.attackers[0].field = None;
+    let guard = world.target_of((40, 20)).unwrap();
+    {
+        let s = world.settlers[attacker].as_mut().unwrap();
+        s.walker = Walker::new((door.0 - 1, door.1));
+        s.walker.walk([door]);
+        s.job = SettlerJob::Attack {
+            home: guard,
+            health: 3,
+            step: AttackStep::Walking,
+        };
+    }
+    let owner = |w: &World| w.building_at(TARGET).map(|b| b.owner);
+    let mut arrived = None;
+    for _ in 0..100 {
+        world.step();
+        let s = world.settlers[attacker].as_ref().unwrap();
+        if s.walker.at == door && !s.walker.is_walking() {
+            arrived = Some(world.tick());
+            break;
+        }
+    }
+    let a = arrived.expect("at the door");
+    assert_eq!(
+        owner(&world),
+        Some(P1),
+        "still the enemy's in the arrival update"
+    );
+    assert!(matches!(
+        world.settlers[attacker].as_ref().unwrap().job,
+        SettlerJob::Attack {
+            step: AttackStep::Capturing,
+            ..
+        }
+    ));
+    world.step();
+    assert_eq!(world.tick(), a + 1);
+    assert_eq!(owner(&world), Some(P0), "taken in his next update");
+    let s = world.settlers[attacker].as_ref().unwrap();
+    assert_eq!(s.walker.at, door, "on the flag");
+    assert!(s.walker.next.is_none());
+    world.step();
+    let s = world.settlers[attacker].as_ref().unwrap();
+    assert_eq!(s.walker.at, door, "the step in at progress 0");
+    assert!(s.walker.next.is_none() && s.walker.has_walk());
+    world.step();
+    let s = world.settlers[attacker].as_ref().unwrap();
+    assert_eq!(s.walker.next, Some(TARGET), "moving from the next update");
+    assert!(s.walker.progress() > 0.0);
+}
+
 // MIL-CON-2.2 step 3a: the old flag goes as by the player: its roads, the
 // wares lying on it. The new building has a fresh flag with no roads.
 #[test]

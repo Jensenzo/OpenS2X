@@ -22,6 +22,9 @@ pub struct Lookup {
     /// GFX-OBJ-7.4: a job's tool by their names: the first good of the
     /// job's cost list that has an `items.xml` entry.
     pub tool_names: HashMap<String, String>,
+    /// Hook W30b: the deposit types drawn with a project's tree model, by
+    /// type id (a look names its kind by the rules name, `dp_setName`).
+    pub tree_looks: HashMap<u32, crate::extend::TreeLook>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -45,12 +48,18 @@ impl Lookup {
                 Some((job.name.clone()?, tool.to_owned()))
             })
             .collect();
+        let mut buildings: HashMap<u32, String> = rules
+            .buildings
+            .iter()
+            .filter_map(|b| Some((b.id, b.gfx_name.clone()?)))
+            .collect();
+        // Hook W30: a type with a project's look takes its entry.
+        buildings.extend(models3d::project::look_gfx_names(
+            rules.buildings.iter().map(|b| (b.id, b.name.as_deref())),
+            crate::extend::building_looks(),
+        ));
         Self {
-            buildings: rules
-                .buildings
-                .iter()
-                .filter_map(|b| Some((b.id, b.gfx_name.clone()?)))
-                .collect(),
+            buildings,
             ruins: rules
                 .buildings
                 .iter()
@@ -100,8 +109,28 @@ impl Lookup {
                 })
                 .collect(),
             tool_names,
+            tree_looks: tree_looks_by_kind(
+                rules.deposits.iter().map(|d| (d.id, d.name.as_deref())),
+                crate::extend::tree_looks(),
+            ),
         }
     }
+}
+
+/// Hook W30b: the tree looks by deposit type: a type named as a look's
+/// `tree` (the last look of a name wins).
+pub fn tree_looks_by_kind<'a>(
+    kinds: impl IntoIterator<Item = (u32, Option<&'a str>)>,
+    looks: &[crate::extend::TreeLook],
+) -> HashMap<u32, crate::extend::TreeLook> {
+    kinds
+        .into_iter()
+        .filter_map(|(id, name)| {
+            let name = name?;
+            let look = looks.iter().rev().find(|l| l.tree == name)?;
+            Some((id, look.clone()))
+        })
+        .collect()
 }
 
 /// What a placed model is, for telling one from another between redraws.
@@ -810,7 +839,7 @@ pub fn objects(
         };
         let key = (Kind::Deposit, field, deposit.kind);
         let element = scenery.element(&look.gfx_name);
-        let (file, family, heading, scale) = match element {
+        let (mut file, mut family, heading, scale) = match element {
             Some(e) => {
                 let (yaw, scale) = poses.pose(key, e);
                 (
@@ -825,12 +854,22 @@ pub fn objects(
                 None => continue,
             },
         };
+        // Hook W30b: a tree kind with a project's look: its model, with the
+        // element's turn and sizes (the same draws as the original's).
+        let tree_look = lookup.tree_looks.get(&deposit.kind);
+        if let Some(tree) = tree_look {
+            file = tree.model.clone();
+            family = models3d::Family::FacetTree;
+        }
         // GFX-ANIM-3.8b: size 0 (being planted) draws at scale 0.
         let size = deposit_size(world, deposit.kind, deposit.state, look);
         if size <= 0.0 {
             continue;
         }
-        let growth = growth_scale(size);
+        let growth = match tree_look.map(|t| t.growth) {
+            Some(crate::extend::TreeGrowth::RootWidth) => root_width_growth(size),
+            _ => growth_scale(size),
+        };
         // GFX-OBJ-1.4, T33: its fine position (TRN-FREE-5.4; a map's or
         // save's as stored) plus the element's offset, nothing at random.
         let [x, z] = frame.sample_xz(i64::from(deposit.position.0), i64::from(deposit.position.1));

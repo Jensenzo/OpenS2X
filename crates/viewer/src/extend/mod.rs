@@ -98,6 +98,112 @@ pub struct Extensions {
     /// boat-and-ship switch's picture, the pave button with the
     /// flag-with-hammer picture, as before.
     pub button_pictures: ButtonPictures,
+    /// Hook W30: building types drawn with a project's own model (a
+    /// `.glb`) in place of their entry of the install's `buildings.xml`.
+    /// Default none: every type as the original draws it.
+    pub building_looks: Vec<BuildingLook>,
+    /// Hook W30b: tree kinds drawn with a project's own model (a `.glb`,
+    /// and a far version) in place of their landscape element's. Default
+    /// none: every tree as the original draws it.
+    pub tree_looks: Vec<TreeLook>,
+}
+
+/// Hook W30b: a tree kind's look from a project's own model, a binary glTF
+/// file (`.glb`), drawn as the game draws its trees (the instance's turn
+/// and three sizes, the growing, the felling and sinking, the sway in the
+/// wind, shadows, the day's light). What the file must hold:
+/// `docs/extending.md`, "A tree's own model".
+#[derive(Debug, Clone, PartialEq)]
+pub struct TreeLook {
+    /// The tree kind by its name in the rules (`dp_setName`'s: `BirchA`,
+    /// `FirB`, ...): drawn with this model in place of its graphics name's
+    /// element (`dp_setGfxName`, which stays as the rules have it).
+    pub tree: String,
+    /// The model: its path below the install (`data/...`, any case), found
+    /// in the asset folders first, as the install's files.
+    pub model: String,
+    /// A lighter model with the same outline, drawn while the tree is
+    /// small on the screen. Default none: the model at every size.
+    pub far: Option<String>,
+    /// The far version is drawn while the tree's size on the screen (the
+    /// longest side of its box, as it stands, grows or lies) is below this
+    /// share of the view's height. Default [`TREE_FAR_BELOW`].
+    pub far_below: f32,
+    /// How a young tree grows. Default the original's rule.
+    pub growth: TreeGrowth,
+}
+
+/// Hook W30b: the default switch to a tree's far version: a quarter of the
+/// view's height. The size is the tree's longest side over the view's height
+/// at the tree's depth (not its foreshortened picture): in a 16:9 view
+/// (29.4 degrees high, GFX-VIEW-3.5) a grown 10 m tree is 16 to 25 percent
+/// at the farthest zoom (top to bottom of the view), so far there, and 22 to
+/// 33 percent at the default zoom, so full there but along the far edge;
+/// 33 percent and more at closer zooms.
+pub const TREE_FAR_BELOW: f32 = 0.25;
+
+/// Hook W30b: the scale of a young tree of size s (0 .. 1, its growth).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TreeGrowth {
+    /// The original's (GFX-ANIM-3.8b): height s, width min(3 s, 1); a
+    /// third-grown tree has its full crown.
+    #[default]
+    Original,
+    /// Height s, width the square root of s: a third-grown tree is 0.58
+    /// wide; both reach the full tree at s = 1.
+    RootWidth,
+}
+
+impl TreeLook {
+    /// A tree kind's look from `model`, with no far version and the
+    /// original's growing.
+    pub fn new(tree: &str, model: &str) -> Self {
+        Self {
+            tree: tree.into(),
+            model: model.into(),
+            far: None,
+            far_below: TREE_FAR_BELOW,
+            growth: TreeGrowth::Original,
+        }
+    }
+}
+
+/// Hook W30 (S2N-003): a building type's look from a project's own model,
+/// a binary glTF file (`.glb`), for every tribe. What the file must hold
+/// (its frame, the names of its objects, points and clips, the palette and
+/// the vertex colours): `docs/extending.md`, "A building's own model".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildingLook {
+    /// The building type by its name in the rules (`bp_setName`'s:
+    /// `Spring` the well, a project type's own): drawn with this model in
+    /// place of its graphics name's entry (`bp_setGfxName`, which stays as
+    /// the rules have it, so neither the rules nor a save's mark change).
+    pub building: String,
+    /// The model: its path below the install (`data/...`, any case), found
+    /// in the asset folders first, as the install's files.
+    pub model: String,
+    /// The type whose site model stands while this one is built, by its
+    /// graphics name (`Lumberjack`: the woodcutter's, of the builder's
+    /// tribe); the house rises out of the ground inside it as the
+    /// original's do (GFX-OBJ-2.6b). Default none: no site model, only the
+    /// rising house.
+    pub site_of: Option<String>,
+    /// The effect (`data/scripts/effects/<name>.pfx`) that rises from the
+    /// model's point `anchor_smoke` while the building works (`Smoke`).
+    /// Default none: no smoke.
+    pub smoke: Option<String>,
+}
+
+impl BuildingLook {
+    /// A type's look from `model`, with no site model and no smoke.
+    pub fn new(building: &str, model: &str) -> Self {
+        Self {
+            building: building.into(),
+            model: model.into(),
+            site_of: None,
+            smoke: None,
+        }
+    }
 }
 
 /// The pictures of the hooks' buttons ([`Extensions::button_pictures`]);
@@ -559,19 +665,40 @@ struct Shared {
     asset_folders: Vec<PathBuf>,
     render: RenderOptions,
     music_external: bool,
+    building_looks: Vec<BuildingLook>,
+    tree_looks: Vec<TreeLook>,
 }
 
 static SHARED: OnceLock<Shared> = OnceLock::new();
 
-/// Keep the asset folders, render options and the music switch for
-/// [`find`], [`render`] and [`music_external`]. The first call wins (one
-/// game per process).
-pub(crate) fn install(asset_folders: Vec<PathBuf>, render: RenderOptions, music_external: bool) {
+/// Keep the asset folders, render options, the music switch and the
+/// buildings' and trees' own looks for [`find`], [`render`],
+/// [`music_external`], [`building_looks`] and [`tree_looks`]. The first
+/// call wins (one game per process).
+pub(crate) fn install(
+    asset_folders: Vec<PathBuf>,
+    render: RenderOptions,
+    music_external: bool,
+    building_looks: Vec<BuildingLook>,
+    tree_looks: Vec<TreeLook>,
+) {
     let _ = SHARED.set(Shared {
         asset_folders,
         render,
         music_external,
+        building_looks,
+        tree_looks,
     });
+}
+
+/// Hook W30: the building types' own looks (none until [`install`]).
+pub(crate) fn building_looks() -> &'static [BuildingLook] {
+    SHARED.get().map_or(&[][..], |s| &s.building_looks[..])
+}
+
+/// Hook W30b: the tree kinds' own looks (none until [`install`]).
+pub(crate) fn tree_looks() -> &'static [TreeLook] {
+    SHARED.get().map_or(&[][..], |s| &s.tree_looks[..])
 }
 
 /// The project plays the music (false until [`install`]).

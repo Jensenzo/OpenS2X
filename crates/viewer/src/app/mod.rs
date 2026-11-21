@@ -1,7 +1,7 @@
 //! The program: options, the app with its plugins and systems, the game
 //! folder.
 
-mod options;
+pub(crate) mod options;
 pub(crate) use options::*;
 mod version;
 
@@ -129,6 +129,8 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         project_name,
         messages: project_messages,
         button_pictures,
+        mut building_looks,
+        mut tree_looks,
     } = extensions;
     crate::extend::messages::install(project_messages);
     crate::extend::install_buttons(button_pictures);
@@ -228,7 +230,17 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
             .fold(dir, |dir, folder| dir.with_overlay(folder))
     });
     let clear_color = render.clear_color;
-    crate::extend::install(asset_folders, render, music_external);
+    // Hook W30: `--building-model` adds to the project's looks; W30b:
+    // `--tree-model` to its trees' (a later one of a kind wins).
+    building_looks.extend(options.building_looks.iter().cloned());
+    tree_looks.extend(options.tree_looks.iter().cloned());
+    crate::extend::install(
+        asset_folders,
+        render,
+        music_external,
+        building_looks,
+        tree_looks,
+    );
     let mut maps = game_dir
         .as_ref()
         .map(|dir| find_maps(&dir.root().join("data/maps")))
@@ -365,6 +377,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         watch: options.watch.clone(),
         until_work: options.until_work.clone(),
         until_felled: options.until_felled,
+        until_falling: options.until_falling,
         until_door: options.until_door.clone(),
         until_built: options.until_built,
         scene: options.scene.clone(),
@@ -645,6 +658,8 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
             crate::render::view3d::update_scene,
             crate::render::view3d::sync_objects,
             (
+                // Hook W30b: the project trees' near or far versions.
+                crate::render::view3d::tree_versions,
                 crate::render::view3d::sync_movers,
                 // GFX-VIEW-5.4: which settlers this frame draws.
                 crate::render::view3d::seen_marks,
@@ -663,6 +678,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
                 crate::render::view3d::status_icons,
                 crate::render::view3d::collapse_dust,
                 crate::render::view3d::clip_particles,
+                crate::render::view3d::building_effects,
                 crate::render::view3d::cursor_sprites,
                 crate::menus::campaign::pointer_sprite,
             ),

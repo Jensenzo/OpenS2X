@@ -207,10 +207,15 @@ pub fn measure(root: &Path, traces: &Path) -> Result<(Measures, Vec<Comparison>)
     // As specs/traces/README.md says: settlers by place, the ticks both
     // hold, from trace tick 1 (tick 0 is the original's world half set up,
     // TRACE-3.8); the original has no clip_time.
+    // TOOL-trace TRACE-4.4 (T16): a clip the recorder's view switched one
+    // tick late is its lag, not a difference of the games; an unread view
+    // (the one-player recording's raced end, TRACE-2.7) and a generator row
+    // the recording missed are not compared.
     let mut options = DiffOptions {
         by_place: true,
         common_ticks: true,
         from: 1,
+        view_lag: true,
         ..DiffOptions::default()
     };
     options.settler_columns.retain(|&c| c != "clip_time");

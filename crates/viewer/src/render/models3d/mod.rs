@@ -3,6 +3,8 @@
 //! material they are drawn with.
 
 mod library;
+pub mod preload;
+pub mod project;
 
 pub(crate) use library::*;
 
@@ -178,6 +180,8 @@ pub fn read_tables(root: &Path) -> ModelTables {
     if let Some(text) = read("data/settings/buildings.xml") {
         tables.read_buildings(&text);
     }
+    // Hook W30: the projects' own building models.
+    project::add_building_looks(&mut tables, crate::extend::building_looks());
     if let Some(text) = read("data/settings/items.xml") {
         tables.read_items(&text);
     }
@@ -240,6 +244,17 @@ pub enum Family {
     /// GFX-VIEW-6.3 (T44): the sky cap: vertex colour x lerp(T0, T1, b),
     /// unlit, alpha-blended.
     Sky = 14,
+    /// Hook W30: a project's model (`project`): palette x vertex colour,
+    /// roughness and metallic from the second image, the house's cut
+    /// plane; the owner's colour on its `teamcolour` part.
+    Facet = 15,
+    /// Hook W30: a project model's ground, laid on the terrain as the
+    /// decal (GFX-OBJ-2.3), blended by its vertex alpha.
+    FacetGround = 16,
+    /// Hook W30b: a project's tree (`project`): palette x vertex colour,
+    /// swaying as the original's trees (GFX-OBJ-2.4), each face lit by the
+    /// normal of the face as it moves.
+    FacetTree = 17,
 }
 
 impl Family {
@@ -549,7 +564,7 @@ impl Material for ObjectMaterial {
     fn alpha_mode(&self) -> AlphaMode {
         let family = self.params.mode.x;
         let is = |f: Family| family == f as u32 as f32;
-        if is(Family::Road) || is(Family::Decal) || is(Family::Sky) {
+        if is(Family::Road) || is(Family::Decal) || is(Family::Sky) || is(Family::FacetGround) {
             AlphaMode::Blend
         } else if [
             Family::Plain,
@@ -558,6 +573,7 @@ impl Material for ObjectMaterial {
             Family::Doodad,
             Family::Haze,
             Family::Wheat,
+            Family::Facet,
         ]
         .into_iter()
         .any(is)
@@ -625,7 +641,8 @@ pub fn ground_layer_bias(family: f32) -> f32 {
     let is = |f: Family| family == f as u32 as f32;
     if is(Family::Road) {
         -2.0e6
-    } else if is(Family::Decal) {
+    } else if is(Family::Decal) || is(Family::FacetGround) {
+        // Hook W30: a project model's ground is a building's decal.
         -1.0e6
     } else {
         0.0
@@ -667,6 +684,9 @@ pub struct LoadedPart {
     /// GFX-OBJ-2.8a: the part's triangle group among its mesh's, in the
     /// file's order (a ship's part number: 0 the hull, 1 the sails).
     pub group: usize,
+    /// Hook W30: a part of a project's model (`project`): how it is
+    /// shaded; none for the original's models.
+    pub facet: Option<project::Facet>,
 }
 
 /// GFX-OBJ-2.3: the nearest texel of a `w` x `h` texture at `uv` with wrap

@@ -423,6 +423,13 @@ pub struct DiffOptions {
     /// `--kinds SBG`: the kinds of row compared; the others are left out
     /// (a recording of the generator alone against a full trace).
     pub kinds: String,
+    /// `--view-lag` (TOOL-trace TRACE-4.4, T16): the second trace is a
+    /// recording whose view switches a clip one tick late now and then. A
+    /// settler row differing only in its animation, the second's being the
+    /// first trace's of the same settler in the tick before, is counted as
+    /// that lag, not as a difference; a row whose view the recorder did not
+    /// read (an empty animation, TRACE-2.7) has no animation to compare.
+    pub view_lag: bool,
 }
 
 impl Default for DiffOptions {
@@ -443,6 +450,7 @@ impl Default for DiffOptions {
             common_ticks: false,
             from: 0,
             kinds: "SBG".into(),
+            view_lag: false,
         }
     }
 }
@@ -482,19 +490,43 @@ pub struct DiffReport {
     pub first_tick: Option<u64>,
     pub tallies: BTreeMap<String, Tally>,
     pub ticks: u64,
-    /// Ticks only one trace holds, left out with `--common-ticks`.
+    /// Ticks only one trace holds, left out with `--common-ticks` (and
+    /// the generator of a tick one holds without its generator row).
     pub skipped: u64,
+    /// Settler rows counted as the recorder's view lag (`--view-lag`).
+    pub view_lag: u64,
+}
+
+/// The first trace's animation of each settler (by id) in one tick, for
+/// `--view-lag`.
+type Animations = BTreeMap<String, String>;
+
+fn animations(rows: &[Row]) -> Animations {
+    rows.iter()
+        .filter(|r| r.get("kind") == "S")
+        .map(|r| (r.get("id").to_string(), r.get("animation").to_string()))
+        .collect()
 }
 
 fn compare_tick(
     tick: u64,
     mut a: Vec<Row>,
     mut b: Vec<Row>,
+    before: Option<&Animations>,
     options: &DiffOptions,
     report: &mut DiffReport,
 ) {
     for rows in [&mut a, &mut b] {
         rows.retain(|r| options.kinds.contains(r.get("kind")));
+    }
+    // --common-ticks: a tick both hold, one without its generator row (the
+    // recording's raced end, TRACE-2.7): the generator is not compared.
+    let generator = |rows: &[Row]| rows.iter().any(|r| r.get("kind") == "G");
+    if options.common_ticks && generator(&a) != generator(&b) {
+        for rows in [&mut a, &mut b] {
+            rows.retain(|r| r.get("kind") != "G");
+        }
+        report.skipped += 1;
     }
     // Rows by key; rows of one key (settlers on one place) in the order
     // of their compared columns, so two traces that list them in another
@@ -562,11 +594,23 @@ fn compare_tick(
                     "G" => &options.generator_columns,
                     _ => &options.settler_columns,
                 };
-                let differing: Vec<String> = columns
+                let mut differing: Vec<String> = columns
                     .iter()
                     .filter(|c| ra.get(c) != rb.get(c))
                     .map(|c| c.to_string())
                     .collect();
+                // TRACE-4.4 (T16), TRACE-2.7: the recorder's view.
+                if options.view_lag && ra.get("kind") == "S" {
+                    if rb.get("animation").is_empty() {
+                        differing.retain(|c| c != "animation");
+                    } else if differing == ["animation"]
+                        && before.and_then(|p| p.get(ra.get("id"))).map(String::as_str)
+                            == Some(rb.get("animation"))
+                    {
+                        report.view_lag += 1;
+                        differing.clear();
+                    }
+                }
                 if !differing.is_empty() {
                     note(
                         format!(
@@ -606,12 +650,21 @@ pub fn diff(
     let mut rb = Reader::new(b, names.1)?;
     let mut report = DiffReport::default();
     let (mut ta, mut tb) = (ra.next_tick()?, rb.next_tick()?);
+    // --view-lag: the first trace's animations of the tick before.
+    let mut before: Option<(u64, Animations)> = None;
+    let lag = |t: u64, rows: &[Row], before: &mut Option<(u64, Animations)>| {
+        let previous = before.take().filter(|(p, _)| p + 1 == t).map(|(_, m)| m);
+        if options.view_lag {
+            *before = Some((t, animations(rows)));
+        }
+        previous
+    };
     // A tick only one trace has is compared against nothing, or left out.
     let alone = |t: u64, a: Vec<Row>, b: Vec<Row>, report: &mut DiffReport| {
         if options.common_ticks {
             report.skipped += 1;
         } else {
-            compare_tick(t, a, b, options, report);
+            compare_tick(t, a, b, None, options, report);
         }
     };
     loop {
@@ -625,6 +678,7 @@ pub fn diff(
         match (ta.take(), tb.take()) {
             (None, None) => break,
             (Some((t, rows)), None) => {
+                lag(t, &rows, &mut before);
                 alone(t, rows, Vec::new(), &mut report);
                 ta = ra.next_tick()?;
             }
@@ -634,6 +688,7 @@ pub fn diff(
             }
             (Some((t, x)), Some((u, y))) => {
                 if t < u {
+                    lag(t, &x, &mut before);
                     alone(t, x, Vec::new(), &mut report);
                     ta = ra.next_tick()?;
                     tb = Some((u, y));
@@ -642,7 +697,8 @@ pub fn diff(
                     ta = Some((t, x));
                     tb = rb.next_tick()?;
                 } else {
-                    compare_tick(t, x, y, options, &mut report);
+                    let previous = lag(t, &x, &mut before);
+                    compare_tick(t, x, y, previous.as_ref(), options, &mut report);
                     ta = ra.next_tick()?;
                     tb = rb.next_tick()?;
                 }
@@ -671,7 +727,7 @@ pub fn open(file: &str) -> Result<Box<dyn BufRead>, String> {
     })
 }
 
-/// `s2-app trace-diff A B [--by-place] [--common-ticks] [--from T] [--ignore c,c] [--with c,c]`.
+/// `s2-app trace-diff A B [--by-place] [--common-ticks] [--view-lag] [--from T] [--ignore c,c] [--with c,c]`.
 pub fn run_diff(args: &[String]) -> ExitCode {
     let (Some(a), Some(b)) = (args.first(), args.get(1)) else {
         eprintln!("trace-diff wants two trace files");
@@ -698,6 +754,10 @@ pub fn run_diff(args: &[String]) -> ExitCode {
             }
             "--common-ticks" => {
                 options.common_ticks = true;
+                Ok(())
+            }
+            "--view-lag" => {
+                options.view_lag = true;
                 Ok(())
             }
             "--from" => it
@@ -751,6 +811,12 @@ pub fn run_diff(args: &[String]) -> ExitCode {
     match &report.first {
         None => println!("the traces are the same ({} ticks)", report.ticks),
         Some(first) => println!("first difference: {first}"),
+    }
+    if report.view_lag > 0 {
+        println!(
+            "{} settler rows counted as the recorder's view lag (--view-lag)",
+            report.view_lag
+        );
     }
     if report.skipped > 0 {
         println!(
@@ -810,6 +876,76 @@ mod tests {
         };
         let r = run(&full, &missed, &options);
         assert_eq!((r.first, r.ticks, r.skipped), (None, 1, 1));
+    }
+
+    // TOOL-trace TRACE-4.4 (T16): the recorder's view switches a clip one
+    // tick late now and then. With --view-lag a settler row that differs
+    // only in its animation, the second trace's being the first's of the
+    // tick before, is counted as the view lag and not as a difference; any
+    // other animation difference still is one.
+    // spec: TOOL-trace TRACE-4.4 (T16)
+    #[test]
+    fn view_lag_counts_a_clip_one_tick_late() {
+        let ours = trace(&[
+            "S,1,s0,7bff15ce,3,4,12000,16000,Walk,0,Carrier.Out,,",
+            "S,2,s0,7bff15ce,3,4,12000,16000,Stand,0,Carrier.Idle,,",
+            "S,3,s0,7bff15ce,3,4,12000,16000,PutDown,0,Carrier.PutDown,,",
+        ]);
+        let original = trace(&[
+            "S,1,s0,7bff15ce,3,4,12000,16000,Walk,0,carriers.28,,",
+            "S,2,s0,7bff15ce,3,4,12000,16000,Walk,1,carriers.28,,",
+            "S,3,s0,7bff15ce,3,4,12000,16000,Stand,0,carriers.31,,",
+        ]);
+        // As `s2-app fidelity` compares: no clip_time (the original has none).
+        let mut plain = DiffOptions {
+            by_place: true,
+            ..DiffOptions::default()
+        };
+        plain.settler_columns.retain(|&c| c != "clip_time");
+        assert_eq!(run(&ours, &original, &plain).first_tick, Some(2));
+        let lag = DiffOptions {
+            view_lag: true,
+            ..plain.clone()
+        };
+        let r = run(&ours, &original, &lag);
+        assert_eq!((r.first, r.view_lag), (None, 2));
+        // Not the clip of the tick before: a difference.
+        let other = trace(&[
+            "S,1,s0,7bff15ce,3,4,12000,16000,Walk,0,carriers.28,,",
+            "S,2,s0,7bff15ce,3,4,12000,16000,Hit,1,carriers.28,,",
+            "S,3,s0,7bff15ce,3,4,12000,16000,PutDown,0,carriers.31,,",
+        ]);
+        assert_eq!(run(&ours, &other, &lag).first_tick, Some(2));
+    }
+
+    // TOOL-trace TRACE-4.4 (T16), TRACE-2.7: a row whose view the recorder
+    // did not read (an empty animation, the one-player recording's raced
+    // end) has no animation to compare; and with --common-ticks a tick one
+    // trace holds without its generator row leaves the generator out there.
+    // spec: TOOL-trace TRACE-4.4 (T16), TOOL-trace TRACE-2.7
+    #[test]
+    fn an_unread_view_and_a_missing_generator_row_are_left_out() {
+        let ours = trace(&[
+            "S,1,s0,15e86843,3,4,12000,16000,Stand,0,Garrison,,",
+            "G,1,rng,,,,,,,,,1412607200,7",
+        ]);
+        let original = trace(&["S,1,s0,15e86843,3,4,12000,16000,,,soldiers.12,,"]);
+        let mut options = DiffOptions {
+            by_place: true,
+            common_ticks: true,
+            view_lag: true,
+            ..DiffOptions::default()
+        };
+        options.settler_columns.retain(|&c| c != "clip_time");
+        let r = run(&ours, &original, &options);
+        assert_eq!(r.first, None, "{:?}", r.first);
+        assert_eq!(r.skipped, 1, "the generator row left out");
+        // Without --view-lag the empty view is a difference.
+        let options = DiffOptions {
+            view_lag: false,
+            ..options
+        };
+        assert!(run(&ours, &original, &options).first.is_some());
     }
 
     // A full trace against a recording of the generator alone: with

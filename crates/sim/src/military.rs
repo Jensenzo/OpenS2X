@@ -609,6 +609,10 @@ impl World {
                 health,
                 heal: 0,
             };
+            // MIL-ATK-5.1 (T35, E-mil-029): his walk job ends one update
+            // after the step onto the field: no candidate of 5.1 until his
+            // next update (the timer, counted down there).
+            settler.timer = 1;
         } else {
             self.plan_home_excluding(settler, None);
         }

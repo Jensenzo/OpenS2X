@@ -14,6 +14,8 @@ import bevy_render::globals::Globals;
 
 const TREE: u32 = 3u;
 const FLAG: u32 = 9u;
+// Hook W30b: a project's tree sways as the original's.
+const FACET_TREE: u32 = 17u;
 
 // The prepass view group: the view at 0, the globals at 1.
 @group(0) @binding(1) var<uniform> globals: Globals;
@@ -64,7 +66,7 @@ fn vertex(v: Vertex) -> VertexOutput {
     let m22 = length(world_from_local[1].xyz);
     let t = globals.time;
     let f = u32(params.mode.x + 0.5);
-    if f == TREE {
+    if f == TREE || f == FACET_TREE {
         let p = local.xyz;
         let s = saturate(dot(p, p) * 0.003) * m22;
         local.x += s * sin(0.35 * 3.14159265 * tx + t);
@@ -95,7 +97,9 @@ fn cut(in: VertexOutput) {
     // leaves are cut on averaged alpha and let light through.
     let alpha = textureSample(base, base_sampler, in.uv).a;
     // A house being built casts only below its rising plane (GFX-OBJ-2.6b).
-    if u32(params.mode.x + 0.5) == 2u {
+    // The house (2) and a project's model (15, hook W30): the rising plane.
+    let family = u32(params.mode.x + 0.5);
+    if family == 2u || family == 15u {
         if params.extra.z > 1.5 && in.world_y < params.extra.y {
             discard;
         }

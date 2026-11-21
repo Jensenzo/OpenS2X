@@ -614,7 +614,7 @@ mod tests {
             profession: 1,
             list: crate::SettlerList::Workers,
             walker: crate::movement::Walker::new((40, 3)),
-            job: SettlerJob::Dying,
+            job: SettlerJob::Dying { stand: None },
             timer: 5,
             carrying: None,
         });

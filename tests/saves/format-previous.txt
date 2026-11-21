@@ -1,4 +1,4 @@
-save format 2, world format 84
+save format 2, world format 90
 s2_ai::AiSystem
     counter: u64
     players: seq<Option<s2_ai::player::AiPlayer>>
@@ -279,6 +279,10 @@ s2_sim::Road
     length: u32
     traffic: s2_sim::transport::Traffic
     water: bool
+s2_sim::Skeleton
+    doodad: u32
+    number: u32
+    field: (u32, u32)
 s2_sim::World
     tick: u64
     rng: s2_sim::rng::Rng
@@ -403,6 +407,7 @@ s2_sim::World
     ledger: s2_sim::ledger::Ledger
     route_topology: ()
     height_changes @75: ()
+    skeletons @87: map<(u32, u32), s2_sim::Skeleton>
 s2_sim::combat::AttackRecord
     soldier: usize
     target: s2_sim::requests::Target
@@ -416,11 +421,17 @@ s2_sim::combat::AttackStep
     1 Walking
     2 Waiting
     3 Home
+    4 Meeting
+    5 Arrived
+    6 In
 s2_sim::combat::DefendStep
     0 Leaving
     1 Out
     2 Waiting
     3 Back
+    4 Ended
+    5 Held
+    6 In
 s2_sim::combat::OffsetStep
     walk: s2_sim::movement::LatticeWalk
     back: bool
@@ -960,6 +971,7 @@ s2_sim::rules::Settings
     fishing_distance: u32
     catapult_turn_ticks: u32
     catapult_flight_ticks: u32
+    skeleton_doodad @87: Option<u32>
 s2_sim::rules::ShipRules
     speed: u32
     stock_limit: u32
@@ -1010,7 +1022,7 @@ s2_sim::settlers::SettlerJob
     7 Defend { home: s2_sim::requests::Target, health: u32, step: s2_sim::combat::DefendStep, opponent: Option<usize>, intercept: bool, defends @75: Option<s2_sim::requests::Target> }
     8 Specialist { flag: (u32, u32), spots_left: u8, step: s2_sim::specialists::SpecialistStep }
     9 CarryOut { warehouse: s2_sim::requests::Target, destination: Option<(u32, u32)>, target: Option<s2_sim::requests::Target>, order: Option<s2_sim::requests::Order>, step: s2_sim::settlers::CarryOutStep }
-    10 Dying
+    10 Dying { stand @86: Option<(u32, u32)> }
     11 Released { carrier: usize, step: s2_sim::settlers::ReleasedStep }
     12 Leaving { step: s2_sim::settlers::LeavingStep, at: u64, stand: Option<(u32, u32)>, health @70: Option<u32> }
 s2_sim::settlers::SettlerList

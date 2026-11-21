@@ -367,6 +367,13 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
   material, so the site's own material requests are cancelled. Expedition
   mode is switched off and the options cleared; the empty ship then searches
   for a harbour (it may wait until the new harbour is finished).
+  **The ship after the founding (2026-11-19 night, E-ship-011: code reading and the Hard
+  recording; high).** The founding changes only the expedition: mode off, target and
+  options cleared. The ship keeps its state (waiting); its next update turns it to **returning**
+  (SHIP-6.3: expedition mode off), and returning, as it stands still, searches **at once** (SHIP-6.5:
+  the counter at 100, SHIP-2.4), so it sails for the nearest finished harbour in the update after
+  that. It is never set idle (idle would start the search's counter at 0 and delay the voyage by
+  about 100 ticks). Test T20.
   Confidence: high for the steps; medium for the builder's walk.
   **The builder and the load, in order (2026-11-16 day, Q-157; E-ship-008, code reading, high).**
   1. The site is made on the spot (with its claim and exploring, as above).
@@ -435,6 +442,7 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
 | T18 | SHIP-2.7, 6.4: an expedition ship stops on a Water field F whose neighbours in directions 4 and 5 are Water and in direction 0 land | arrival | its last port position is F's neighbour in direction 0. A ship stopping on a field with six Water neighbours has none, and `!Construct harbor.` is not shown there |
 | T19 | SHIP-4.1 (Q-063): player 1 has island A (headquarters, harbour H1, a finished ship on the sea) and island B (harbour H2, a site needing 2 planks, no warehouse with planks on B), both harbours finished and accepting planks | the site's plank orders' turn | each order finds no warehouse with planks over B's roads and is attached to H2 (reachable from the site's flag, a ship on its sea); H2's plank need is 2; SHIP-4.2 then asks H1. With the ship removed (none on the sea) no order is attached and H2 has no plank need |
 | T19a | SHIP-4.1 (Q-063 end): T19 after a ship has unloaded one plank into H2 | the next ware order pass; then the site torn down | the first plank order takes H2's plank and is detached in that step (H2's plank requesters 2 -> 1 before the plank leaves H2); the site's removal cancels and detaches the second (1 -> 0). With H2 torn down instead, both orders are detached at once |
+| T20 | SHIP-7.2 (the ship after the founding): E-trace-013 (R3, the Hard game), player 1's expedition ship 94738 founds the harbour on (147, 136) in counter 50 658 (AI-misc T9) | its states (the recording's ships table, counters) | waiting with the cargo out in 50 658, returning (state 8) in 50 659, searching with the counter at 100 in 50 660 (101 in 50 661), sailing home (to harbour, its route) from 50 662; at home (146, 50) docked in 51 179, idle in 51 180. Setting it idle at the founding starts the search at 0: the voyage home and its route's draws about 100 ticks late; with the rule: not yet measured (no experiment build on 2026-11-19 night) |
 
 ## Evidence
 
@@ -457,6 +465,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ship-006 | code reading | (2026-11-16 night) | SHIP-4.1, T19 |
 | E-ship-007 | code reading | (2026-11-16 day) | SHIP-4.1 retry and detach: the attach inside the 11-tick ware order pass; an attached order re-checked each pass (harbour accepts the good and is road-reachable, else detached) |
 | E-ship-010 | code reading | (2026-11-17 night) | SHIP-4.1 the order's end: detached when it takes its ware, when cancelled, at the pass re-check, or when its harbour is torn down; T19a |
+| E-ship-011, E-trace-013 | code reading, recording | (2026-11-19 night): the founding clears only the expedition's mode, target and options; R3's ships table from counter 50 658 | SHIP-7.2 the ship after the founding (T20) |
 | E-ship-008 | code reading | (2026-11-16 day) | SHIP-7.2: the order of the harbour founding: site, builder made on its field, the load into its store, its orders cancelled (Q-157) |
 | E-ship-005 | code reading and map data | `tutorial04.s2m` continents and state layer (2026-11-16) | SHIP-2.5, 2.7, 6.4, 7.1, T16 to T18 |
 | data | script | `ship.lua`, `buildings.lua` (harbor, shipYard), `dialogs.txt` dialog3_3 / dialog32_0, `tutorial.txt` T04_* | values and the player's view |

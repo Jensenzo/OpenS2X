@@ -6,7 +6,6 @@ use s2_sim::{Command, ExpeditionState, ShipState};
 use crate::construction::{Order, Slot, Tag};
 use crate::player::{AiPlayer, Category, Ctx};
 use crate::sites::Area;
-use crate::view::dist;
 
 /// AI-MISC-1.1: the shipyard needs this many planks in stock to work.
 const MIN_PLANKS: u32 = 12;
@@ -14,10 +13,6 @@ const MIN_PLANKS: u32 = 12;
 const SHIPS_PER_HARBOUR: u32 = 2;
 /// AI-MISC-1.1: the shipyard order's weight.
 const SHIPYARD_WEIGHT: u32 = 10;
-/// AI-MISC-1.3: the ship builds a harbour when the spot is closer than this
-/// (SHIP-7.1).
-const BUILD_DISTANCE: u32 = 5;
-
 /// What the expedition ship is told to do (AI-MISC-1.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sail {
@@ -28,21 +23,21 @@ pub enum Sail {
 }
 
 /// AI-MISC-1.3: the decision for an expedition ship that stands still with an
-/// active expedition. `spot_valid` says whether the known landing spot can
-/// still take a harbour; `pick` draws a number below its argument.
+/// active expedition. `can_found` is the founding test of the ship window's
+/// button (SHIP-7.1, T9, E-ai-076: the last port position's nearest harbour
+/// spot free and closer than 5; not the ship's target, which the arrival
+/// cleared); holding, the harbour is founded with no draw. `pick` draws a
+/// number below its argument.
 pub fn sail_decision(
     vessel: &s2_sim::Vessel,
-    position: Point,
-    spot_valid: impl Fn(Point) -> bool,
+    can_found: bool,
     mut pick: impl FnMut(u32) -> u32,
 ) -> Option<Sail> {
     if vessel.walker.is_walking() || vessel.state != ShipState::Waiting || !vessel.expedition {
         return None;
     }
-    if let Some(target) = vessel.target {
-        if dist(position, target.spot) < BUILD_DISTANCE && spot_valid(target.spot) {
-            return Some(Sail::Build);
-        }
+    if can_found {
+        return Some(Sail::Build);
     }
     let directions: Vec<u8> = (0..6u8)
         .filter(|&d| vessel.options[usize::from(d)].is_some())
@@ -151,8 +146,7 @@ impl AiPlayer {
             // 1.3: sailing.
             let decision = sail_decision(
                 &ship.vessel,
-                ship.position(),
-                |spot| world.harbour_site_for(self.id, spot),
+                world.can_found_harbour(self.id, index),
                 // AI-2.7 c: draw mod (the directions counted).
                 |n| ctx.rng.draw() % n.max(1),
             );

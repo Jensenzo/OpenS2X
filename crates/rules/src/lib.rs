@@ -412,6 +412,10 @@ impl RuleSet {
             catapult_flight_ticks: settings
                 .catapult_flight_time_factor
                 .map_or(11, |f| f.round().max(0.0) as u32),
+            // TRN-CARRY-7.1 (T31a): a doodad the scripts define.
+            skeleton_doodad: settings
+                .settler_skeleton_doodad
+                .filter(|&d| self.doodads.contains(d)),
         };
         let transport_priorities = self
             .goods

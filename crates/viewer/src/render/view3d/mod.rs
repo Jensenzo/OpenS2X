@@ -98,6 +98,7 @@ impl Plugin for View3dPlugin {
             .init_resource::<StatusIcons>()
             .init_resource::<CollapseDust>()
             .init_resource::<ClipParticles>()
+            .init_resource::<BuildingEffects>()
             .init_resource::<Wares3d>()
             .init_resource::<Daylight>()
             .init_resource::<DayClock>();
@@ -317,6 +318,9 @@ pub struct View3d {
     pub rig: CameraRig,
     /// `Viewer::loads` of the map the scene was built for.
     built: Option<u64>,
+    /// `ModelLibrary::loads`' length after the game's preload
+    /// (`models3d::preload`): the later entries are first uses during play.
+    pub loads_before_play: usize,
     pub frame: Frame,
     /// Per terrain cell: its mesh and the heights it was built from.
     cells: Vec<(Handle<Mesh>, Vec<i32>)>,
@@ -449,6 +453,7 @@ impl View3d {
             active,
             rig: CameraRig::new(0.0, 0.0),
             built: None,
+            loads_before_play: 0,
             frame: Frame::new(1, 1),
             cells: Vec::new(),
             height_samples: Vec::new(),

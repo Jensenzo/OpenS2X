@@ -25,6 +25,14 @@ woodcutter-site-25 | --compare MP_2P_Storm_Coast --scene woodcutter-site --until
 woodcutter-site-50 | --compare MP_2P_Storm_Coast --scene woodcutter-site --until-built 50 --zoom 2
 woodcutter-site-75 | --compare MP_2P_Storm_Coast --scene woodcutter-site --until-built 75 --zoom 2
 woodcutter-site-100 | --compare MP_2P_Storm_Coast --scene woodcutter-site --until-built 100 --zoom 2
+# Hook W30: a project's own building model (tests/models/facets.glb, made by
+# scripts/make-test-glb.py) drawn as the well beside a woodcutter's hut.
+project-model | --compare MP_2P_Storm_Coast --scene pair:WoodcutterHut:Spring --assets tests/models --building-model Spring=facets.glb --zoom 2
+# Hook W30b: a project's own trees (tests/models/tree_*.glb, made by
+# scripts/make-test-trees.py) for the birches and firs at the default zoom:
+# the far versions along the view's top (TREE_FAR_BELOW), the full models
+# below, the broad-leaf trees the original's.
+project-trees | --compare MP_2P_Storm_Coast --zoom 3 --assets tests/models --tree-model BirchA=tree_round.glb,far=tree_round_far.glb --tree-model BirchB=tree_round.glb,far=tree_round_far.glb --tree-model BirchC=tree_round.glb,far=tree_round_far.glb --tree-model FirA=tree_cone.glb,far=tree_cone_far.glb --tree-model FirB=tree_cone.glb,far=tree_cone_far.glb
 # The menus (UI-MENU): the title, the main menu, the free play page and the
 # other pages. Their save folder is tests/golden/images/saves (one stand-in
 # autosave), not the player's: CONTINUE and the save list stay the same.

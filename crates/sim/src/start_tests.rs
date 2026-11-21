@@ -198,7 +198,7 @@ fn work_3_8b_entering_by_the_door() {
         profession,
         list: crate::SettlerList::Carriers,
         walker: crate::movement::Walker::new(flag),
-        job: crate::SettlerJob::Dying,
+        job: crate::SettlerJob::Dying { stand: None },
         timer: 0,
         carrying: None,
     };

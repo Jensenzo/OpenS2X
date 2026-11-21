@@ -298,6 +298,13 @@ pub fn growth_scale(s: f32) -> [f32; 3] {
     [w, s, w]
 }
 
+/// Hook W30b, `TreeGrowth::RootWidth` (a project's trees only): height s,
+/// width the square root of s.
+pub fn root_width_growth(s: f32) -> [f32; 3] {
+    let w = s.max(0.0).sqrt().min(1.0);
+    [w, s, w]
+}
+
 /// GFX-ANIM-3.8a: the horizontal axis a tree falls about, from the tree
 /// toward the woodcutter working at it, as a yaw in the game frame (the
 /// angle of the axis from +x toward +z); kept per tree while it is worked

@@ -1082,3 +1082,225 @@ pub fn cursor_sprites(
         ));
     }
 }
+
+/// Hook W30: marks a particle of a project building's effect.
+#[derive(Component)]
+pub struct BuildingEffect3d;
+
+/// Hook W30: one effect of a project building on screen: its building
+/// (field, serial) and the effect's place among the building's.
+struct ShownBuildingEffect {
+    key: ((s2_sim::grid::Point, u32), usize),
+    effect: String,
+    seed: u64,
+    /// When it started and when its emission ended (game seconds).
+    started: f32,
+    ended: Option<f32>,
+    /// Its place (game frame): the anchor while it emits, kept after.
+    at: [f32; 3],
+    quads: Vec<(Entity, Handle<StandardMaterial>)>,
+}
+
+/// Hook W30: the effects read and the project buildings' effects on screen.
+#[derive(Resource, Default)]
+pub struct BuildingEffects {
+    loads: u64,
+    effects: std::collections::HashMap<String, Option<s2_assets::pfx::Effect>>,
+    shown: Vec<ShownBuildingEffect>,
+}
+
+/// Hook W30: whether a project building's effect that starts `start` clip
+/// seconds into its Working clip emits at `now` (game seconds), the
+/// building working since `since`: from its start for as long as the
+/// building works (the clip on the animation clock, GFX-ANIM-2.1).
+pub(crate) fn building_effect_on(since: Option<f32>, start: f32, now: f32) -> bool {
+    since.is_some_and(|s| (now - s) * crate::animation::anim::GLOBAL_SPEED >= start)
+}
+
+/// Hook W30: the particles of the project buildings' effects.
+type EffectQuads<'w, 's> = Query<
+    'w,
+    's,
+    &'static mut Transform,
+    (
+        With<BuildingEffect3d>,
+        Without<MapCamera3d>,
+        Without<Object3d>,
+    ),
+>;
+
+/// Hook W30: the houses, for the place of their effects.
+type Houses<'w, 's> = Query<
+    'w,
+    's,
+    &'static Transform,
+    (
+        With<Object3d>,
+        Without<BuildingEffect3d>,
+        Without<MapCamera3d>,
+    ),
+>;
+
+/// Hook W30: a project building's effects (its `smoke`, `BuildingLook`):
+/// while the building works each rises from its point of the model (the
+/// point's rest place, turned and moved with the house); when the work
+/// stops it stops emitting and its particles live out their life, as a
+/// settler clip's effect (GFX-OBJ-8.3c), drawn as the collapse dust. The
+/// original's buildings have none here (their clips' particle events are
+/// not drawn by this engine).
+#[allow(clippy::too_many_arguments)]
+pub fn building_effects(
+    mut commands: Commands,
+    viewer: Res<crate::game::Viewer>,
+    view: Res<View3d>,
+    anims: Res<BuildingAnims>,
+    mut state: ResMut<BuildingEffects>,
+    mut dust: ResMut<CollapseDust>,
+    mut library: ResMut<crate::render::models3d::ModelLibrary>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut images: ResMut<Assets<Image>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    camera: Single<&Transform, (With<MapCamera3d>, Without<BuildingEffect3d>)>,
+    mut quads: EffectQuads,
+    houses: Houses,
+    clock: Res<crate::game::GameClock>,
+) {
+    if viewer.world.is_none() || !view.active {
+        return;
+    }
+    let state = &mut *state;
+    if state.loads != viewer.loads {
+        for shown in state.shown.drain(..) {
+            for (entity, material) in shown.quads {
+                commands.entity(entity).despawn();
+                materials.remove(&material);
+            }
+        }
+        state.loads = viewer.loads;
+    }
+    let now = clock.seconds;
+    let mut active = std::collections::HashSet::new();
+    for (key, building) in &anims.states {
+        if building.working_effects.is_empty() {
+            continue;
+        }
+        let Some(skeleton) = building.model.skeleton.as_ref() else {
+            continue;
+        };
+        let Ok(house) = houses.get(building.entity) else {
+            continue;
+        };
+        let rest = skeleton.world(&skeleton.rest);
+        for (i, (name, start, bone)) in building.working_effects.iter().enumerate() {
+            if !building_effect_on(building.working, *start, now) {
+                continue;
+            }
+            let Some(point) = rest.get(*bone) else {
+                continue;
+            };
+            let local = building
+                .model
+                .basis
+                .transform_point3(point.w_axis.truncate());
+            let at = world3d::from_bevy(house.transform_point(local).to_array());
+            let k = (*key, i);
+            active.insert(k);
+            if let Some(shown) = state
+                .shown
+                .iter_mut()
+                .find(|s| s.key == k && s.ended.is_none())
+            {
+                shown.at = at;
+                continue;
+            }
+            let effect = state
+                .effects
+                .entry(name.clone())
+                .or_insert_with(|| library.read_pfx(&format!("data/scripts/effects/{name}.pfx")))
+                .clone();
+            let texture = dust
+                .texture
+                .get_or_insert_with(|| particles_texture(&mut library, &mut images))
+                .clone();
+            let (Some(effect), Some(texture)) = (effect, texture) else {
+                continue;
+            };
+            let quad = meshes.add(particle_quad(effect.rect));
+            let pool = (0..effect.count.max(0))
+                .map(|_| {
+                    let material = materials.add(StandardMaterial {
+                        base_color_texture: Some(texture.clone()),
+                        unlit: true,
+                        alpha_mode: AlphaMode::Blend,
+                        cull_mode: None,
+                        ..default()
+                    });
+                    let entity = commands
+                        .spawn((
+                            BuildingEffect3d,
+                            Mesh3d(quad.clone()),
+                            MeshMaterial3d(material.clone()),
+                            Transform::from_scale(Vec3::ZERO),
+                            RenderLayers::layer(MAP_LAYER),
+                            bevy::light::NotShadowCaster,
+                        ))
+                        .id();
+                    (entity, material)
+                })
+                .collect();
+            // The same in every run: the building, the effect and its start.
+            let seed = u64::from(key.0 .0) << 40
+                ^ u64::from(key.0 .1) << 24
+                ^ u64::from(key.1) << 8
+                ^ i as u64
+                ^ u64::from(now.to_bits()) << 1;
+            state.shown.push(ShownBuildingEffect {
+                key: k,
+                effect: name.clone(),
+                seed,
+                started: now,
+                ended: None,
+                at,
+                quads: pool,
+            });
+        }
+    }
+    let mut done = Vec::new();
+    for (i, shown) in state.shown.iter_mut().enumerate() {
+        if shown.ended.is_none() && !active.contains(&shown.key) {
+            shown.ended = Some(now);
+        }
+        let Some(Some(effect)) = state.effects.get(&shown.effect) else {
+            done.push(i);
+            continue;
+        };
+        let pool = crate::world::decor::particles_until(
+            effect,
+            shown.seed,
+            now - shown.started,
+            shown.ended.map(|e| e - shown.started),
+        );
+        if shown.ended.is_some() && pool.iter().all(Option::is_none) {
+            done.push(i);
+            continue;
+        }
+        for (entity, transform) in draw_particles(
+            &shown.quads,
+            pool,
+            shown.at,
+            camera.rotation,
+            &mut materials,
+        ) {
+            if let Ok(mut t) = quads.get_mut(entity) {
+                *t = transform;
+            }
+        }
+    }
+    for i in done.into_iter().rev() {
+        let shown = state.shown.remove(i);
+        for (entity, material) in shown.quads {
+            commands.entity(entity).despawn();
+            materials.remove(&material);
+        }
+    }
+}

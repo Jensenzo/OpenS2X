@@ -21,6 +21,8 @@ simulation only through its public API (`docs/api.md`).
 | A group good in a recipe, a kept stock | a recipe takes "any 2 tools"; a warehouse hands out a member above the stock the player keeps back | a group good in `reborn.bp_addRecipeInput` or `reborn.bp_addInput`, `reborn.cfg_setRecipeKeep` (in an overlay), `s2_sim::Rules::recipe_groups`, `recipe_keep` |
 | Paved roads | a road paved with a good per field, carried there over the roads; its carriers and donkeys walk it faster | `reborn.cfg_setPaving` (in an overlay), `Command::PaveRoad`, `World::can_pave`, `World::is_paved`, `World::paving_work` |
 | The look of a paved road | a project's street textures for paved roads (hook W21) | `RenderOptions::paved_road` (`StreetLook`) |
+| A building's own model | a building type drawn with a project's binary glTF model (`.glb`): its objects, door and work clips, owner's colour, ground patch and smoke, in the game's light (hook W30) | `Extensions::building_looks` (`BuildingLook`), `--building-model` |
+| A tree's own model | a tree kind drawn with a project's `.glb` and its far version, as the game draws its trees: turn and sizes, growing, felling and sinking, the wind, shadows, the day's light (hook W30b) | `Extensions::tree_looks` (`TreeLook`, `TreeGrowth`), `--tree-model` |
 | Deepening a mine | an exhausted mine of a type the overlay names is deepened for material a builder works; part of the ore comes back and the mine eats more food per product | `reborn.bp_setDeepening`, `reborn.bp_addDeepeningCost`, `reborn.bp_addDeepeningFood` (in an overlay), `Command::DeepenMine`, `World::can_deepen`, `World::mine_deepening` |
 | The pictures of the hooks' buttons | the Deepen and Next recipe buttons of a building's window and the road menu's Pave button drawn with a 48 x 48 cell of the project's picture | `Extensions::button_pictures` (`ButtonPictures`, `ButtonPicture`) |
 | A message when a project's rule finishes | the player's message when a mine's deepening is done or a road is paved, in the project's words (hook W24) | `Extensions::messages` (`ProjectEvent`) |
@@ -108,10 +110,10 @@ and its game snapshotted and loaded as the same game.
 
 What it does not cover:
 
-- **A model of its own.** The look is a `bp_setGfxName` entry of the
-  install's `buildings.xml` (an original type's look); a new model needs an
-  entry there, and an asset folder can only replace that whole file, which
-  is the original's. A building whose entry is missing is not drawn.
+- **A model of its own** without the hook W30 (below, "A building's own
+  model"): the look is a `bp_setGfxName` entry of the install's
+  `buildings.xml` (an original type's look), and an asset folder can only
+  replace that whole file. A building whose entry is missing is not drawn.
 - **An icon of its own.** `bp_setIconXY` picks a cell of the tribe's
   `uiBuildings` picture; a new one means replacing the whole picture.
   Without an icon the build menu shows a placeholder picture in its cell.
@@ -440,6 +442,182 @@ What it does not cover: a crossing of its own at a paved road's flags; a
 texture per player or per road; a road paved field by field (W19 paves a
 road whole). It was not looked at on screen in OpenS2X.
 
+### A building's own model
+
+A project draws a building type with a model of its own, a binary glTF file
+(`.glb`), in place of the type's entry of the install's `buildings.xml`
+(hook W30). The type keeps its rules, its graphics name (`bp_setGfxName`)
+included, so neither the rules nor a save's mark change; only its look does.
+The model is found through the asset folders like any file of the install:
+
+```rust
+use s2_viewer::{BuildingLook, Extensions};
+
+let extensions = Extensions {
+    asset_folders: vec!["assets".into()], // assets/data/buildings/frontier/charcoal_burner.glb
+    building_looks: vec![BuildingLook {
+        building: "Charcoal burner".into(), // the type's bp_setName
+        model: "data/buildings/frontier/charcoal_burner.glb".into(),
+        site_of: Some("Lumberjack".into()), // the woodcutter's site model while it is built
+        smoke: Some("Smoke".into()),        // data/scripts/effects/Smoke.pfx at anchor_smoke
+    }],
+    ..Default::default()
+};
+```
+
+| Field | Meaning |
+|---|---|
+| `building` | the type drawn with it, by its name in the rules (`bp_setName`'s: `Spring` the well, a project type's own name), for all three tribes; the other types of its graphics name keep theirs |
+| `model` | the `.glb` file's path below the install (`data/...`, any case), an asset folder's first |
+| `site_of` | the graphics name of the type whose site model (the scaffolding of `buildings.xml`'s `frame`, GFX-OBJ-2.6a) stands while this one is built, of the builder's tribe; `None`: no scaffolding, only the rising house |
+| `smoke` | the effect (`data/scripts/effects/<name>.pfx`, the install's or a project's) that rises from the model's point `anchor_smoke` while the building works; `None`: no smoke |
+
+From the command line: `--building-model <type>=<file>[,site=<gfx>][,smoke=<effect>]`
+(repeatable), with `--assets` for the folder. `s2-viewer --map-name
+MP_2P_Storm_Coast --3d --scene pair:WoodcutterHut:Spring --assets tests/models
+--building-model Spring=facets.glb,site=Lumberjack,smoke=Smoke` shows the
+repository's test model as the well beside a woodcutter's hut;
+`crates/viewer/examples/extended.rs` draws the well with it when
+`S2_NEXT_ASSETS` holds `facets.glb`.
+
+**What the file must hold.** Anything else in it is not read (skins, morph
+targets, cameras, lights, more images); a file the reader refuses is not
+drawn, with a line on the console.
+
+| Item | Rule |
+|---|---|
+| Frame | glTF's own: +Y up, metres (one engine unit is a metre), **the door facing +Z**, +X to the right of someone standing in front of the door, the origin at the building's field point (the walk of a settler ends there, behind the door), the ground at Y = 0. The engine turns every building by the loader's -30 degrees about +Y (GFX-VIEW-4.3a): the model must not hold that turn. In Blender with the exporter's "+Y up": Z up, the door facing -Y |
+| Objects | one node per object, its mesh in the node's own frame; nodes may have children. At most 50 nodes in all (the shader's bone palette, GFX-ANIM-8.3), points included. Triangle lists only |
+| `teamcolour` | the node tinted with its owner's colour: its colour times the player colour (give it the palette's white `team` swatch) |
+| `ground` | the node (or a primitive whose material is named `..._ground`) laid on the terrain as a building's ground patch is (GFX-OBJ-2.3: each triangle draped over the fields, 0.01 above them, lit as level ground, receiving shadows, casting none), blended by its vertex alpha. Every other part is opaque (alpha is not read) |
+| Points | empty nodes. `anchor_smoke`: where the smoke rises (its rest place; it may not move with a clip). `anchor_origin`, `anchor_door`, `anchor_light` are read as points but not used |
+| Faces | flat as authored: the file's normals are used as they are (a mesh without normals gets one normal per face) |
+| Colour | `TEXCOORD_0` into the material's base colour image (an embedded PNG; its bytes are taken as the display colours, like the original's textures, no conversion), times `COLOR_0` (RGB: the face's occlusion, 1.0 in the open; A: the ground's fade). The material's metallic-roughness image (embedded PNG): green is the roughness, blue the metallic, red is not read (the occlusion is the vertex colour). Every face is lit by the game's own sun and sky (GFX-VIEW-2.3) with its shadow, both sides drawn; a smooth face (roughness below 1) gets a small highlight of the sun, on metal in its own colour. Factors, emissive, normal and occlusion images are not read |
+| Clips | glTF animations of node translation, rotation and scale (whole objects; skins are not read), in clip seconds, played 1.8 times as fast as written, as the original's (`globalSpeed`, GFX-ANIM-2.1). `DoorOpen` and `DoorClose`: played once when the engine opens and closes the door for a settler (GFX-ANIM-6.1a), last pose held; 0.4 s turning the `door` node about its hinge by about 100 degrees, outwards. `Working`: **loops** while the building's worker is in its work step (the original's play once per work start, GFX-ANIM-6.2), from 0 at each start. Linear keys (a step channel is read as linear; a cubic spline's tangents are dropped). The names must match exactly; other clips (`door_open`, `work`) are not read |
+
+**What the engine does with it**, as for an original house otherwise:
+
+- **Placed, frame work**: the ground patch, and the `site_of` type's site
+  model with its pieces going up (GFX-OBJ-2.6a).
+- **Main work**: the model rises out of the ground inside the scaffolding:
+  drawn below a plane at the height the original's houses use (GFX-OBJ-2.6b,
+  the model's height without its ground), the cut not capped. Then the
+  scaffolding goes.
+- **Finished**: the model in its rest pose; door and Working clips as above;
+  the smoke while it works, its particles living out their life when the
+  work stops; the owner's colour on `teamcolour`; the status icons at the
+  model's box (everything but the ground).
+- **Burnt, torn down, land lost**: the engine's own collapse (GFX-OBJ-8.7:
+  the model sinks by its height with the dust, a running door or work clip
+  goes on), then the ruin of the type's remains class; the ruin lies on the
+  model's ground patch. Upgrades (GFX-OBJ-8.4) cut it as a house.
+- **Without any look**: nothing of it is read or computed; every original
+  building is drawn as before (the golden images unchanged).
+
+**At night** a project's building is darkened as the original's houses are
+by their light map (GFX-OBJ-2.1: theirs multiplies a face by its light map,
+all of it at night): by 0.533, the median over the Roman houses of their
+light map where their faces sample it (0.30 to 0.70; the woodcutter's 0.41),
+times how much of the night it is (none while the light and ambient
+luminances add up to noon's 1.4377, all of it at the night's 0.5993, in
+between linearly). By day nothing changes. Windows that light up at night
+are not drawn (a light map of its own is not read).
+
+What it does not cover: skinned figures, map objects other than trees (see
+"A tree's own model"), a switch between whole graphics sets; a site model of
+a project's own (`site_of` borrows an original's); the original's
+per-building colour variation (GFX-OBJ-2.2: a project model is never tinted
+by the colour map) and its own light map (the night factor above is one
+number); a project's own colour map; the original's levels of detail (one
+model at every distance); the T31 quirk of the original's house light (a
+project model is lit by its world normal, the original's houses by their
+unturned one); clips' sound and particle events other than the smoke.
+
+### A tree's own model
+
+A project draws a tree kind with a model of its own, a binary glTF file
+(`.glb`), and optionally a lighter far version, in place of the kind's
+landscape element (hook W30b). The kind keeps its rules and its graphics name
+(`dp_setGfxName`); only its look changes. The files are found through the
+asset folders like any file of the install:
+
+```rust
+use s2_viewer::{Extensions, TreeGrowth, TreeLook, TREE_FAR_BELOW};
+
+let extensions = Extensions {
+    asset_folders: vec!["assets".into()], // assets/data/trees/frontier/birch_a.glb, ...
+    tree_looks: vec![TreeLook {
+        tree: "BirchA".into(), // the kind's dp_setName
+        model: "data/trees/frontier/birch_a.glb".into(),
+        far: Some("data/trees/frontier/birch_a_far.glb".into()),
+        far_below: TREE_FAR_BELOW,      // 0.25 of the view's height
+        growth: TreeGrowth::RootWidth,  // or TreeGrowth::Original
+    }],
+    ..Default::default()
+};
+```
+
+| Field | Meaning |
+|---|---|
+| `tree` | the kind drawn with it, by its name in the rules (`dp_setName`'s: `BirchA`, `BirchB`, `BirchC`, `BroadLeafA`, `BroadLeafB`, `BroadLeafC`, `FirA`, `FirB`, `PalmA`, `PalmB`, `CypressA`, `OliveA`, `AfricanA`, `AsianA`, `LavaTreeA` .. `C`, a project kind's own); a later look of the same name wins |
+| `model` | the `.glb` file's path below the install (`data/...`, any case), an asset folder's first |
+| `far` | the far version's file; `None`: the model at every size |
+| `far_below` | the far version is drawn while the tree's size on the screen, the longest side of its box as it stands, grows or lies, is below this share of the view's height. The size is the box's longest side over the view's height at the tree's depth, not its foreshortened picture (the camera looks down at 53 degrees). `TREE_FAR_BELOW` (0.25): in a 16:9 view a grown 10 m tree is 0.16 to 0.25 of the view's height at the farthest zoom (top to bottom of the screen) and 0.22 to 0.33 at the default zoom; so the farthest zoom draws the far versions, the default zoom the full models but along the screen's far edge, closer zooms the full models; a young tree turns far sooner. A narrower window (4:3) shows the trees larger. 0: never the far version |
+| `growth` | how a young tree grows: `Original` (GFX-ANIM-3.8b: height s, width min(3 s, 1), so a third-grown tree has the full crown on a third of the height) or `RootWidth` (height s, width the square root of s: 0.58 of the width at a third, 0.71 at a half; both full at s = 1). The original's trees always grow by `Original` |
+
+From the command line: `--tree-model <kind>=<file>[,far=<file>][,far-below=<share>][,growth=root]`
+(repeatable), with `--assets` for the folder. `s2-viewer --compare
+MP_2P_Storm_Coast --zoom 4 --assets tests/models --tree-model
+BirchA=tree_round.glb,far=tree_round_far.glb --tree-model
+FirA=tree_cone.glb,far=tree_cone_far.glb` shows the repository's test trees
+(`scripts/make-test-trees.py`) for two kinds; `crates/viewer/examples/extended.rs`
+draws the birches with them when `S2_NEXT_ASSETS` holds `tree_round.glb`.
+
+**What a tree's file must hold.** As a building's (above), anything else is
+not read.
+
+| Item | Rule |
+|---|---|
+| Frame | glTF's own: +Y up, metres (one unit a metre), **the origin at the foot**, where the trunk meets the ground (the engine puts it on the ground at the tree's place, upright on any slope); the trunk may reach a little below (the original's trees reach 0.2 to 1.0 under). No turn of its own: the engine turns each tree by its own random yaw (0 to 360 degrees) |
+| Size | as the tree stands full grown; the engine scales each tree by its kind's three random sizes (x, y, z each 0.8 to 1.0 for most kinds; GFX-OBJ-1.4) and while it grows. The original's kinds are 6.7 to 14.3 high and 2.8 to 12.2 across (the slot sheet's section 1); a crown may reach over the neighbouring fields (6 m apart) |
+| Objects | one mesh (several nodes are allowed and drawn as one, at most 50); no `teamcolour` (a tree has no owner); a `ground` node is laid on the terrain as a building's (none needed). Points (`anchor_origin`) are read but not used |
+| Faces | flat as authored. Both sides are drawn. In the wind every face is lit by its own normal as it moves (below), not by the file's normals; a mesh without normals is fine |
+| Colour | as a building's: `TEXCOORD_0` into the base colour image (embedded PNG, its bytes the display colours) times `COLOR_0` RGB (the face's occlusion); the metallic-roughness image's green and blue as there (foliage at roughness 0.8 gets no highlight to speak of). Opaque: alpha is not read (no alpha-tested leaves) |
+| Light | the game's sun and sky (GFX-VIEW-2.3) by day and night, the tree's shadow cast and received. The original's tree pass scales only the direct light by its vertex colour (GFX-OBJ-2.4); a project's tree is palette x vertex colour under the whole light, as a building |
+| Far version | the same outline from the game camera, the same palette swatches, its origin at the same foot; it is drawn with the same turn and sizes. Fewer faces is the point (the brief: at most 250 triangles, the model at most 900) |
+
+**What the engine does with it**, as with the original's trees otherwise:
+
+- **Placed**: on its deposit's fine position on the ground, with the
+  kind's own random turn and three sizes, drawn from the view's generator in
+  the original's order (GFX-OBJ-1.4): a forest of project trees stands
+  exactly where and how the original's would, turned and sized the same.
+- **Growing**: scaled by `growth` from the sapling's size 0.1 to 1
+  (100 seconds; ECO-OUT-6.2), re-placed every 20 ticks as the original's.
+- **Wind**: the original's sway (GFX-OBJ-2.4): each point is pushed by
+  saturate(0.003 |p|²) x the tree's height scale, along x by sin(0.35 pi x +
+  t) and along z by cos(0.35 pi z + t) of the tree's place and the frame
+  clock (a 6.28 s period; a point 10 m up moves 0.3 m, the foot not at all).
+  The faces stay flat: each face is lit by the normal of the face as drawn,
+  taken from the screen derivatives of its world position, so every face
+  stays one plane with one normal while its corners move; the shared corners
+  of two faces move alike (the push is a function of the point), so no gap
+  opens. The shadow sways with the tree.
+- **Felled**: tipped about its foot toward the woodcutter's left, about 81.6
+  degrees over 2.4 s (GFX-ANIM-3.8a), then sunk straight down by its lying
+  box's height over 1.8 s (3.8c). The model must stand being tipped.
+- **Many of them**: each tree is one entity whose meshes and material are the
+  kind's shared ones (and the far version's), so the renderer batches a wood
+  as it batches the original's trees; per frame the engine compares each
+  tree's size on the screen with `far_below` and switches only the trees whose
+  version changes.
+- **Without any look**: nothing of it is read or computed; every tree is
+  drawn as before (the golden images unchanged).
+
+What it does not cover: stone piles, grain fields, decorations and figures;
+alpha-tested leaves or a texture of a tree's own besides the palette; a
+switch between whole graphics sets; a sound or effect at a project tree.
+
 ### Deepening a mine
 
 A mine type can be deepened once its mine is exhausted (hook W15): the
@@ -592,7 +770,9 @@ let (rules, _) = s2_rules::load(&dir)?;       // property scripts come through t
 ```
 
 A file in an asset folder must have the original's format (`FMT-*` specs,
-read by `s2-assets`): a `.dds` texture, a `.gr2` model, a `.wav` sound.
+read by `s2-assets`): a `.dds` texture, a `.gr2` model, a `.wav` sound. The
+one exception is a building's or tree's own model of hooks W30 and W30b, a
+`.glb` (above).
 Scripts, texts and fonts wrapped in rc00 (FMT-RC) are unwrapped with the
 key of their own name, so a replacement of those may be plain or wrapped. Maps and saves are found
 by their own paths (`--map`, `--save`), not through the folders.

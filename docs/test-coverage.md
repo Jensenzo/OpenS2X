@@ -66,7 +66,11 @@ than 0.2 % of its pixels differ (`MAX_SHARE`). A failure writes
 differing pixels red. `s2-app image-diff` does the comparison.
 
 The scenes: the start camera on three maps at the five zoom steps, a
-woodcutter's hut site at 25, 50, 75 and 100 % of its work, the title, the
+woodcutter's hut site at 25, 50, 75 and 100 % of its work, a project's own
+building model (the repository's `tests/models/facets.glb`, hook W30) as the
+well beside a woodcutter's hut, a project's own trees (`tests/models/tree_*.glb`
+for the birches and firs at the default zoom, near and far versions, hook
+W30b), the title, the
 main menu, the free play page and the other menu pages (the six settings
 pages among them), every in-game dialog that can be opened from the command
 line (tools, military, distribution, transport, the six statistics pages,
@@ -150,7 +154,16 @@ benchmark that plays ahead headless (`--run`) or loads a save does not. It
 fails on a broken invariant, a minute below 29.5 ticks per second, a frame
 p99 over 25 ms, any frame over 100 ms, a bone-palette buffer over 12.5 MB
 at the end, or a palette slot no owner holds; `--check DIR` judges a run's
-report and log. The log has a line a minute (`P`) with the palette slots by
+report and log. It holds the display on for the run and wakes it first by a
+pointer move of 0 (`scripts/display-hold.ps1`, as the play harness's keeper):
+with the display off after the power plan's idle timeout every present waits
+about 264 ms (2026-11-20, a run after a morning nobody used the PC: 6,807
+frames of 263 ms, the GPU's work 17 ms each). Every model or clip the view reads after the game's start
+is a first use during play, a `U` line in the log; a slow frame's line
+names those of its last eight frames, and `--check` prints them beside each
+frame over 100 ms (0.12.2's run failed on one of 107 ms in the frames its
+game showed the first well's site; since then a game's start reads every
+model its tribes can show, `models3d::preload`). The log has a line a minute (`P`) with the palette slots by
 owner: the skinned parts' rest slots, the poses' parts (and the most one
 pose holds), the buildings' own parts. The long-game slowdown came twice
 from slots taken and never given back: until 2026-11-04 (poses' and sites'

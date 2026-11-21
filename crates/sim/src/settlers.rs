@@ -10,6 +10,13 @@ use crate::{Building, ConstructionSite, PlayerId, Target, World};
 /// TRN-CARRY-7.1: a settler that cannot reach a warehouse dies after this
 /// many ticks (the settler dying time).
 const DYING_TICKS: u32 = 28;
+/// TRN-CARRY-7.1, MIL-ATK-6.6 (T31, E-mil-025): a dying settler's timer:
+/// the dying's ticks and one more update, then he is removed (present in
+/// the ticks t .. t + 28 of a dying from t).
+pub(crate) const DYING_UPDATES: u32 = DYING_TICKS + 1;
+/// TRN-CARRY-7.1 (T31a, E-mil-027): the skeleton doodad comes in the dying
+/// settler's update in which this many ticks of the dying have passed.
+const SKELETON_AFTER: u32 = 14;
 /// T47 (TRN-FREE-6.4b): the start tick of a removed site's builder's
 /// leaving step while the approach's back leg he walks on has not arrived:
 /// the step waits for its timer's end, the arrival tick, and counts from it.
@@ -88,8 +95,10 @@ pub enum SettlerJob {
         order: Option<crate::Order>,
         step: CarryOutStep,
     },
-    /// TRN-CARRY-7.1: no warehouse within reach.
-    Dying,
+    /// TRN-CARRY-7.1: no warehouse within reach; MIL-ATK-6.6 (T31): killed
+    /// in a duel. He stands where he is: on the height sample `stand` when
+    /// that is not his field's point (an attacker on his offset step).
+    Dying { stand: Option<Point> },
     /// TRN-FREE-6.4a: sent home, before its home search: the step and the
     /// tick it began in (each acts in a later tick), and the height sample
     /// it stands on or walks back from when that is not its field's point
@@ -526,8 +535,8 @@ impl World {
             profession,
             list: self.list_of(profession),
             walker: Walker::new(field),
-            job: SettlerJob::Dying,
-            timer: DYING_TICKS,
+            job: SettlerJob::Dying { stand: None },
+            timer: DYING_UPDATES,
             carrying: None,
         }
     }
@@ -565,7 +574,7 @@ impl World {
             profession,
             list: self.list_of(profession),
             walker: Walker::new(field),
-            job: SettlerJob::Dying,
+            job: SettlerJob::Dying { stand: None },
             timer: 0,
             carrying: None,
         };
@@ -871,11 +880,36 @@ impl World {
         };
     }
 
+    /// TRN-CARRY-7.1 (T31a, E-mil-027): 14 ticks into his dying the doodad
+    /// the config names is put on the dying settler's sample (`stand`, or
+    /// his field's point) and takes the next object number, in his place in
+    /// the settlers' part; nothing when the config names none or one already
+    /// lies there. (The map's own doodads are not in the simulation.)
+    fn lay_skeleton(&mut self, settler: &Settler, stand: Option<Point>) {
+        let Some(doodad) = self.settings.skeleton_doodad else {
+            return;
+        };
+        let sample = stand.unwrap_or_else(|| grid::field_sample(settler.walker.at));
+        if self.skeletons.contains_key(&sample) {
+            return;
+        }
+        let field = stand.map_or(settler.walker.at, grid::sample_field_truncating);
+        let number = self.new_number();
+        self.skeletons.insert(
+            sample,
+            crate::Skeleton {
+                doodad,
+                number,
+                field,
+            },
+        );
+    }
+
     /// TRN-CARRY-7.1: a homeless settler gives up and dies.
     fn die_homeless(&self, settler: &mut Settler) {
         settler.walker.walk([]);
-        settler.job = SettlerJob::Dying;
-        settler.timer = DYING_TICKS;
+        settler.job = SettlerJob::Dying { stand: None };
+        settler.timer = DYING_UPDATES;
     }
 
     /// A removed building's leveller, builder and workers go home. A site's
@@ -1474,7 +1508,10 @@ impl World {
                 spots_left,
                 step,
             } => self.specialist_job(settler, flag, spots_left, step),
-            SettlerJob::Dying => {
+            SettlerJob::Dying { stand } => {
+                if settler.timer == DYING_UPDATES - SKELETON_AFTER {
+                    self.lay_skeleton(settler, stand);
+                }
                 if settler.timer > 0 {
                     return true;
                 }

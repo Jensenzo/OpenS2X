@@ -19,7 +19,10 @@ use s2_viewer::bevy::prelude::*;
 use s2_viewer::extend::{
     CameraFollow, CurrentSettings, MapThings, MenuEntry, MusicSlot, PageWidget,
 };
-use s2_viewer::{Captions, EffectRule, Extensions, ProjectEvent, RenderOptions, SettingsOptions};
+use s2_viewer::{
+    BuildingLook, Captions, EffectRule, Extensions, ProjectEvent, RenderOptions, SettingsOptions,
+    TreeGrowth, TreeLook,
+};
 
 /// The woodcutter's hut costs one more stone: an overlay sees the
 /// originals' globals and calls the same `properties` functions (LUA-PROP).
@@ -178,6 +181,36 @@ fn main() -> std::process::ExitCode {
         messages: vec![(ProjectEvent::RoadPaved, "Road paved".into())],
         // The hooks' buttons keep the boat-and-ship switch's picture.
         button_pictures: Default::default(),
+        // Hook W30: a project's own building model, here the repository's
+        // test model for the well (type `Spring`) when the asset folder holds it
+        // (`S2_NEXT_ASSETS/facets.glb`; none: the well as the original's).
+        building_looks: std::env::var_os("S2_NEXT_ASSETS")
+            .filter(|dir| std::path::Path::new(dir).join("facets.glb").is_file())
+            .map(|_| {
+                let mut look = BuildingLook::new("Spring", "facets.glb");
+                look.site_of = Some("Lumberjack".into());
+                look.smoke = Some("Smoke".into());
+                look
+            })
+            .into_iter()
+            .collect(),
+        // Hook W30b: a project's own tree model, here the repository's test
+        // trees for the birches when the asset folder holds them
+        // (`S2_NEXT_ASSETS/tree_round.glb`; none: the birches as the
+        // original's).
+        tree_looks: std::env::var_os("S2_NEXT_ASSETS")
+            .filter(|dir| std::path::Path::new(dir).join("tree_round.glb").is_file())
+            .map(|_| {
+                ["BirchA", "BirchB", "BirchC"].map(|kind| {
+                    let mut look = TreeLook::new(kind, "tree_round.glb");
+                    look.far = Some("tree_round_far.glb".into());
+                    look.growth = TreeGrowth::RootWidth;
+                    look
+                })
+            })
+            .into_iter()
+            .flatten()
+            .collect(),
     };
     s2_viewer::run_with(true, extensions)
 }

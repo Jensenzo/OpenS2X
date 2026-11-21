@@ -87,7 +87,7 @@ pub fn place_camera(
         let (forward, _) = view.rig.axes();
         // A felled tree (`--until-felled`) above the centre: it may lie
         // toward the camera.
-        let back = if viewer.until_felled.is_some() {
+        let back = if viewer.until_felled.is_some() || viewer.until_falling.is_some() {
             20.0
         } else {
             4.0 + 3.0 * f32::from(view.rig.zoom)
@@ -274,9 +274,10 @@ pub(crate) fn watched(
     frame: &Frame,
 ) -> Option<[f32; 3]> {
     // `--until-felled`: the player's felled tree.
-    if viewer.until_felled.is_some() {
+    if viewer.until_felled.is_some() || viewer.until_falling.is_some() {
         let (_, d) = world.deposits().find(|(f, _)| {
-            world.fall_of(*f).is_some() && world.field_owner(*f) == Some(crate::game::PLAYER)
+            (world.fall_of(*f).is_some() || world.felling_began(*f).is_some())
+                && world.field_owner(*f) == Some(crate::game::PLAYER)
         })?;
         let [x, z] = frame.sample_xz(i64::from(d.position.0), i64::from(d.position.1));
         return Some([

@@ -7,24 +7,25 @@ map with the same set-up: every settler's place, every building and the
 game's random number generator, tick by tick (a tick is a tenth of a second
 of game time). The recordings belong to the investigation and are not in the
 public repository, so the numbers can be measured only in the working
-repository; this page keeps them. Measured on 0.12.0, on MP_2P_Storm_Coast:
+repository; this page keeps them. Measured on 0.12.2, on MP_2P_Storm_Coast:
 
 | Game | Equal up to tick | Game time |
 |---|---|---|
 | Two players, the computer player Weak: settlers and buildings | every compared tick to 40,000 | 67 minutes |
 | The same game: the random number generator | 52,419 | 87 minutes |
-| The same game recorded densely, each settler's animation compared too | 17,532 | 29 minutes |
-| You alone, no computer player: settlers and buildings | 27,672 | 46 minutes |
-| Two players, the computer player Strong: the generator; settlers and buildings | 50,658; 50,699 | 84 minutes |
-| The Strong game recorded densely, with the animations | 7,053 | 12 minutes |
+| The same game recorded densely, each settler's animation compared too | every compared tick to 20,000 | 33 minutes |
+| You alone, no computer player: settlers and buildings | every compared tick to 30,000 | 50 minutes |
+| Two players, the computer player Strong: the generator; settlers and buildings | 50,662; 50,699 | 84 minutes |
+| The Strong game recorded densely, with the animations | 18,416 | 31 minutes |
 
-Not a pair of this page, measured by hand on 0.12.0 (`s2-app trace` against the
+Not a pair of this page, measured by hand on 0.12.2 (`s2-app trace` against the
 recording E-trace-019, every tenth tick): four players at war on `MP_4P_Fight`,
-three Strong computer players: the generator equal up to tick 12,949, the
-settlers 12,689 and the buildings 13,449 (21 minutes; 0.11.5: 4,872, 8
-minutes). The dense, one-player and Strong dense rows' first differences are
-the recordings' own (a one-tick lag of the recorder's view, the raced end of
-the one-player recording; `TOOL-trace.md` T16), not differences of the game.
+three Strong computer players: the generator equal up to tick 13,452, the
+settlers 13,249 and the buildings 14,319 (22 minutes; 0.12.1: 12,949, 12,689
+and 13,449). The recorder of the dense recordings shows a settler's new
+animation a tick late now and then, and the one-player recording's last
+ticks have no view; since 0.12.2 the comparison counts those
+(`TOOL-trace.md` TRACE-4.4, T16) instead of stopping at them.
 
 "Equal up to" means the first difference comes in the next tick. A change
 that moves a first difference later adds a line to the record at the end of
@@ -179,9 +180,9 @@ first-differing-tick = none
 settlers-first-differing-tick = none
 buildings-first-differing-tick = none
 generator-first-differing-tick = 52420
-generator-matching-ticks = 52462
+generator-matching-ticks = 52463
 generator-compared-ticks = 149987
-one-player-first-differing-tick = 27673
+one-player-first-differing-tick = none
 one-player-generator-first-differing-tick = none
 one-player-generator-matching-ticks = 28119
 one-player-generator-compared-ticks = 28119
@@ -191,8 +192,8 @@ dense-buildings-first-differing-tick = none
 dense-generator-first-differing-tick = none
 dense-generator-matching-ticks = 6000
 dense-generator-compared-ticks = 6000
-dense-20000-first-differing-tick = 17533
-dense-20000-settlers-first-differing-tick = 17533
+dense-20000-first-differing-tick = none
+dense-20000-settlers-first-differing-tick = none
 dense-20000-buildings-first-differing-tick = none
 dense-20000-generator-first-differing-tick = none
 dense-20000-generator-matching-ticks = 15001
@@ -203,8 +204,8 @@ dense-40000-buildings-first-differing-tick = none
 dense-40000-generator-first-differing-tick = none
 dense-40000-generator-matching-ticks = 14657
 dense-40000-generator-compared-ticks = 14657
-hard-20000-first-differing-tick = 7054
-hard-20000-settlers-first-differing-tick = 7054
+hard-20000-first-differing-tick = 18417
+hard-20000-settlers-first-differing-tick = 18417
 hard-20000-buildings-first-differing-tick = none
 hard-20000-generator-first-differing-tick = none
 hard-20000-generator-matching-ticks = 14950
@@ -212,8 +213,8 @@ hard-20000-generator-compared-ticks = 14950
 hard-150000-first-differing-tick = 50700
 hard-150000-settlers-first-differing-tick = 50700
 hard-150000-buildings-first-differing-tick = 50700
-hard-150000-generator-first-differing-tick = 50659
-hard-150000-generator-matching-ticks = 50811
+hard-150000-generator-first-differing-tick = 50663
+hard-150000-generator-matching-ticks = 50728
 hard-150000-generator-compared-ticks = 149993
 ```
 
@@ -512,3 +513,5 @@ and the words of the time. R3 and R4 in it are the recordings E-trace-013
 | 2026-11-17 | the depot test counts warehouse sites | none | none | none | 51724 | 51 753 of 149 987 | AI-CON-6.3 (AI-CON T105, E-ai-072): a depot's site value is 0 with an own warehouse in any state within 10, a storehouse's or harbour's building site included (was: finished warehouses only). The four-player war R6 (not a pair of this page): generator 10698 -> 11964, buildings 10460 -> 12070; the Weak 150 000 generator's matching ticks 51 788 -> 51 753, after its first difference (51724 unchanged); every other pair unchanged |
 | 2026-11-17 | a served order still counts until its ware is in | none | none | none | 51724 | 51 753 of 149 987 | MIL-PROM-3.2 clarified (PROM T13, E-mil-023): the coin check's "no open order" is the building's own order list empty, whatever the good, and a served order stays on it until its ware is delivered (ECO-REQ-5.3f): open orders, wares on the roads filed with an order for it, and the warehouse helper carrying one out. R3: barracks 96422 ordered again at 49207 while its coin of 49174 was on its way; the second coin kept (120, 59)'s door waiting at 49217. The Hard 150 000 pair: settlers 49500 -> 50700, generator 49218 -> 50659 (49 313 -> 50 811 matching), buildings 50700; every other pair unchanged. |
 | 2026-11-17 | the street cursor steps on from where it is | none | none | none | 52420 | 52 462 of 149 987 | AI-CON-8.1f (AI-CON T106, E-ai-074): passing on to the next flag (no T, no building, the give-ups used up, a road built) raises the street construction's cursor by one from its current value (was: the handled flag's place plus one); after the T97 move it ends two places past the old place. R5: cursor 88 -> 90 at 51423; ours ran one place behind from then on, so the road "114,35 .. 117,34" was never built and the castle made no builder at 51721. The Weak 150 000 generator 51724 -> 52420 (51 753 -> 52 462 matching); every other pair unchanged. |
+| 2026-11-19 | the expedition run founds by the founding test | none | none | none | 52420 | 52 463 of 149 987 | AI-MISC-1.3 as corrected (AI-MISC T9, E-ai-076): the computer player's expedition run founds the harbour when the ship window's founding test holds (SHIP-7.1: the ship still, the nearest harbour spot of its last port position's continent free and closer than 5), no draw; it no longer reads the ship's target, which the arrival cleared. R3: ship 94738 founds on (147, 136) at 50 658 instead of sailing on. The Hard 150 000 pair: generator 50659 -> 50663 (50 811 -> 50 728 matching), settlers and buildings 50700 (the new harbour site levelling in ours, a frame in the original); the Weak generator's matching ticks 52 462 -> 52 463; every first difference of the other pairs unchanged. |
+| 2026-11-19 | fidelity counts the recorder's view lag | none | none | none | 52420 | 52 463 of 149 987 | TOOL-trace TRACE-4.4 (T16, E-trace-011, E-trace-012): s2-app fidelity (trace-diff --view-lag) counts a settler row that differs only in its animation, the recording's clip being ours of the tick before, as the recorder's view lag, not a difference; an unread view (the one-player recording's raced end, TRACE-2.7) is not compared, nor a generator row the recording missed (one-player 27 673). The one-player pair: 27673 -> none; dense-20000: 17533 -> none; Hard 20000: 7054 -> 18417 (worker 90664's walk back: the original shows Walk from the tick it is ordered, ours from its first movement, positions equal). No behaviour changed. |

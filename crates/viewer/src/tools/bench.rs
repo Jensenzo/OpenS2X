@@ -116,6 +116,28 @@ struct LongRun {
     stalls: Vec<String>,
     /// F55: when the palette slots were last counted by owner.
     slots_at: f64,
+    /// `ModelLibrary::loads` taken so far: a later entry during the timed
+    /// frames is a first use during play (`models3d::preload`).
+    loads_seen: usize,
+    /// The first uses during play: the frame each came in and what.
+    first_uses: Vec<(usize, String)>,
+}
+
+/// The frames before a slow frame whose first uses it names: the render
+/// world prepares a frame one frame behind the main world, and a new model's
+/// textures, meshes and materials can take a few frames to reach the
+/// graphics card.
+pub(crate) const FIRST_USE_FRAMES: usize = 8;
+
+/// The first uses (`(frame, what)`, in frame order) that came in `frame` or
+/// the [`FIRST_USE_FRAMES`] frames before it, for a slow frame's line: the
+/// object a first-use stall is of.
+pub(crate) fn first_uses_near(first_uses: &[(usize, String)], frame: usize) -> Vec<&str> {
+    first_uses
+        .iter()
+        .filter(|(f, _)| *f <= frame && frame - *f <= FIRST_USE_FRAMES)
+        .map(|(_, what)| what.as_str())
+        .collect()
 }
 
 /// The parts of the map's update, between consecutive marks.
@@ -242,6 +264,8 @@ impl Bench {
                 rates: Vec::new(),
                 stalls: Vec::new(),
                 slots_at: 0.0,
+                loads_seen: 0,
+                first_uses: Vec::new(),
             },
             pan: (pan || drag.is_some()).then(|| Pan::new(drag)),
             placements_at_start: 0,
@@ -297,6 +321,7 @@ pub(crate) fn bench_frame(
             let ms = (now - start).as_secs_f64() * 1000.0 - check_ms;
             bench.frame_ms.push(ms);
             let tick = viewer.world.as_ref().map_or(0, |w| w.tick());
+            log_first_uses(&mut bench, &library.loads, tick);
             log_frame(
                 &mut bench,
                 ms,
@@ -332,6 +357,8 @@ pub(crate) fn bench_frame(
         bench.long.started = Some(now);
         *sounds = default();
         bench.placements_at_start = placements.full_placements;
+        // What the warm-up's frames read is not play (the timed frames).
+        bench.long.loads_seen = library.loads.len().max(view.loads_before_play);
     }
     let time_up = bench.timing
         && bench
@@ -577,12 +604,42 @@ fn log_frame(
         }
     }
     drop(t);
+    // A first use in this frame or just before: the object of a first-use
+    // stall (`models3d::preload`).
+    for what in first_uses_near(&bench.long.first_uses, i) {
+        line += &format!(" [first use: {what}],");
+    }
     if ms > 100.0 {
         bench.long.stalls.push(line.clone());
     }
     if let Some(log) = bench.long.log.as_mut() {
         use std::io::Write;
         let _ = writeln!(log, "{line}");
+    }
+}
+
+/// The models and clips the library read since the last frame, while the
+/// frames are timed: a line each (`U`), kept for the slow frames' lines.
+fn log_first_uses(bench: &mut Bench, loads: &[String], tick: u64) {
+    let seen = bench.long.loads_seen.min(loads.len());
+    bench.long.loads_seen = loads.len();
+    if !bench.timing || seen == loads.len() {
+        return;
+    }
+    let frame = bench.frame_ms.len().saturating_sub(1);
+    let at = bench
+        .long
+        .started
+        .map_or(0.0, |s| (Instant::now() - s).as_secs_f64());
+    for what in &loads[seen..] {
+        if let Some(log) = bench.long.log.as_mut() {
+            use std::io::Write;
+            let _ = writeln!(
+                log,
+                "U {at:.2} s, frame {frame}, tick {tick}: first use of {what}"
+            );
+        }
+        bench.long.first_uses.push((frame, what.clone()));
     }
 }
 
@@ -712,6 +769,7 @@ fn long_report(bench: &Bench, check: Option<&RunCheck>) -> String {
         "frames-over-100ms = {}\n",
         bench.frame_ms.iter().filter(|&&m| m > 100.0).count()
     );
+    text += &format!("first-uses-in-play = {}\n", long.first_uses.len());
     for line in &long.stalls {
         text += &format!("stall {line}\n");
     }
@@ -823,4 +881,47 @@ fn report(bench: &Bench, ticks: u64, world: Option<&s2_sim::World>) -> String {
         text += &format!("part-{key}-ms = {mean:.2} (median {median:.2}, p95 {p95:.2})\n");
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The long play names a first-use stall by its object: a slow frame's
+    /// line lists the models and clips first read in it or in the
+    /// [`FIRST_USE_FRAMES`] frames before it (0.12.2's 107 ms frame came
+    /// with the first well's site; `models3d::preload`).
+    // spec: none (the long play's log: a slow frame's first uses)
+    #[test]
+    fn a_slow_frame_names_the_first_uses_just_before_it() {
+        let uses = vec![
+            (
+                10,
+                "model data/buildings/PB_R_Well01ConstructionSite.GR2".to_owned(),
+            ),
+            (15, "model data/buildings/PB_R_Well01.GR2".to_owned()),
+            (30, "clip data/animations/x.gr2".to_owned()),
+        ];
+        assert_eq!(
+            first_uses_near(&uses, 16),
+            [
+                "model data/buildings/PB_R_Well01ConstructionSite.GR2",
+                "model data/buildings/PB_R_Well01.GR2"
+            ]
+        );
+        assert_eq!(
+            first_uses_near(&uses, 18),
+            [
+                "model data/buildings/PB_R_Well01ConstructionSite.GR2",
+                "model data/buildings/PB_R_Well01.GR2"
+            ]
+        );
+        assert_eq!(
+            first_uses_near(&uses, 19),
+            ["model data/buildings/PB_R_Well01.GR2"]
+        );
+        assert!(first_uses_near(&uses, 9).is_empty());
+        assert!(first_uses_near(&uses, 29).is_empty());
+        assert_eq!(first_uses_near(&uses, 30), ["clip data/animations/x.gr2"]);
+    }
 }

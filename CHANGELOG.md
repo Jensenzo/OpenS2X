@@ -8,6 +8,117 @@ the working name s2-reborn. The public repository starts with its first
 public release; the sections before it describe releases made in the
 maintainer's working repository, which have no tag or download there.
 
+## OpenS2X 0.12.3 (2026-11-20)
+
+0.12.2 with one fix, and trees for projects. 0.12.2 was made but not
+published: its 30-minute test game had one frame of a tenth of a second, the
+moment its game first showed a well's building site. A project built on
+OpenS2X can now also draw trees with models of its own. The game plays
+exactly as in 0.12.2; what 0.12.2 brings is listed under it below.
+
+### Fixed
+
+- **A short hitch the first time something appears.** The picture could stop
+  for up to a tenth of a second when a game first showed a kind of building,
+  site, ware or figure, while its model was read and sent to the graphics
+  card. A game now reads every model its tribes can show while its loading
+  picture is up. For developers: the long play's log names every model read
+  after the start, and beside a slow frame the ones read just before it.
+
+### What is new
+
+- **A tree's own model** (for projects built on OpenS2X): a tree kind can be
+  drawn with a binary glTF model (`.glb`) in place of the original's. A wood of
+  them stands exactly where and how the original's would, each tree turned and
+  sized as the game turns and sizes its trees; they grow, sway in the wind with
+  their faces kept flat, fall when felled and sink into the ground, cast and
+  catch shadows and take the day's and the night's light. A lighter version of
+  each model is drawn while a tree is small on the screen, at a size the project
+  chooses. Young trees can grow slimmer than the original's, which spread their
+  full crown at a third of their height. What a tree's model must hold:
+  docs/extending.md, "A tree's own model". The viewer's `--tree-model` shows
+  them without a project.
+- **A building's own model at night** is now darkened as the original's houses
+  are; by day it looks as before.
+- **For developers:** the viewer's `--until-falling` catches a tree while it
+  falls (pictures), and `scripts/long-play.sh` can play another map with extra
+  viewer arguments (`LONG_PLAY_MAP`, `LONG_PLAY_ARGS`, `LONG_PLAY_OUT`). The
+  long play now holds the display on and wakes it first: with the display
+  turned off by the power plan every frame waited a quarter of a second.
+
+### For projects built on OpenS2X: breaking changes
+
+- `s2_viewer::Extensions` has a new field `tree_looks` (hook W30b); a struct
+  literal without `..Default::default()` needs it (`Vec::new()`: as before).
+  Without a look every tree is drawn as before: the golden pictures and state
+  hashes are unchanged.
+- A building drawn with a project's own model (`building_looks`) is darker at
+  night than in 0.12.2 (by 0.533 at full night); by day it is unchanged.
+
+## OpenS2X 0.12.2 (2026-11-19)
+
+Battles and the Strong computer player's expeditions follow the original more
+closely. The four-player war recorded in the original now plays tick for tick
+alike for its first 22 minutes of game time (21 in 0.12.1, with fewer
+differences after it); a Strong computer player's expedition ship founds its
+harbour where it has landed.
+
+### What is new
+
+- **A soldier killed in a fight lies where he fell** for about three seconds
+  of game time before he is gone, as every settler who dies (he vanished at
+  once before).
+- **Defenders come out when their attacker is there:** a soldier of the
+  attacked building waits inside until his attacker stands at the door or has
+  taken his place, then comes out; a soldier back from a fight is ready to
+  fight again a moment after he has stepped in (at the headquarters, when he
+  reaches its door), and so is one who has just walked in from a storehouse.
+- **Taking a building:** the attacker who reaches the door of a building with
+  no defenders left takes it a moment later, then walks in.
+- **The Strong computer player's expeditions** found a harbour when the ship
+  stands close enough to a free harbour place, as the ship window's "Construct
+  harbor" button allows; before, the ship sailed on.
+- **For developers:** `s2-app fidelity` counts the original recorder's
+  one-tick lag in showing a settler's new animation, so the dense and the
+  one-player recordings now equal ours to their ends; `s2-app trace-diff
+  --view-lag` does the same for any pair.
+
+### For projects built on OpenS2X: breaking changes
+
+- `s2_sim::Settings` has a new field `skeleton_doodad` (the doodad a dying
+  settler leaves, `cfg_setSettlerSkeletonDoodad`); a struct literal of it needs
+  the field (`None`: no skeleton). Saves of 0.12.1 load in 0.12.2, not the
+  other way round.
+- `s2_ai::ships::sail_decision(vessel, can_found, pick)` takes the founding
+  test's result (`World::can_found_harbour`) instead of the ship's position and
+  a spot test.
+
+## OpenS2X 0.12.1 (2026-11-19)
+
+A project built on OpenS2X can now draw a building with a model of its own,
+made in Blender and saved as glTF. The game plays exactly as in 0.12.0.
+
+### What is new
+
+- **A building's own model** (for projects built on OpenS2X): a building type
+  can be drawn with a binary glTF model (`.glb`) in place of the original's
+  model. It stands where the original's houses stand, in the game's sunlight
+  and shadows, its faces flat as made, coloured from one palette picture and
+  the shading painted into its corners; one part takes its owner's colour and
+  its ground patch lies on the terrain and fades out at the edges. Its door
+  opens and closes for the settlers who walk in and out, its working
+  animation runs while it works, smoke rises from its chimney point, and it is
+  built, burnt and torn down as any house. What the model must hold:
+  docs/extending.md, "A building's own model". The viewer's
+  `--building-model` shows one without a project.
+
+### For projects built on OpenS2X: breaking changes
+
+- `s2_viewer::Extensions` has a new field `building_looks` (hook W30); a struct
+  literal without `..Default::default()` needs it (`Vec::new()`: as before).
+  Without a look every building is drawn as before: the golden pictures and
+  state hashes are unchanged.
+
 ## OpenS2X 0.12.0 (2026-11-17)
 
 The computer players and the battles follow the original more closely. A

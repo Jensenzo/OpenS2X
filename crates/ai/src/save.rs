@@ -863,11 +863,35 @@ mod tests {
                 .then(|| line.to_string());
         };
         let fields = fields.strip_suffix(" }").unwrap_or(fields);
-        let kept: Vec<&str> = fields
-            .split(", ")
+        let kept: Vec<&str> = top_level_fields(fields)
+            .into_iter()
             .filter(|f| f.split_once(": ").is_none_or(|(n, _)| keep(n)))
             .collect();
+        // A variant all of whose fields came later was a unit variant.
+        if kept.is_empty() {
+            return Some(head.to_string());
+        }
         Some(format!("{head} {{ {} }}", kept.join(", ")))
+    }
+
+    /// A variant's fields, split at the commas outside a type's brackets
+    /// (`stand: Option<(u32, u32)>` is one field).
+    fn top_level_fields(fields: &str) -> Vec<&str> {
+        let (mut out, mut depth, mut start) = (Vec::new(), 0i32, 0);
+        let bytes = fields.as_bytes();
+        for (i, &b) in bytes.iter().enumerate() {
+            match b {
+                b'<' | b'(' | b'[' => depth += 1,
+                b'>' | b')' | b']' => depth -= 1,
+                b',' if depth == 0 && bytes.get(i + 1) == Some(&b' ') => {
+                    out.push(&fields[start..i]);
+                    start = i + 2;
+                }
+                _ => {}
+            }
+        }
+        out.push(&fields[start..]);
+        out
     }
 
     /// What a later format may do to the bytes of the one before: a new
@@ -930,6 +954,9 @@ mod tests {
         // end, a new type: fine.
         let fine = format!("{head}T\n    a: u32\n    b: u8\n    c @66: u8\nE\n    0 A\n    1 B {{ x: u8, y @66: u8 }}\n    2 C\nN\n    z: u8\n");
         assert_eq!(check(&fine), Vec::<String>::new());
+        // A unit variant given a field (its type with a comma inside).
+        let unit = format!("{head}T\n    a: u32\n    b: u8\nE\n    0 A {{ p @66: Option<(u32, u32)> }}\n    1 B {{ x: u8 }}\n");
+        assert_eq!(check(&unit), Vec::<String>::new());
         // A field made from older bytes by hand answers for itself.
         let by_hand =
             format!("{head}T\n    a @66=>: u64\n    b: u8\nE\n    0 A\n    1 B {{ x: u8 }}\n");

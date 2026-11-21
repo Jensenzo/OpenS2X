@@ -218,6 +218,15 @@ health point off the other.
   ends with the step into the building in one update; his return ends in his **next** update, and
   only from then is he idle in the building (a candidate of 5.1, present). A reinforcement walking in
   from a warehouse (5.1) is not this walk. Test T33.
+  **Not at a headquarters (2026-11-19 night, E-mil-026: code reading and the whole war recording;
+  high):** the return's last part is the walk in, started in the update the walk home ends (its
+  result in that update is not counted). At a building that is no warehouse it has nothing more to
+  do and reports done in the next update: the one further update above. At a castle (a warehouse;
+  its soldiers stand on its door field, `MIL-soldiers.md` MIL-SOL-6.5) it orders, in that same
+  update, the walk on to the door field at progress 0 (no standing tick), and it reports done in the
+  update in which that walk ends: he is idle then, with **no** further update. R6: all 14 such returns to player 2's castle
+  (e.g. soldier 14311: step in from counter 30769, on to the door field from 30797, idle at 30820);
+  all 61 returns to other military buildings have the one further update.
 
 ### MIL-ATK-5 Defenders coming out of the target
 
@@ -230,6 +239,12 @@ health point off the other.
   and is never chosen; he becomes a candidate in the update in which his walk ends at the building.
   Nothing else about being inside is tested (the choice has no presence test of its own), and
   nothing lets a soldier be sent out before his walk in has ended. Confidence: high (code).
+  **Corrected 2026-11-19 night (E-mil-029: the whole war recording; high for the ticks):** "his
+  walk ends" is the end of his walk job, which comes one update after the movement's: the step onto
+  the building's field ends in one update (he stands there, still walking in), and he is idle, a
+  candidate, from his **next** update, as after a walk home (4.4, T33). R6: all 181 reinforcements
+  stand one update on their building's field first. So an attacker updated before him in each tick
+  pairs with him two ticks after his step ended. Test T35.
 - **MIL-ATK-5.2 Which defender.** With defense type 1 ("prefer strong") the
   candidate with the **highest rank**, on equal rank the higher health, on
   equal both the first in the soldier list; with the other setting the
@@ -246,6 +261,25 @@ health point off the other.
   when his job sees the movement stopped. So when he is the second of the pair to arrive, the duel's
   first round (6.3, its two draws) runs in the tick after his walk ended. The attacker's own arrival,
   at the end of his offset step (6.1a), counts in the update in which the step ends. Test T28.
+  **When he leaves: held until his attacker is there (2026-11-19 night, E-mil-026: code reading and
+  the war recording; high).** A soldier of the target paired with an
+  attacker by 5.1 (the target's own soldier, not an interceptor) has his opponent from the pairing
+  on, but stays idle in the building. In each of his updates he turns to **wait-for-leave only
+  when** his attacker
+  1. stands on the field of the target's flag (the attacker paired on reaching the door, 4.2), or
+  2. **has arrived**: the attacker's arrival of 6.1a, at the end of his offset step (it stays set
+     while the pair holds).
+
+  Otherwise he stays idle inside the building (no candidate of 5.1 any more, as he has an opponent)
+  and asks again in his next update. In the update
+  after his wait-for-leave he leaves under the release cooldown (4.1; through his own flag, 4.1a).
+  So a defender paired with an attacker already **waiting** (4.4: the pairing, the draw and the
+  offset step in the attacker's next update) leaves only after that step: wait-for-leave in his
+  first update after the step ended, the leave in the next. An attacker paired at the door is still
+  on the flag field in the defender's next update, so that defender turns at once (in the same tick
+  when he is updated after the attacker). If the pair breaks while he is held, he simply stays idle.
+  A soldier whose home link is gone, an interceptor (MIL-ATK-3) and a soldier sent to attack turn to
+  wait-for-leave at once, as before. Test T34.
 - **MIL-ATK-5.4 Headquarters.** The headquarters' defenders are its soldiers
   outside the stock (MIL-SOL-6.1); when it has attackers and no soldier is
   present it brings out one per rank from the stock (MIL-SOL-6.3).
@@ -358,7 +392,9 @@ health point off the other.
   (tick t + 18 for a hit applied in tick t + 17): its links are released, the
   pair is dissolved. **He dies as every settler does** (2026-11-17 day, E-mil-025, the war recording; high):
   standing where he is, he makes the settler dying of `TRN-carriers-transport.md` TRN-CARRY-7.1
-  (28 ticks), one more update, and is then removed; meanwhile he is on the map, in no pair. Test T31. Survivors (Q-061):
+  (28 ticks), one more update, and is then removed; meanwhile he is on the map, in no pair. Test T31.
+  14 ticks into his dying the skeleton doodad is put where he lies and takes an object number
+  (TRN-CARRY-7.1, corrected 2026-11-19 night, E-mil-027). Test T31a. Survivors (Q-061):
   - an **attacker** is back in its waiting state at its waiting field and
     follows MIL-ATK-4.4 in its next update (home if the target is gone,
     door if takeable, next opponent if one is available, else it waits);
@@ -369,9 +405,12 @@ health point off the other.
     (MIL-ATK-5.3), else it is idle inside (present, heals).
   **When and how the defending side moves on (2026-11-17 day, E-mil-025: code reading, the war
   recording and an experiment build; high):** a defender or interceptor whose opponent dies (in the
-  dead one's update, tick t) notices it in his update of t + 1 (his fight job sees the pair gone and
-  ends) and acts in his update of t + 2: the interceptor turns to defense wait, the defender of the
-  target starts home. The defender's way home is the walk home of 4.4: a free walk to **his
+  dead one's update, tick t) notices it in his **first update after the dead one's** (his fight job
+  sees the pair gone and ends) and acts in his update after that: the interceptor turns to defense
+  wait, the defender of the target starts home. So he acts in t + 2 when he comes **before** the dead
+  one in the settlers' order (a lower number in the soldiers' list, ECO-REQ-0.2), in t + 1 when he
+  comes **after** him (corrected 2026-11-19 night, E-mil-026: the whole war recording, 43 survivors
+  before the dead one all at t + 2, 26 after him all at t + 1). The defender's way home is the walk home of 4.4: a free walk to **his
   building's flag**, then the step in, as every settler (not a walk straight onto the building's
   field). Test T32.
   Health is not restored after a duel; only present soldiers heal
@@ -455,8 +494,12 @@ health point off the other.
 | T29 | 6.1a (the field after the step): E-trace-019, attacker 16579 steps from the point of (32, 21) (sample (130 000, 84 000) in the recording's units of 1/4000 field) to (129 000, 85 000), counters 12643 .. 12654; attacker 18180 steps from the point of (32, 22) (128 000, 88 000) to (129 000, 88 000), counters 12486 .. 12500 | each one's field | 16579: (32, 21) during the step, (31, 21) from the update the step ends (trace tick 12655); 18180: (32, 22) throughout (the end sample truncates to his waiting field) |
 | T30 | 3.4 (the interceptor's walk after a pairing): E-trace-019 (R6, the war), interceptor 16370 waiting on (32, 22) after his duel; attacker 17868 (in each tick updated after 16370, as in the experiment build's settler order) reaches the target's door (32, 20) in counter 12704 and pairs with him | 16370's walk | starts at progress 0 in counter 12705 (recorded: trace tick 12706; 17868 walks on to his waiting field from trace tick 12705). Starting it inside the pairing (counter 12704) puts the war's generator apart from trace tick 12705; with the rule (experiment build) from 12950 |
 | T31 | 6.6 (the dead soldier): E-trace-019, attacker 18180 loses his last health in the duel with 16370 on (32, 22) | 18180's rows | standing on (129 000, 88 000), dying from trace tick 12689 to 12716, one more row at 12717, gone from 12718 |
-| T32 | 6.6 (the survivors' next step): E-trace-019 (R6, the war). (a) Attacker 16579 dies in counter 12924 in his duel with defender 16378 on (32, 21); (b) attacker 18180 dies in counter 12688 in his duel with interceptor 16370 on (32, 22) | the survivors' next step | (a) 16378 stands through counters 12924 and 12925 and starts home in 12926 (recorded: walk at progress 0 at trace tick 12927), towards his building's flag (32, 20) (recorded: (129 909, 83 819) at 12928, north-west), not west onto (31, 21); (b) 16370 turns to defense wait in counter 12690 (recorded: from trace tick 12691). Starting home one update after the death, straight onto the building, puts the war's generator apart from trace tick 12950; with the rule (experiment build) from 12974 |
+| T31a | 6.6, TRN-CARRY-7.1 (the skeleton doodad): E-trace-019 (R6, the war), soldiers killed in duels: 18180 in counter 12688 at (129 000, 88 000), 16667 in 12845 at (132 000, 80 000), 16370 in 12893 at (126 000, 76 000), 16579 in 12924 at (129 000, 85 000) | the objects made | a `doodad_deadsettler` doodad on the sample of each: 18513 on (129, 88) made in counter 12702, 18546 on (132, 80) in 12859, 18559 on (126, 76) in 12907, 18564 on (129, 85) in 12938 (14 ticks after each death; the counter table's next number rises there). Over the whole recording: 170 of 208 deaths made one, each at death + 14 on the settler's own sample; the other 32 died on a sample whose doodad was still there (none made), the last 6 past the recording's object reads; dying carriers, workers and builders made theirs too. Without the doodad, request 18514 of counter 12704 (the soldier request for 18180's home) takes 18513 and every later object number is one lower (two after the second death, ...): the object numbers apart from counter 12704, and with them the carriers' work grid (`TRN-carriers-transport.md` TRN-CARRY-2.1); with the doodads: not yet measured (no experiment build on 2026-11-19 night) |
+| T32 | 6.6 (the survivors' next step): E-trace-019 (R6, the war). (a) Attacker 16579 dies in counter 12924 in his duel with defender 16378 on (32, 21); (b) attacker 18180 dies in counter 12688 in his duel with interceptor 16370 on (32, 22) | the survivors' next step | (a) 16378 stands through counters 12924 and 12925 and starts home in 12926 (recorded: walk at progress 0 at trace tick 12927), towards his building's flag (32, 20) (recorded: (129 909, 83 819) at 12928, north-west), not west onto (31, 21); (b) 16370 turns to defense wait in counter 12690 (recorded: from trace tick 12691). Starting home one update after the death, straight onto the building, puts the war's generator apart from trace tick 12950; with the rule (experiment build) from 12974. (c) The survivor after the dead one in the order: attacker 16592 dies in counter 14959 in his duel with defender 18867 (a higher number): 18867 starts home in counter 14960 (state 16 from there), one update after the death |
 | T33 | 4.4, 5.1 (home after the walk home): E-trace-019 (R6, the war), defender 16378 walking home to (31, 21) after his duel; attacker 16592 waits on (33, 20) for an opponent of the target (31, 21) | 16378's state and 16592's pairing | 16378's step into the building ends in counter 12972 (recorded: standing in it at trace tick 12973, still returning); he is idle from counter 12973 (recorded: from trace tick 12974); 16592 is paired with him in counter 12973 and makes his draw and step in 12974 (recorded: walk at progress 0 at trace tick 12975). Making him idle in the update his walk ends pairs him a tick early and puts the war's generator apart from trace tick 12974; with the rule (experiment build) from 13023, every Storm Coast pair unchanged |
+| T33a | 4.4 (home at a castle): E-trace-019 (R6, the war), player 2's castle on (52, 24), flag (52, 23), door field (51, 25); soldier 14311 walking home after a duel | his rows (counters) | on the step (52, 23) -> (52, 24) from counter 30769 at progress 0; the walk (52, 24) -> (51, 25) at progress 0 in counter 30797 (no standing tick between); on (51, 25) and idle (state 12) in counter 30820, the update that walk ends |
+| T34 | 5.3 (the held defender): E-trace-019 (R6, the war), the guard on (31, 21), flag (32, 20). (a) Defender 16378, idle again from counter 12973 (T33), is paired in counter 12973 by attacker 16592 waiting on (33, 20); 16592's offset step starts in 12974 (walk at progress 0 at trace tick 12975) and ends in counter 12986 (standing at (131 000, 79 000) from trace tick 12987); 16592 is updated after 16378 in each tick. (b) The same defender paired at counter 12619 by attacker 16579 on the flag field (32, 20). (c) Defender 16667 paired at counter 12659 by attacker 16592 on the flag field, 16592 updated first; the building's release cooldown set by 16378's leave in counter 12621 | each defender's turn to wait-for-leave and his leave | (a) idle through counter 12986 (recorded state 12 to trace tick 12987), wait-for-leave in 12987 (trace tick 12988), the step out to (32, 20) at progress 0 in 12988 (trace tick 12989). (b) wait-for-leave in 12620, out in 12621 (trace ticks 12621, 12622). (c) wait-for-leave in 12659, held by the cooldown in 12660, out in 12661 (trace ticks 12660 .. 12662). Leaving at the pairing in (a) sends him out at counter 12975: his duel's first draws come at trace tick 13023 instead of the original's later round, the war's generator apart from 13023; with the rule: not yet measured (no experiment build on 2026-11-19 night) |
+| T35 | 5.1 (a reinforcement becomes a candidate): E-trace-019 (R6, the war), soldier 18545 of player 3 sent from a warehouse to the guard on (31, 21) (state 4, walking in), attacker 16600 waiting on (32, 19) (a lower number: updated before 18545 in each tick) | 18545's state and 16600's pairing (counters) | the step (32, 20) -> (31, 21) from counter 13098 ends in 13121 (standing on (31, 21), still walking in); idle from 13122; 16600 paired with him in 13123 (state 18), his offset step from 13124 to 13136; 18545 turns to wait-for-leave in 13136 (T34, updated after 16600) and steps out in 13137. Idle in the update his step ends, he would be paired in 13122; with the rule: not yet measured (no experiment build on 2026-11-19 night) |
 
 ## Evidence
 
@@ -487,6 +530,9 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-022, E-trace-019 | code reading, recording, experiment build | (session 2026-11-17 day): the two searches' neighbour order; R6's interceptor 16370 and attacker 18180 on (32, 22) | 3.3, 4.3 (T25) |
 | E-mil-024, E-trace-019 | code reading, recording, experiment build | (session 2026-11-17 day): the soldier's states on reaching a meeting field (waiting, then the waiting check, then the wait job); R6's attacker 18180 at (32, 22) | 6.1a which attacker steps on arrival (T26) |
 | E-mil-025, E-trace-019 | code reading, recording, experiment build | (session 2026-11-17 day): the fight walk's arrival test (movement seen stopped in the next update); R6's duel of 16579 and 16378; the soldiers' fields after the offset steps | 5.3 the defender's arrival (T28), 6.1a the field after the step (T29) |
+| E-mil-027, E-trace-019 | code reading, recording | (session 2026-11-19 night): the settlers' shared pre-update in the dying state (the doodad at 14 of 28 ticks, on the lattice point or the field's point, unless one stands there); R6's objects and counter tables (doodad0 of type dacb0a13 at each duel's death) | 6.6 / TRN-CARRY-7.1 the skeleton doodad (T31a) |
+| E-mil-029, E-trace-019 | recording | (session 2026-11-19 night): R6's 181 reinforcement arrivals, each standing one update on its building's field before turning idle | 5.1 a reinforcement a candidate one update after his step (T35) |
+| E-mil-026, E-trace-019 | code reading, recording | (session 2026-11-19 night): the idle soldier's tests before wait-for-leave (his opponent on his building's flag field, or the opponent's arrival mark in their pair record); R6's defenders 16378 and 16667 of the guard on (31, 21) | 5.3 the held defender (T34) |
 | data | script | `military.lua`, `ai.lua` | fighting time, AI profile values |
 
 ## Open questions

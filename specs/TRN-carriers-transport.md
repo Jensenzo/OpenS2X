@@ -665,10 +665,20 @@ ticks each. Roads and flags as in `TRN-roads-flags.md`.
 
 - **TRN-CARRY-7.1** A carrier whose road no longer exists goes home: it walks to
   a warehouse of its player. If it cannot reach one it dies (a timed action of
-  the settler dying time, 28 ticks, then the skeleton doodad of
+  the settler dying time, 28 ticks, with the skeleton doodad of
   `cfg_setSettlerSkeletonDoodad`). The same going-home rule applies to every
   released settler (builder, leveller, worker) and is specified in
   `TRN-free-walk.md` TRN-FREE-6.4.
+  **The skeleton doodad (corrected 2026-11-19 night, E-mil-027: code reading and the war recording's
+  object tables; high).** Every dying settler (any kind: a settler who found no warehouse, a soldier
+  killed in a duel, `MIL-attack-combat.md` MIL-ATK-6.6) gets the doodad **during** his dying, not
+  after it: in his update in which 14 ticks of the 28 have passed (dying from tick t, in tick
+  t + 14), the doodad the config names (`cfg_setSettlerSkeletonDoodad`; `doodad_deadsettler` of
+  the shipped `doodads.lua`, not blocking) is put on his sample: the lattice point he stands on when
+  he is on the fine lattice, else his field's point; nothing when the config names none or a doodad
+  already stands on that point. Made at that moment, it takes the next object number
+  (`SIM-game-start.md` SIM-START-4.2), in his place in the order of the settlers' part. Test
+  `MIL-attack-combat.md` T31a.
 - **TRN-CARRY-7.1a When and how the released carrier leaves (E-trace-006, 2026-10-24).**
   Removing the road only takes the road away from the carrier; the carrier notices it
   in **its own next update**, and in that update:

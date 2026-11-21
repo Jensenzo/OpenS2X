@@ -252,6 +252,11 @@ impl World {
         settler.timer = 0;
         if settler.walker.at != target.at {
             settler.walker.walk([target.at]);
+            // MIL-CON-2.3 (T18, E-mil-028): the walk to the flag takes this
+            // update (he stands on it); the step in starts at progress 0 in
+            // his next update and moves from the one after (he stands while
+            // the timer runs, MIL-SOL-4.7a's hold).
+            settler.timer = 1;
         }
         // MIL-ATK-2.3 (Q-1070): he leaves the list of the building that sent
         // him for this one's.
@@ -317,7 +322,7 @@ impl World {
                 // ECO-REQ-0.2a (2): by the profession.
                 list: self.door_list_of(profession),
                 walker: Walker::new(at),
-                job: SettlerJob::Dying,
+                job: SettlerJob::Dying { stand: None },
                 timer: 0,
                 carrying: None,
             };

@@ -33,8 +33,8 @@ text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Ar
 <text class="value" x="650" y="129">6,000 of 6,000</text>
 <text class="measure" x="12" y="159">with animation, to tick 20,000</text>
 <rect class="track" x="310" y="148" width="330" height="14" rx="3"/>
-<rect class="bar" x="310" y="148" width="289.3" height="14" rx="3"/>
-<text class="value" x="650" y="159">17,532 of 20,000</text>
+<rect class="bar all" x="310" y="148" width="330.0" height="14" rx="3"/>
+<text class="value" x="650" y="159">20,000 of 20,000</text>
 <text class="measure" x="12" y="189">the random generator</text>
 <rect class="track" x="310" y="178" width="330" height="14" rx="3"/>
 <rect class="bar" x="310" y="178" width="115.3" height="14" rx="3"/>
@@ -42,8 +42,8 @@ text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Ar
 <text class="game" x="0" y="222">One player, no computer player</text>
 <text class="measure" x="12" y="253">every settler and building</text>
 <rect class="track" x="310" y="242" width="330" height="14" rx="3"/>
-<rect class="bar" x="310" y="242" width="304.4" height="14" rx="3"/>
-<text class="value" x="650" y="253">27,672 of 30,000</text>
+<rect class="bar all" x="310" y="242" width="330.0" height="14" rx="3"/>
+<text class="value" x="650" y="253">30,000 of 30,000</text>
 <text class="measure" x="12" y="283">the random generator</text>
 <rect class="track" x="310" y="272" width="330" height="14" rx="3"/>
 <rect class="bar all" x="310" y="272" width="330.0" height="14" rx="3"/>
@@ -51,16 +51,16 @@ text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Ar
 <text class="game" x="0" y="316">Two players, Strong computer player</text>
 <text class="measure" x="12" y="347">every settler, with animation</text>
 <rect class="track" x="310" y="336" width="330" height="14" rx="3"/>
-<rect class="bar" x="310" y="336" width="116.4" height="14" rx="3"/>
-<text class="value" x="650" y="347">7,053 of 20,000</text>
+<rect class="bar" x="310" y="336" width="303.9" height="14" rx="3"/>
+<text class="value" x="650" y="347">18,416 of 20,000</text>
 <text class="measure" x="12" y="377">buildings and the random generator</text>
 <rect class="track" x="310" y="366" width="330" height="14" rx="3"/>
 <rect class="bar all" x="310" y="366" width="330.0" height="14" rx="3"/>
 <text class="value" x="650" y="377">20,000 of 20,000</text>
 <text class="measure" x="12" y="407">long run: settlers, buildings, generator</text>
 <rect class="track" x="310" y="396" width="330" height="14" rx="3"/>
-<rect class="bar" x="310" y="396" width="111.4" height="14" rx="3"/>
-<text class="value" x="650" y="407">50,658 of 150,000</text>
+<rect class="bar" x="310" y="396" width="111.5" height="14" rx="3"/>
+<text class="value" x="650" y="407">50,662 of 150,000</text>
 <text x="0" y="444">Green: no difference in the range. The first row leaves out the settlers' animation (a recorder's lag).</text>
 <text x="0" y="462">A tick is a tenth of a second. From docs/fidelity.md's record.</text>
 </g>

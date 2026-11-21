@@ -31,6 +31,9 @@ pub struct Settings {
     /// `cfg_setCatapultFlightTimeFactor`).
     pub catapult_turn_ticks: u32,
     pub catapult_flight_ticks: u32,
+    /// TRN-CARRY-7.1 (T31a): the doodad a dying settler leaves
+    /// (`cfg_setSettlerSkeletonDoodad`), if any.
+    pub skeleton_doodad: Option<u32>,
 }
 
 impl Settings {
@@ -49,6 +52,7 @@ impl Settings {
             fishing_distance: 1,
             catapult_turn_ticks: 11,
             catapult_flight_ticks: 11,
+            skeleton_doodad: None,
         }
     }
 }

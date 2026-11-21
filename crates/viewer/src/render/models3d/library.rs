@@ -55,6 +55,10 @@ pub struct ModelLibrary {
     pub palettes: super::Palettes,
     /// The palette slot of each skinned part's rest pose.
     rest_slots: HashMap<(String, usize), u32>,
+    /// Every model and clip read, in order (`model <file>`, `clip <file>`):
+    /// what [`super::preload::preload_game`] read and, after it, each first
+    /// use during play, which the long play names (`--bench-log`).
+    pub loads: Vec<String>,
 }
 
 pub fn file_key(file: &str) -> String {
@@ -104,6 +108,7 @@ impl ModelLibrary {
             atlas: None,
             params: None,
             light: None,
+            loads: Vec::new(),
         }
     }
 
@@ -201,6 +206,10 @@ impl ModelLibrary {
         meshes: &mut Assets<Mesh>,
         images: &mut Assets<Image>,
     ) -> Option<LoadedModel> {
+        // Hook W30: a project's model has no levels.
+        if project::is_project_model(file) {
+            return None;
+        }
         let mut last = None;
         for n in 0.. {
             let Some(model) =
@@ -254,6 +263,7 @@ impl ModelLibrary {
         }
         let loaded = self.load(file, skeleton_file, units_per_metre, meshes, images);
         self.models.insert(key, loaded.clone());
+        self.loads.push(format!("model {file}"));
         loaded
     }
 
@@ -288,6 +298,13 @@ impl ModelLibrary {
         if let Some(found) = self.clips.get(&key) {
             return found.clone();
         }
+        self.loads.push(format!("clip {file}"));
+        // Hook W30: a clip of a project's model, on its own nodes.
+        if project::split_clip(file).is_some() {
+            let found = self.project_clip(file).map(Arc::new);
+            self.clips.insert(key, found.clone());
+            return found;
+        }
         let found = self.skeleton(skeleton_file).and_then(|skeleton| {
             let g = self.read_gr2(file)?;
             anim::Clip::bind(&g, &skeleton).map(Arc::new)
@@ -307,6 +324,10 @@ impl ModelLibrary {
         meshes: &mut Assets<Mesh>,
         images: &mut Assets<Image>,
     ) -> Option<LoadedModel> {
+        // Hook W30: a project's own model.
+        if project::is_project_model(file) {
+            return self.load_project_model(file, meshes, images);
+        }
         self.model_dir = self
             .root
             .as_ref()
@@ -438,6 +459,7 @@ impl ModelLibrary {
                 decal,
                 piece,
                 group: part.group,
+                facet: None,
             });
         }
         let basis_matrix = basis_mat4(&basis);
@@ -576,7 +598,9 @@ impl ModelLibrary {
         let light = self.light.clone()?;
         let palettes = self.palettes.handle.clone()?;
         let decal = part.ground.then(|| self.decal_look(look, images));
-        let look = decal.as_ref().unwrap_or(look);
+        // Hook W30: a project model's part in its own family.
+        let facet = part.facet.as_ref().map(|f| project::facet_look(f, look));
+        let look = facet.as_ref().or(decal.as_ref()).unwrap_or(look);
         let base = match &look.base {
             Some(b) => b.clone(),
             None => self.base(part.texture.as_ref(), images),
@@ -592,7 +616,12 @@ impl ModelLibrary {
         Some(materials.add(ObjectMaterial {
             params: ObjectParams {
                 tint: Vec4::from_array(look.tint),
-                mode: Vec4::new(look.family as u32 as f32, offset as f32, 0.0, 0.0),
+                mode: Vec4::new(
+                    look.family as u32 as f32,
+                    offset as f32,
+                    project::team_weight(part),
+                    0.0,
+                ),
                 extra: Vec4::from_array(look.part_extra(part.group)),
                 player: Vec4::from_array(look.player),
                 ..params
@@ -692,6 +721,7 @@ impl ModelLibrary {
             decal: Vec::new(),
             piece: 0,
             group: 0,
+            facet: None,
         };
         let mut look = Look::family(Family::Road, [0.0; 3]);
         look.second = self.image(normal, images);
@@ -717,6 +747,7 @@ impl ModelLibrary {
             decal: Vec::new(),
             piece: 0,
             group: 0,
+            facet: None,
         };
         let mut look = Look::family(Family::Sky, [0.0; 3]);
         look.base = Some(first);

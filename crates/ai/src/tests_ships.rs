@@ -135,31 +135,39 @@ fn waiting_vessel() -> Vessel {
     v
 }
 
-// AI-MISC T4: the expedition ship stands still, a valid landing spot is within
-// 5 fields: the build-harbour command.
-// spec: AI-MISC-1.3 (AI-MISC T4)
+// AI-MISC T4, T9 (AI-MISC-1.3 as corrected, E-ai-076): the expedition ship
+// stands still and the founding test of the ship window holds (SHIP-7.1):
+// the build-harbour command, with no draw, whatever its target (the arrival
+// cleared it). Without it the direction is drawn.
+// spec: AI-MISC-1.3 (AI-MISC T4, T9)
 #[test]
-fn t4_the_ship_builds_a_harbour_near_a_valid_spot() {
+fn t4_the_ship_builds_a_harbour_when_the_founding_test_holds() {
     let mut v = waiting_vessel();
-    v.target = Some(Landing {
-        spot: (36, 22),
-        field: (35, 22),
-    });
+    let mut draws = 0;
     assert_eq!(
-        sail_decision(&v, (33, 22), |_| true, |_| 0),
+        sail_decision(&v, true, |_| {
+            draws += 1;
+            0
+        }),
         Some(Sail::Build)
     );
-    // The spot is not valid: it sails on instead (to an option, if any).
-    assert_eq!(sail_decision(&v, (33, 22), |_| false, |_| 0), None);
-    // Too far (distance 5 is not within): sails on.
+    assert_eq!(draws, 0, "no draw when it founds");
+    // No target at all (cleared by the arrival): it still founds.
+    assert!(v.target.is_none());
+    // The test fails: it sails on (to an option, if any), one draw.
+    assert_eq!(sail_decision(&v, false, |_| 0), None);
     v.options[2] = Some(Landing {
         spot: (50, 22),
         field: (49, 22),
     });
     assert_eq!(
-        sail_decision(&v, (30, 22), |_| true, |_| 0),
+        sail_decision(&v, false, |_| {
+            draws += 1;
+            0
+        }),
         Some(Sail::Go(2))
     );
+    assert_eq!(draws, 1);
 }
 
 // AI-MISC T5: no spot, landing options in 2 of 6 directions: one of the two
@@ -175,34 +183,23 @@ fn t5_the_direction_is_chosen_at_random_among_the_options() {
         });
     }
     assert_eq!(
-        sail_decision(
-            &v,
-            (33, 22),
-            |_| true,
-            |n| {
-                assert_eq!(n, 2);
-                0
-            }
-        ),
+        sail_decision(&v, false, |n| {
+            assert_eq!(n, 2);
+            0
+        }),
         Some(Sail::Go(1))
     );
-    assert_eq!(
-        sail_decision(&v, (33, 22), |_| true, |_| 1),
-        Some(Sail::Go(4))
-    );
+    assert_eq!(sail_decision(&v, false, |_| 1), Some(Sail::Go(4)));
     // A ship that is still sailing or has no options is left alone.
     let mut moving = waiting_vessel();
     moving.state = s2_sim::ShipState::Sailing;
-    assert_eq!(sail_decision(&moving, (33, 22), |_| true, |_| 0), None);
-    assert_eq!(
-        sail_decision(&waiting_vessel(), (33, 22), |_| true, |_| 0),
-        None
-    );
+    assert_eq!(sail_decision(&moving, true, |_| 0), None);
+    assert_eq!(sail_decision(&waiting_vessel(), false, |_| 0), None);
     // Through the simulation's generator both turn up.
     let mut rng = s2_sim::Rng::new(5);
     let mut seen = [false; 6];
     for _ in 0..40 {
-        if let Some(Sail::Go(d)) = sail_decision(&v, (33, 22), |_| true, |n| rng.draw() % n) {
+        if let Some(Sail::Go(d)) = sail_decision(&v, false, |n| rng.draw() % n) {
             seen[usize::from(d)] = true;
         }
     }

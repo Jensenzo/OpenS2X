@@ -297,7 +297,7 @@ impl World {
                 // ECO-REQ-0.2a (2): by the profession.
                 list: self.door_list_of(good),
                 walker: crate::movement::Walker::new(at),
-                job: SettlerJob::Dying,
+                job: SettlerJob::Dying { stand: None },
                 timer: 0,
                 carrying: None,
             };

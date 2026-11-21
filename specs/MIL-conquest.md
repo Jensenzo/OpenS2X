@@ -41,6 +41,12 @@ one soldier and a building with no soldier left burns down.
   still holding takes the building; the others arrive at a building that now
   belongs to their own player (MIL-CON-2.2 step 6) and enter it if there is
   room (MIL-CON-3). Confidence: medium-high.
+  **The take-over comes one update after the arrival (2026-11-19 night, E-mil-028: code reading and
+  the war recording; high).** Arriving at the door (the target's flag) with the condition holding,
+  the attacker only turns to **capturing** in that update. In his next update he tests the
+  condition again: if it holds he takes the building then (MIL-CON-2.1 / 2.2, or enters an own one,
+  3.1); if not, he stays capturing on the door and tests again in each update (he picks no waiting
+  field). So the building changes hands one tick after his arrival.
 
 ### MIL-CON-2 Taking a building
 
@@ -81,7 +87,12 @@ one soldier and a building with no soldier left burns down.
   3.8b), with the usual walking time; he is inside when that walk ends. If an opponent has been
   paired with him by the time the walk to the flag ends, he does not go in but stays out as the
   building's defender (MIL-ATK-5). Confidence: high for the two walks and the defender case (the
-  soldier's take-over job read); medium for the walk to the flag taking no tick of its own.
+  soldier's take-over job read).
+  **The walk to the flag takes one update (corrected 2026-11-19 night, E-mil-028: the war
+  recording; high):** in the take-over update he stands on the flag (a walk of no step, ordered
+  then), and the walk from the flag into the building starts at progress 0 in his next update, as
+  that empty walk reports its end; he is inside as `MIL-attack-combat.md` MIL-ATK-4.4 says for a
+  walk home (one update after the step in). Test T18.
 
 ### MIL-CON-3 Filling the taken building
 
@@ -281,6 +292,7 @@ Confidence: high for texts and recipients.
 | T16 | enemy tower with roads to 2 flags, 3 wares on its flag | conquered | old flag and both roads removed, the 3 wares destroyed; the new tower has a flag with no roads |
 | T17 | 4.1, 4.4, `AI-construction.md` AI-CON-9.3: E-trace-010, the computer player tears down its finished hunter's hut 90244 on (139, 47) (flag (140, 46)) at counter 4791 | wares and numbers | one plank 90644 lies at (140, 46) (the hut's frame and main planks, halved, rounded up), then the remains 90645 on (139, 47) (measured, `objects.csv`); the hut's hunter, resting inside, goes home (`TRN-free-walk.md` T28) |
 | T17a | 4.1b (Q-150): the human player demolishes their finished woodcutter's hut (frame cost 1 plank, main cost 1 plank) through the building window; separately, a woodcutter's site whose frame is done (frame share 1, main share 0) with its main plank delivered and not yet used is destroyed through the site window | wares, ruin, flag | the hut: 1 plank on its flag (frame 1 plus main 1 = 2, halved rounded up), then a ruin on the hut's field burning 333 ticks; the site: 1 plank for the frame (1 halved rounded up) plus the unused plank in full = 2 planks on its flag, no ruin; in both cases the flag and its roads stay, and carriers take the planks off |
+| T18 | 1.2, 2.3 (the take-over's ticks): E-trace-019 (R6, the war), player 3's guard house 15251 on (31, 21), flag (32, 20); attacker 16592 of player 2 walking to that door, the condition holding | his rows and the building's (counters) | on the flag (32, 20) and capturing (state 15) in counter 13447, the building still player 3's 15251; in 13448 the building is player 2's new 18699 and he stands on the flag (state 16, the walk in); the step (32, 20) -> (31, 21) at progress 0 in 13449, 0.045 in 13450. The next two attackers of the same target arrive at a building of their own and turn to capturing likewise (16600 in 13457, 17868 in 13470). Taking it in the arrival update and walking in at once is one and two ticks early; with the rule: not yet measured (no experiment build on 2026-11-19 night) |
 
 ## Evidence
 
@@ -300,6 +312,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-005 | code reading | | each attacker tests the taking condition itself |
 | E-mil-013 | code reading | (session 2026-11-15 night) | 2.3: the taking soldier's job after the takeover: walk to the flag, walk in (ECO-WORK-3.8), or stay out as the defender when paired |
 | E-mil-014 | code reading | (session 2026-11-15 day) | 4.1b: the remove-building command's handler removes with remains; the senders (building and site windows, the destroy action); the remains switch cleared only at shutdown; the flag not removed |
+| E-mil-028, E-trace-019 | code reading, recording | (session 2026-11-19 night): the attacker's arrival at the door (capture state only) and the capture state's own update (the test again, the take-over, the walk in); R6's first capture at counter 13447 | 1.2, 2.3 the take-over's ticks (T18) |
 | data | script | `buildings.lua` (catapult), `config.lua` | radius, stock, time factors |
 
 ## Open questions

@@ -145,6 +145,11 @@ impl World {
     /// is listed with its counter alone, which no other rule reads). A world
     /// of this build's format is left as it is.
     pub fn take_later_rules(&mut self, format: u32, rules: &crate::Rules) {
+        // TRN-CARRY-7.1 (T31a): before format 87 the settings had no
+        // skeleton doodad; without it no dying settler would leave one.
+        if format < 87 {
+            self.settings.skeleton_doodad = rules.settings.skeleton_doodad;
+        }
         if format >= 66 {
             return;
         }

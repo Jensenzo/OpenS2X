@@ -273,12 +273,25 @@ fn sawmill_production_time_is_333_ticks() {
     assert!(planks.name.is_some());
 }
 
-// The settings the simulation takes (TRN-MOVE-1.1, TRN-CARRY, TRN-ROAD-5.2).
+// The settings the simulation takes (TRN-MOVE-1.1, TRN-CARRY, TRN-ROAD-5.2),
+// and the config's skeleton doodad, a doodad of the table (TRN-CARRY-7.1 T31a).
+// spec: TRN-CARRY-7.1
 #[test]
 fn settings_for_the_simulation() {
     let Some((rules, _)) = load() else { return };
     let sim = rules.sim_rules().unwrap();
-    assert_eq!(sim.settings, s2_sim::Settings::shipped());
+    let skeleton = rules
+        .settings
+        .settler_skeleton_doodad
+        .expect("the config names a skeleton doodad");
+    assert!(rules.doodads.contains(skeleton));
+    assert_eq!(
+        sim.settings,
+        s2_sim::Settings {
+            skeleton_doodad: Some(skeleton),
+            ..s2_sim::Settings::shipped()
+        }
+    );
     // The transport priority table of TRN-CARRY: coin 0, plank 7, wood 9.
     for (name, priority) in [("Coin", 0), ("Plank", 7), ("Wood", 9)] {
         let good = rules.good_named(name).unwrap();

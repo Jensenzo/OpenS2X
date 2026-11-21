@@ -129,7 +129,8 @@ snap_struct!(crate::World {
     explorations @ 68 = 0,
     ledger,
     route_topology,
-    height_changes @ 75 = crate::HeightChanges::default()
+    height_changes @ 75 = crate::HeightChanges::default(),
+    skeletons @ 87 = std::collections::BTreeMap::new()
 });
 /// Derived from the roads: written as nothing, read back empty.
 /// Not game state: written as nothing, read back as 0.
@@ -157,13 +158,18 @@ snap_enum!(crate::combat::AttackStep {
     Waiting,
     Home,
     Meeting,
-    Arrived
+    Arrived,
+    In,
+    Capturing
 });
 snap_enum!(crate::combat::DefendStep {
     Leaving,
     Out,
     Waiting,
-    Back
+    Back,
+    Ended,
+    Held,
+    In
 });
 snap_struct!(crate::combat::AttackRecord {
     soldier,
@@ -595,7 +601,13 @@ snap_struct!(crate::rules::Settings {
     construct_ticks,
     fishing_distance,
     catapult_turn_ticks,
-    catapult_flight_ticks
+    catapult_flight_ticks,
+    skeleton_doodad @ 87 = None
+});
+snap_struct!(crate::Skeleton {
+    doodad,
+    number,
+    field
 });
 snap_struct!(crate::rules::Rules {
     building_types,
@@ -667,7 +679,7 @@ snap_struct!(crate::rules::Roles {
     coin,
     boat_carrier
 });
-snap_enum!(crate::settlers::SettlerJob { ToSite { target, builder }, ToBuilding { target }, Worker { target, work }, Home { target }, ToMilitary { target, health }, Garrison { target, health, heal }, Attack { home, health, step }, Defend { home, health, step, opponent, intercept, defends @ 75 = None }, Specialist { flag, spots_left, step }, CarryOut { warehouse, destination, target, order, step }, Dying, Released { carrier, step }, Leaving { step, at, stand, health @ 70 = None } });
+snap_enum!(crate::settlers::SettlerJob { ToSite { target, builder }, ToBuilding { target }, Worker { target, work }, Home { target }, ToMilitary { target, health }, Garrison { target, health, heal }, Attack { home, health, step }, Defend { home, health, step, opponent, intercept, defends @ 75 = None }, Specialist { flag, spots_left, step }, CarryOut { warehouse, destination, target, order, step }, Dying { stand @ 86 = None }, Released { carrier, step }, Leaving { step, at, stand, health @ 70 = None } });
 snap_enum!(crate::settlers::LeavingStep {
     Wait,
     Finish,

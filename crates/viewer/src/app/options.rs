@@ -18,6 +18,19 @@ pub(crate) const USAGE: &str =
   --assets <dir>          a folder laid out like the install whose files
                           take the place of the install's (repeatable, the
                           last wins; docs/extending.md)
+  --building-model <type>=<file>[,site=<gfx>][,smoke=<effect>]
+                          draw the building type <type> (its rules name)
+                          with a project's .glb model (hook W30; the file
+                          below the install or an --assets folder, e.g.
+                          Spring=data/buildings/facets.glb,site=Lumberjack,
+                          smoke=Smoke; repeatable; docs/extending.md)
+  --tree-model <kind>=<file>[,far=<file>][,far-below=<share>][,growth=root]
+                          draw the tree kind <kind> (its rules name, e.g.
+                          BirchA) with a project's .glb model and its far
+                          version, drawn below <share> of the view's height
+                          (default 0.25); growth=root: a young tree's width
+                          by the square root of its size (hook W30b;
+                          repeatable; docs/extending.md)
   --rules-overlay <file>  a Lua file run after the property scripts
                           (repeatable; docs/extending.md)
   --screenshot-dir <dir>  where F12 saves screenshots (default: screens)
@@ -125,6 +138,9 @@ pub(crate) const USAGE: &str =
   --until-felled <ticks>  with --run: play on until a tree of the player's
                           was felled that many ticks ago, the camera on it
                           (the sinking tree, GFX-ANIM-3.8c)
+  --until-falling <ticks> with --run: play on until a tree of the player's
+                          began to be felled that many ticks ago (it falls
+                          from 30 to 53, GFX-ANIM-3.8a), the camera on it
   --until-built <percent> with --scene woodcutter-site: play on until the
                           site's work is that far (100: finished)
   --run <ticks>           play the game this many ticks (with its computer
@@ -197,6 +213,11 @@ pub(crate) struct Options {
     pub(crate) asset_folders: Vec<PathBuf>,
     /// `--rules-overlay`: Lua run after the property scripts.
     pub(crate) rules_overlays: Vec<PathBuf>,
+    /// `--building-model`: building types drawn with a project's model
+    /// (hook W30).
+    pub(crate) building_looks: Vec<crate::extend::BuildingLook>,
+    /// Hook W30b: `--tree-model`.
+    pub(crate) tree_looks: Vec<crate::extend::TreeLook>,
     pub(crate) screenshot_dir: PathBuf,
     pub(crate) shot: Option<PathBuf>,
     /// `--shot-after`: frames on screen before the shot.
@@ -280,6 +301,9 @@ pub(crate) struct Options {
     /// `--until-felled`: `--run` goes on until a tree of the player's was
     /// felled this many ticks ago; the 3D camera follows it.
     pub(crate) until_felled: Option<u64>,
+    /// `--until-falling`: on until a tree of the player's began to be
+    /// felled (its woodcutter's work began) that many ticks ago.
+    pub(crate) until_falling: Option<u64>,
     /// `--until-door`: `--run` goes on until a settler holds the door of the
     /// player's first building of this type open.
     pub(crate) until_door: Option<String>,
@@ -287,8 +311,8 @@ pub(crate) struct Options {
     /// has done this percentage of its work.
     pub(crate) until_built: Option<u32>,
     /// `--scene geologist | waterway | barracks | woodcutter-site | ship |
-    /// ship-shore | building:<type> | military:<type>:<n>`: a set-up for
-    /// screenshots.
+    /// ship-shore | building:<type> | military:<type>:<n> |
+    /// pair:<type>:<type>`: a set-up for screenshots.
     pub(crate) scene: Option<String>,
     /// `--3d`: start in the 3D view; `--zoom`: its zoom step.
     pub(crate) three_d: bool,
@@ -340,6 +364,8 @@ pub(crate) fn parse_from(
         game_dir: std::env::var_os("S2_GAME_DIR").map(PathBuf::from),
         asset_folders: Vec::new(),
         rules_overlays: Vec::new(),
+        building_looks: Vec::new(),
+        tree_looks: Vec::new(),
         screenshot_dir: PathBuf::from("screens"),
         shot: None,
         shot_after: SHOT_SETTLE_FRAMES,
@@ -383,6 +409,7 @@ pub(crate) fn parse_from(
         watch: None,
         until_work: None,
         until_felled: None,
+        until_falling: None,
         until_door: None,
         until_built: None,
         scene: None,
@@ -433,6 +460,8 @@ pub(crate) fn parse_from(
             "--game-dir" => options.game_dir = Some(value()?.into()),
             "--assets" => options.asset_folders.push(value()?.into()),
             "--rules-overlay" => options.rules_overlays.push(value()?.into()),
+            "--building-model" => options.building_looks.push(building_look(&value()?)?),
+            "--tree-model" => options.tree_looks.push(tree_look(&value()?)?),
             "--screenshot-dir" => options.screenshot_dir = value()?.into(),
             "--save-dir" => options.save_dir = Some(value()?.into()),
             "--profile-dir" => options.profile_dir = Some(value()?.into()),
@@ -567,6 +596,13 @@ pub(crate) fn parse_from(
                         .map_err(|_| "--until-felled takes a tick count".to_owned())?,
                 )
             }
+            "--until-falling" => {
+                options.until_falling = Some(
+                    value()?
+                        .parse()
+                        .map_err(|_| "--until-falling takes a tick count".to_owned())?,
+                )
+            }
             "--until-built" => {
                 options.until_built = Some(
                     value()?
@@ -665,6 +701,61 @@ pub(crate) fn parse_from(
         }
     }
     Ok(options)
+}
+
+/// `--building-model <type>=<file>[,site=<gfx>][,smoke=<effect>]` (hook W30).
+pub(crate) fn building_look(text: &str) -> Result<crate::extend::BuildingLook, String> {
+    let bad = || format!("--building-model {text}: <type>=<file>[,site=<gfx>][,smoke=<effect>]");
+    let mut fields = text.split(',');
+    let (building, model) = fields
+        .next()
+        .and_then(|f| f.split_once('='))
+        .ok_or_else(bad)?;
+    if building.is_empty() || model.is_empty() {
+        return Err(bad());
+    }
+    let mut look = crate::extend::BuildingLook::new(building, model);
+    for field in fields {
+        match field.split_once('=') {
+            Some(("site", v)) if !v.is_empty() => look.site_of = Some(v.into()),
+            Some(("smoke", v)) if !v.is_empty() => look.smoke = Some(v.into()),
+            _ => return Err(bad()),
+        }
+    }
+    Ok(look)
+}
+
+/// `--tree-model <kind>=<file>[,far=<file>][,far-below=<share>][,growth=root]`
+/// (hook W30b).
+pub(crate) fn tree_look(text: &str) -> Result<crate::extend::TreeLook, String> {
+    let bad = || {
+        format!("--tree-model {text}: <kind>=<file>[,far=<file>][,far-below=<share>][,growth=root]")
+    };
+    let mut fields = text.split(',');
+    let (tree, model) = fields
+        .next()
+        .and_then(|f| f.split_once('='))
+        .ok_or_else(bad)?;
+    if tree.is_empty() || model.is_empty() {
+        return Err(bad());
+    }
+    let mut look = crate::extend::TreeLook::new(tree, model);
+    for field in fields {
+        match field.split_once('=') {
+            Some(("far", v)) if !v.is_empty() => look.far = Some(v.into()),
+            Some(("far-below", v)) => {
+                look.far_below = v
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|f| f.is_finite() && *f >= 0.0)
+                    .ok_or_else(bad)?;
+            }
+            Some(("growth", "root")) => look.growth = crate::extend::TreeGrowth::RootWidth,
+            Some(("growth", "original")) => look.growth = crate::extend::TreeGrowth::Original,
+            _ => return Err(bad()),
+        }
+    }
+    Ok(look)
 }
 
 #[cfg(test)]

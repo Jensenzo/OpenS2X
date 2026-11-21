@@ -47,6 +47,16 @@ of its planning objects does. Models and orders are in `AI-construction.md`
   the ship stands still, one of the compass directions that has a landing
   option is chosen uniformly at random and the ship is sent there (SHIP-6).
   Confidence: high.
+  **The build test is the founding test (2026-11-19 night, E-ai-076: code reading and the Hard
+  recording; high).** "A landing spot is known, valid and within distance
+  5" is exactly the test of the ship window's "Construct harbor" button (`SHIP-ships-expeditions.md`
+  SHIP-7.1): the ship not moving, expedition mode on, a **last port position** (SHIP-2.7), and the
+  harbour spot of that position's land continent nearest to the ship a harbour site for nobody or
+  the player and **closer than 5** to the ship. It does **not** read the ship's target, which the
+  arrival has cleared (SHIP-6.4); so a ship that has sailed to a landing field and stopped there is
+  told to found the harbour at the next run. When the test holds, the run gives `found-harbour`
+  and nothing else: no draw. Only when it fails and the ship stands still is the direction drawn
+  (one draw, the count of directions with an option) and `sail-expedition` given. Test T9.
 
 ### AI-MISC-2 Activation and re-initialisation (Q-069)
 
@@ -126,6 +136,7 @@ of its planning objects does. Models and orders are in `AI-construction.md`
 | T6 | computer player at game creation | creation | profile set, home recorded, headquarters announced: one cell; the headquarters is a depot (AI-CON-1.1, corrected 2026-10-24), so it goes into the cell's depot list and the cell's depot-wanted marker set at the cell's creation is cleared again (AI-CON-1.6; before 2026-10-24 this row said the cell keeps the marker) |
 | T7 | active AI that lost every cell | next tick | all records deleted, profile cleared, player inactive; no further thinks |
 | T8 | AI-MISC-1.1 with AI-CON-1.6: E-trace-011, player 1's harbour in cell (9, 2), no shipyard | shipyard part every 673 ticks | orders at counters 6724 (no site, mark expires at the next check), 7397 and 8070 (no material, no mark), 8743 (no site at 9022, mark for 600 s): no order at 9416 (`AI-construction.md` T53) |
+| T9 | AI-MISC-1.3 (the build test): E-trace-013 (R3, the Hard game), player 1's expedition ship 94738 leaves its harbour (144, 47) after the expedition run of counter 48 547 (sailing from counter 48 548) and stops on (149, 136) in counter 49 064; its last port position is then (148, 137) (the recording's ships table); the harbour spot nearest to it, (147, 136), is free | the next expedition run, counter 50 658 | `found-harbour`: the cargo is out in counter 50 658, the harbour site on (147, 136) stands from then (the B row of trace tick 50 700: a frame), the empty ship sails home from 50 662; no draw in that run (trace tick 50 659's draws are the animals' only). Testing the ship's target instead (cleared at the arrival) sends it on: one direction draw and the 13 draws of its sea route, the Hard pair's generator apart from trace tick 50 659; with the rule: not yet measured (no experiment build on 2026-11-19 night) |
 
 ## Evidence
 
@@ -141,6 +152,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ai-002, E-ai-003 | code reading | see `AI-construction.md`, `AI-military.md` | profile reads |
 | E-ai-005 | code reading | | harbour list; global switch |
 | E-ai-031, E-trace-011 | code reading, memory reads of the running game | heap dumps 7000 .. 9500 | AI-MISC-1.1 (T8) |
+| E-ai-076, E-trace-013 | code reading, recording | (session 2026-11-19 night): the expedition run's two branches (the founding test first, the direction draw only without it); R3's ships table from counter 48 400 | AI-MISC-1.3 the build test (T9) |
 
 ## Open questions
 

@@ -35,6 +35,16 @@ pub(crate) struct BuildingAnim {
     pub(crate) at: [f32; 3],
     pub(crate) working_file: Option<String>,
     pub(crate) working_events_at: f32,
+    /// Hook W30: a project model's Working clip loops while the building
+    /// works (the original's plays once per work start, GFX-ANIM-6.2).
+    pub(crate) working_loops: bool,
+    /// Hook W30: a project model's effects while it works: the effect's
+    /// name, its start (clip seconds) and the bone it rises from (the
+    /// Working clip's `Particle` events with a slot).
+    pub(crate) working_effects: Vec<(String, f32, usize)>,
+    /// Hook W30: the parts' palettes hold a pose other than the rest (a
+    /// looping Working clip stops anywhere: its parts go back to rest).
+    pub(crate) posed: bool,
 }
 
 impl BuildingAnim {
@@ -161,6 +171,26 @@ pub fn animate_buildings(
                     .and_then(|c| library.clip(&c.file, &skeleton_file))
             };
             let working_file = entry.working.as_ref().map(|w| w.file.clone());
+            // Hook W30: a project model's Working clip and its effects.
+            let project = working_file
+                .as_deref()
+                .and_then(crate::render::models3d::project::split_clip)
+                .is_some();
+            let working_effects = if project {
+                let skeleton = model.skeleton.clone();
+                entry
+                    .working
+                    .iter()
+                    .flat_map(|w| &w.events)
+                    .filter(|e| !e.sound)
+                    .filter_map(|e| {
+                        let bone = skeleton.as_ref()?.find(e.slot.as_deref()?)?;
+                        Some((e.name.clone(), e.start, bone))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             let door_open = clip(&entry.door_open);
             let door_close = clip(&entry.door_close);
             let working_clip = clip(&entry.working);
@@ -187,6 +217,9 @@ pub fn animate_buildings(
                     },
                     working_file,
                     working_events_at: 0.0,
+                    working_loops: project,
+                    working_effects,
+                    posed: false,
                 },
             );
         }
@@ -559,22 +592,31 @@ fn write_pose(
     use crate::animation::object_anim::Door;
     let door = match state.door {
         Door::Closed => None,
-        Door::Open { since, .. } => state.door_open.clone().map(|c| (c, since)),
-        Door::Closing { since } => state.door_close.clone().map(|c| (c, since)),
+        Door::Open { since, .. } => state.door_open.clone().map(|c| (c, since, false)),
+        Door::Closing { since } => state.door_close.clone().map(|c| (c, since, false)),
     };
-    let working = state
-        .working
-        .and_then(|since| state.working_clip.clone().map(|c| (c, since)));
-    if door.is_none() && working.is_none() && state.animals.is_empty() {
+    let working = state.working.and_then(|since| {
+        state
+            .working_clip
+            .clone()
+            .map(|c| (c, since, state.working_loops))
+    });
+    // Hook W30: a looping clip that stopped leaves its parts at rest once.
+    let back_to_rest = state.working_loops && state.posed;
+    if door.is_none() && working.is_none() && state.animals.is_empty() && !back_to_rest {
         return;
     }
+    state.posed = state.working_loops && (door.is_some() || working.is_some());
     let Some(skeleton) = state.model.skeleton.clone() else {
         return;
     };
     let mut locals = skeleton.rest.clone();
-    for (clip, since) in working.iter().chain(door.iter()) {
-        let t = clip.time_at((now - since) * crate::animation::anim::GLOBAL_SPEED, false);
-        clip.apply(&skeleton, &mut locals, t, false);
+    for (clip, since, looping) in working.iter().chain(door.iter()) {
+        let t = clip.time_at(
+            (now - since) * crate::animation::anim::GLOBAL_SPEED,
+            *looping,
+        );
+        clip.apply(&skeleton, &mut locals, t, *looping);
     }
     let world_pose = skeleton.world(&locals);
     let composites = state.model.converted(&skeleton.composites(&world_pose));
@@ -816,6 +858,9 @@ mod collapse_tests {
             at: [0.0; 3],
             working_file: None,
             working_events_at: 0.0,
+            working_loops: false,
+            working_effects: Vec::new(),
+            posed: false,
         }
     }
 

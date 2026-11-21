@@ -258,6 +258,8 @@ pub(crate) struct Viewer {
     /// `--until-felled`: `--run` goes on until a tree of the player's was
     /// felled this many ticks ago; the 3D camera follows it.
     pub(crate) until_felled: Option<u64>,
+    /// `--until-falling`: a tree's felling began that many ticks ago.
+    pub(crate) until_falling: Option<u64>,
     /// `--until-door`: the type whose door `--run` waits for.
     pub(crate) until_door: Option<String>,
     pub(crate) until_built: Option<u32>,

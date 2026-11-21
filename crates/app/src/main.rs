@@ -41,7 +41,7 @@ const USAGE: &str = "usage: s2-app [--ticks N] [--seed S]
        s2-app trace <map|fixture:name> <ticks> [--seed S] [--ai ...] [--closed 1] [--from T] [--kinds SBG] [--out FILE[.gz]]
        s2-app rng <map|fixture:name> <ticks> [--seed S] [--ai ...]
        s2-app trace --snapshot <file> <ticks> [--from T] [--kinds SBG] [--out FILE[.gz]]
-       s2-app trace-diff <a.csv[.gz]> <b.csv[.gz]> [--by-place] [--common-ticks] [--from T] [--kinds SBG] [--ignore cols] [--with cols]
+       s2-app trace-diff <a.csv[.gz]> <b.csv[.gz]> [--by-place] [--common-ticks] [--view-lag] [--from T] [--kinds SBG] [--ignore cols] [--with cols]
        s2-app fidelity [--root DIR] [--traces DIR] [--record]
        s2-app soak <map|fixture:name> <ticks> [--seed S] [--ai ...] [--out DIR] | soak --replay FILE | soak --snapshot FILE [ticks] | soak --save FILE ticks
        s2-app shot --map M [--ai 1=1] [--resources R] --tick T --camera FILE --size WxH --out PNG [--viewer EXE]

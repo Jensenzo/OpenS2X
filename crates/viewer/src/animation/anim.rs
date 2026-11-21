@@ -182,6 +182,26 @@ impl Clip {
         })
     }
 
+    /// Hook W30: a clip of a project's model (`models3d::project`) from
+    /// each bone's position, orientation and scale/shear curves (laid out
+    /// as Granny's; an empty curve keeps the rest value), `None` for a bone
+    /// it does not move.
+    pub fn from_curves(duration: f32, tracks: Vec<Option<[gr2::Curve; 3]>>) -> Self {
+        Self {
+            duration,
+            tracks: tracks
+                .into_iter()
+                .map(|t| {
+                    t.map(|[position, orientation, scale_shear]| Track {
+                        position,
+                        orientation,
+                        scale_shear,
+                    })
+                })
+                .collect(),
+        }
+    }
+
     /// The bones' local transforms at animation time `t`; `looping`: the
     /// clip can still wrap (GFX-GR2-7.6), so its curves' windows wrap.
     pub fn locals(&self, skeleton: &Skeleton, t: f32, looping: bool) -> Vec<Local> {

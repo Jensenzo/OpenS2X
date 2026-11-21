@@ -97,6 +97,16 @@ Two matched rows differ when any compared column differs. Compared by default:
 generator (its tally is `generator`). `--ignore col,col` leaves columns
 out; `--with job` adds `job`. A row with no partner differs as a whole.
 
+`--view-lag` (TOOL-trace TRACE-4.4, T16) is for a recording of the original as
+the second trace: its view switches a clip one tick late now and then, so a
+settler row that differs only in `animation`, the second trace's being the
+first trace's of the same settler in the tick before, is counted as that lag
+(the count is printed), not as a difference; a row whose view the recorder did
+not read (an empty `animation`, TRACE-2.7) has no animation to compare. With
+`--common-ticks` a tick both traces hold, one of them without its generator
+row (a recording's raced end), leaves the generator out there.
+`s2-app fidelity` compares every pair so.
+
 `trace-diff` prints the first tick and row where the traces differ (both rows,
 and the columns that differ), then a summary per settler type and for the
 buildings: rows compared, rows that differ, the first tick of a difference and

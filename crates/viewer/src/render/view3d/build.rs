@@ -675,6 +675,26 @@ pub fn build_scene(
             .unwrap_or_default(),
         ..default()
     };
+    // What the game can show later, read now behind the loading picture
+    // (`models3d::preload`): a first use during play put a model's meshes,
+    // textures and materials on the graphics card in one frame.
+    let mut tribes: Vec<u8> = world.players().iter().map(|&p| world.tribe(p)).collect();
+    tribes.sort_unstable();
+    tribes.dedup();
+    let started = std::time::Instant::now();
+    let preloaded = crate::render::models3d::preload::preload_game(
+        &mut library,
+        &placements.lookup,
+        &tribes,
+        &mut assets.meshes,
+        &mut assets.images,
+    );
+    view.loads_before_play = preloaded.loads_before;
+    info!(
+        "preload: {} models and clips read in {:.0} ms",
+        preloaded.read,
+        started.elapsed().as_secs_f64() * 1000.0
+    );
 
     let layers = pattern_layers(&viewer, map);
     let mut fields = Image::new(

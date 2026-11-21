@@ -744,6 +744,17 @@ pub(crate) fn load_map(
                 }
                 site
             }
+            // pair:<type>:<type>: two finished buildings side by side
+            // (hook W30: a project's model beside an original house).
+            other if other.starts_with("pair:") => {
+                let parts: Vec<&str> = other.split(':').collect();
+                let first = parts.get(1).and_then(|t| by_name(t));
+                let second = parts.get(2).and_then(|t| by_name(t));
+                framed = true;
+                first
+                    .zip(second)
+                    .and_then(|(a, b)| crate::tools::scenes::pair(&mut world, PLAYER, a, b))
+            }
             "waterway" => crate::tools::scenes::waterway(&mut world, PLAYER),
             // ship-shore: the same ship without its window, framed as a
             // site is (a picture of the coast).
@@ -824,6 +835,7 @@ pub(crate) fn load_map(
         // (at most 3000 ticks more).
         let waits = viewer.until_work.is_some()
             || viewer.until_felled.is_some()
+            || viewer.until_falling.is_some()
             || viewer.until_door.is_some();
         let limit = until + if waits { 3000 } else { 0 };
         while world.tick() < limit {
@@ -837,6 +849,11 @@ pub(crate) fn load_map(
                 } else if let Some(after) = viewer.until_felled {
                     if let Some(tree) = felled_tree(&world, after) {
                         info!("felled tree on {tree:?} in tick {}", world.tick());
+                        break;
+                    }
+                } else if let Some(after) = viewer.until_falling {
+                    if let Some(tree) = falling_tree(&world, after) {
+                        info!("falling tree on {tree:?} in tick {}", world.tick());
                         break;
                     }
                 } else if watched_work(&viewer, &world).is_some_and(|w| w.starts_with(step)) {
@@ -969,6 +986,15 @@ pub(crate) fn door_held(viewer: &Viewer, world: &World) -> bool {
 }
 
 /// `--until-felled`: a tree on the player's land felled `after` ticks ago.
+/// `--until-falling`: a tree of the player's whose felling began `after`
+/// ticks ago (GFX-ANIM-3.8a: it falls from 30 to 53 ticks in).
+pub(crate) fn falling_tree(world: &World, after: u64) -> Option<s2_sim::grid::Point> {
+    world.deposits().find_map(|(field, _)| {
+        let began = world.felling_began(field)?;
+        (world.field_owner(field) == Some(PLAYER) && world.tick() == began + after).then_some(field)
+    })
+}
+
 pub(crate) fn felled_tree(world: &World, after: u64) -> Option<s2_sim::grid::Point> {
     world.deposits().find_map(|(field, d)| match d.state {
         s2_sim::DepositState::Removing { since, .. }

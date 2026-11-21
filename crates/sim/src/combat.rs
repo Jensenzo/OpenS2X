@@ -49,6 +49,14 @@ pub enum AttackStep {
     /// attacker not yet in his wait job; his next update makes the checks
     /// of MIL-ATK-4.4.
     Arrived,
+    /// MIL-ATK-4.4 (T33, T33a): his walk home's step into the building has
+    /// ended; his return ends in his next update (at a castle: when his walk
+    /// on to the door field ends).
+    In,
+    /// MIL-CON-1.2 (T18, E-mil-028): on the target's door with the
+    /// condition holding; he takes the building (or enters an own one) in
+    /// his next update the condition holds.
+    Capturing,
 }
 
 /// Where a soldier sent against an attacker is.
@@ -62,8 +70,18 @@ pub enum DefendStep {
     Out,
     /// Standing on it.
     Waiting,
-    /// Walking back to its building's door.
+    /// Walking back to its building: to its flag, then the step in
+    /// (MIL-ATK-4.4, T32).
     Back,
+    /// MIL-ATK-6.6 (T32, E-mil-025): his fight job saw the pair gone and
+    /// ended; he acts (defense wait, or home) in his next update.
+    Ended,
+    /// MIL-ATK-5.3 (T34, E-mil-026): the target's own soldier, paired, idle
+    /// inside until his attacker stands on the target's flag field or has
+    /// arrived; then wait-for-leave (`Leaving`).
+    Held,
+    /// MIL-ATK-4.4 (T33, T33a): as [`AttackStep::In`].
+    In,
 }
 
 /// MIL-ATK-2.3: the attacker record.
@@ -423,9 +441,21 @@ impl World {
     /// MIL-ATK-5.2: the idle soldier of the building on `at` that comes
     /// out: with `strong` the highest rank, else the lowest, on equal rank
     /// the higher health, then the first in the list.
-    fn pick_defender(&self, at: Point, strong: bool) -> Option<usize> {
+    pub(crate) fn pick_defender(&self, at: Point, strong: bool) -> Option<usize> {
         let mut best: Option<(usize, usize, u32)> = None;
-        for c in self.idle_soldiers(at) {
+        // MIL-ATK-5.1 (T35): a reinforcement is a candidate from his update
+        // after his step in (his timer run down).
+        let walked_in = |id: usize| {
+            self.settlers
+                .get(id)
+                .and_then(|s| s.as_ref())
+                .is_some_and(|s| s.timer > 0)
+        };
+        for c in self
+            .idle_soldiers(at)
+            .into_iter()
+            .filter(|c| !walked_in(c.0))
+        {
             let better = match best {
                 None => true,
                 Some(b) if strong => (c.1, c.2) > (b.1, b.2),
@@ -574,15 +604,23 @@ impl World {
         self.attackers[record].opponent = Some(defender);
         let settler = self.settlers[defender].as_mut().expect("a defender");
         let health = health_of(settler).expect("a soldier");
+        // MIL-ATK-5.3 (T34): the target's own soldier has his opponent from
+        // now on but stays idle inside until his attacker is there; an
+        // interceptor turns to wait-for-leave at once.
+        let step = if intercept {
+            DefendStep::Leaving
+        } else {
+            DefendStep::Held
+        };
         settler.job = SettlerJob::Defend {
             home,
             health,
-            step: DefendStep::Leaving,
+            step,
             opponent: Some(attacker),
             intercept,
             defends,
         };
-        settler.timer = LEAVE_DELAY;
+        settler.timer = if intercept { LEAVE_DELAY } else { 0 };
     }
 
     /// MIL-ATK-5.1, 3.4: the first unpaired interceptor of the building
@@ -690,6 +728,44 @@ impl World {
                 building: self.building_at(target.at).map(|b| b.building_type),
                 ship: None,
             }),
+        }
+    }
+
+    /// MIL-ATK-6.6 (T31, E-mil-025): a soldier killed in a duel dies as
+    /// every settler (TRN-CARRY-7.1): standing where he is (on `stand`, a
+    /// sample off his field's point, or on the point), in no pair, the
+    /// dying's 28 ticks and one more update.
+    fn dies_in_duel(&mut self, settler: &mut Settler, stand: Option<Point>) {
+        settler.walker.walk([]);
+        settler.job = SettlerJob::Dying { stand };
+        settler.timer = crate::settlers::DYING_UPDATES;
+    }
+
+    /// MIL-ATK-4.4 (T32, E-mil-025): the walk home of a soldier: a free
+    /// walk to his building's flag; on its point, in the update he reaches
+    /// it, the step into the building (at progress 0). False if no walk
+    /// starts.
+    fn walk_home_to_flag(&mut self, settler: &mut Settler, home: Target) -> bool {
+        let flag = self.flag_of(home.at);
+        if settler.walker.at == flag {
+            settler.walker.walk([home.at]);
+            return true;
+        }
+        self.walk_to(settler, flag)
+    }
+
+    /// MIL-ATK-4.4 (T33, T33a, E-mil-026): the walk home's step into the
+    /// building on `home` ended in this update. At a building that is no
+    /// warehouse his return ends in his next update; at a castle (a
+    /// warehouse, its soldiers on its door field, MIL-SOL-6.5) the walk on
+    /// to the door field starts now at progress 0, and his return ends in
+    /// the update it ends.
+    fn stepped_in_home(&self, settler: &mut Settler, home: Target) {
+        if self.warehouses.contains_key(&home.at) {
+            let door = self.door_field(home.at);
+            if door != home.at {
+                settler.walker.walk([door]);
+            }
         }
     }
 
@@ -813,13 +889,46 @@ impl World {
         step: AttackStep,
     ) -> bool {
         // MIL-ATK-6.6: a soldier at 0 dies in its own update, and leaves
-        // his home's list (MIL-ATK-2.3).
+        // his home's list (MIL-ATK-2.3). T31: he dies as every settler,
+        // where he stands: on his offset step's sample (6.1a).
         if health == 0 {
+            let stand = self
+                .attackers
+                .iter()
+                .find(|r| r.soldier == number)
+                .and_then(|r| r.offset)
+                .map(|o| o.walk.position(&self.terrain).0)
+                .filter(|&at| at != grid::field_sample(settler.walker.at));
             self.attackers.retain(|r| r.soldier != number);
             self.leave_home_list(home, number);
-            return false;
+            self.dies_in_duel(settler, stand);
+            return true;
         }
         let Some(record) = self.attackers.iter().position(|r| r.soldier == number) else {
+            // MIL-ATK-4.4 (T33, T33a): in the building, his return ends in
+            // this update (at a castle when his walk to the door field has
+            // ended).
+            if step == AttackStep::In {
+                if !settler.walker.is_walking() {
+                    self.rejoin(settler, number, home, health);
+                }
+                return true;
+            }
+            // T33: the walk home's step into the building ended in this
+            // update: still returning.
+            if step == AttackStep::Home
+                && !settler.walker.is_walking()
+                && settler.walker.at == home.at
+                && self.linked_to_home(home, number)
+            {
+                self.stepped_in_home(settler, home);
+                settler.job = SettlerJob::Attack {
+                    home,
+                    health,
+                    step: AttackStep::In,
+                };
+                return true;
+            }
             // Its errand is over (the record is gone): back home; with no
             // home link left on the way (released, or the building gone),
             // to a warehouse in this tick (MIL-ATK-4.4).
@@ -1005,7 +1114,17 @@ impl World {
                     }
                 }
             }
-            AttackStep::Home => {
+            AttackStep::Capturing => {
+                // MIL-CON-1.2 (T18): the condition tested again; holding, he
+                // takes the building (MIL-CON-2) or enters an own one (3.1),
+                // else he stays on the door and tests in his next update.
+                if self.target_building(target).is_none() {
+                    self.attacker_goes_home(settler, number, home, health);
+                } else if self.can_take(target, settler.player) {
+                    self.take_building(settler, number, record, home, health);
+                }
+            }
+            AttackStep::Home | AttackStep::In => {
                 if arrived {
                     self.attackers.retain(|r| r.soldier != number);
                     self.rejoin(settler, number, home, health);
@@ -1031,8 +1150,14 @@ impl World {
         health: u32,
     ) {
         let target = self.attackers[record].target;
+        // MIL-CON-1.2 (T18, E-mil-028): arriving with the condition holding
+        // he only turns to capturing; the take-over in his next update.
         if self.can_take(target, settler.player) {
-            self.take_building(settler, number, record, home, health);
+            settler.job = SettlerJob::Attack {
+                home,
+                health,
+                step: AttackStep::Capturing,
+            };
             return;
         }
         let Some(field) = self.free_field(settler.walker.at, Some(number)) else {
@@ -1087,7 +1212,8 @@ impl World {
     ) -> bool {
         if health == 0 {
             self.leave_home_list(home, number);
-            return false;
+            self.dies_in_duel(settler, None);
+            return true;
         }
         // MIL-SOL-4.4 (Q-1071 c), MIL-ATK-4.4: with his home gone he has lost
         // only that link: in a fight he fights on, an interceptor waits on
@@ -1108,7 +1234,16 @@ impl World {
             defends,
         };
         let arrived = !settler.walker.is_walking();
-        if record.is_none() && step != DefendStep::Back {
+        // MIL-ATK-6.6 (T32, E-mil-025, E-mil-026): in his fight, the pair
+        // gone (his opponent fell, or left it), he notices it in this
+        // update: his fight job ends, and he acts in his next update. So he
+        // acts two updates after the dead one's when updated before him in
+        // the tick, one when after.
+        if record.is_none() && step == DefendStep::Waiting && opponent.is_some() {
+            settler.job = set(DefendStep::Ended, None);
+            return true;
+        }
+        if record.is_none() && step != DefendStep::Back && step != DefendStep::In {
             // 3.4: an interceptor out without an opponent waits where he
             // stands (defense wait) while the building he defends has
             // attackers (MIL-ATK-6.6, 6.1a: after his duel too).
@@ -1129,10 +1264,12 @@ impl World {
                 self.plan_home_excluding(settler, None);
                 return true;
             }
-            // 3.4: no opponent (any more): back to its building.
-            if step == DefendStep::Leaving {
+            // 3.4: no opponent (any more): back to its building, by the walk
+            // home of MIL-ATK-4.4 (T32): a free walk to its flag first. Held
+            // inside, the pair broken, he simply stays idle (T34).
+            if matches!(step, DefendStep::Leaving | DefendStep::Held) {
                 self.rejoin(settler, number, home, health);
-            } else if self.walk_to(settler, home.at) {
+            } else if self.walk_home_to_flag(settler, home) {
                 settler.job = set(DefendStep::Back, None);
             } else {
                 self.plan_home_excluding(settler, None);
@@ -1140,6 +1277,23 @@ impl World {
             return true;
         }
         match step {
+            DefendStep::Held => {
+                // MIL-ATK-5.3 (T34, E-mil-026): wait-for-leave only when his
+                // attacker stands on the target's flag field (paired at the
+                // door, 4.2) or has arrived (his offset step ended, 6.1a);
+                // the leave in his next update.
+                let r = &self.attackers[record.expect("paired")];
+                let door = self.attack_door(r.target);
+                let on_flag = self
+                    .settlers
+                    .get(r.soldier)
+                    .and_then(|s| s.as_ref())
+                    .is_some_and(|s| s.walker.at == door);
+                if on_flag || self.offset_arrived(r) {
+                    settler.job = set(DefendStep::Leaving, opponent);
+                    settler.timer = 1;
+                }
+            }
             DefendStep::Leaving => {
                 if settler.timer > 0 || !self.leave_building(home, number) {
                     return true;
@@ -1183,7 +1337,7 @@ impl World {
                     self.walk_to(settler, field);
                 }
             }
-            DefendStep::Waiting => {}
+            DefendStep::Waiting | DefendStep::Ended => {}
             DefendStep::Back => {
                 // MIL-SOL-4.4 (Q-1070 c): released on his way back.
                 if !self.linked_to_home(home, number) {
@@ -1194,9 +1348,18 @@ impl World {
                     return true;
                 }
                 if settler.walker.at == home.at {
-                    self.rejoin(settler, number, home, health);
-                } else if !self.walk_to(settler, home.at) {
+                    // MIL-ATK-4.4 (T33, T33a): the step in ended in this
+                    // update; still returning.
+                    self.stepped_in_home(settler, home);
+                    settler.job = set(DefendStep::In, None);
+                } else if !self.walk_home_to_flag(settler, home) {
                     self.plan_home_excluding(settler, None);
+                }
+            }
+            DefendStep::In => {
+                // MIL-ATK-4.4 (T33, T33a): his return ends in this update.
+                if !settler.walker.is_walking() {
+                    self.rejoin(settler, number, home, health);
                 }
             }
         }

@@ -223,6 +223,74 @@ impl DoodadTrack {
 /// Ticks between two redraws of growing trees.
 pub(crate) const GROWTH_TICKS: u64 = 20;
 
+/// Hook W30b: a project's tree drawn with a far version: its model's box
+/// (x, y, z) at scale 1, the share of the view's height below which the far
+/// version shows, and which one shows now (none: not yet decided).
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct ProjectTree {
+    pub extent: [f32; 3],
+    pub far_below: f32,
+    pub far: Option<bool>,
+}
+
+/// Hook W30b: a part of a project's tree: of its model or its far version.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TreeVersion {
+    pub far: bool,
+}
+
+/// Hook W30b: whether a tree of `size` (the longest side of its box as
+/// placed) at `depth` before the camera is drawn by its far version: its
+/// size on the screen, `size / (span x depth)` of the view's height (`span`
+/// = 2 tan(fov / 2), the view's height at depth 1), is below `far_below`.
+/// Never behind the camera.
+pub fn far_version(size: f32, depth: f32, span: f32, far_below: f32) -> bool {
+    depth > 0.0 && span > 0.0 && size < far_below * span * depth
+}
+
+/// The main map camera's place and projection.
+type MainCamera = (&'static Transform, &'static Projection);
+
+/// Hook W30b: each frame each project tree with a far version shows the
+/// version its size on the screen asks for ([`far_version`]); only a tree
+/// whose version changes is touched.
+pub fn tree_versions(
+    cameras: Query<MainCamera, (With<MapCamera3d>, Without<MirrorCamera3d>)>,
+    mut trees: Query<(&Transform, &mut ProjectTree, &Children), Without<MapCamera3d>>,
+    mut versions: Query<(&TreeVersion, &mut Visibility)>,
+) {
+    let Some((camera, projection)) = cameras.iter().next() else {
+        return;
+    };
+    let Projection::Perspective(p) = projection else {
+        return;
+    };
+    let span = 2.0 * (p.fov * 0.5).tan();
+    let forward = camera.forward();
+    for (transform, mut tree, children) in &mut trees {
+        // The longest side of its box as scaled (a young tree's width and
+        // height grow apart, GFX-ANIM-3.8b).
+        let size = (Vec3::from(tree.extent) * transform.scale).max_element();
+        // Its middle: half its size above its foot.
+        let middle = transform.translation + Vec3::Y * (0.5 * size);
+        let depth = (middle - camera.translation).dot(*forward);
+        let far = far_version(size, depth, span, tree.far_below);
+        if tree.far == Some(far) {
+            continue;
+        }
+        tree.far = Some(far);
+        for child in children.iter() {
+            if let Ok((version, mut visibility)) = versions.get_mut(child) {
+                *visibility = if version.far == far {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                };
+            }
+        }
+    }
+}
+
 /// GFX-ANIM-3.8a, 3.8c: the falling and sinking deposits placed again at
 /// `now` (ticks): a felled tree's tilt, a removed deposit's sinking. False
 /// when one of them was not placed before (a full placement is due).
@@ -630,6 +698,15 @@ pub fn sync_objects(
                         crate::world::scene3d::rising_plane(placed.at[1], height, placed.extra[1]);
                 }
                 let transform = placed_transform(&placed);
+                // Hook W30b: a project's tree with a far version has both,
+                // one shown at a time by its size on the screen
+                // (`tree_versions`).
+                let tree_look = (placed.key.0 == crate::world::scene3d::Kind::Deposit)
+                    .then(|| placements.lookup.tree_looks.get(&placed.key.2))
+                    .flatten();
+                let far_model = tree_look.and_then(|t| t.far.as_deref()).and_then(|far| {
+                    library.model(far, placed.units_per_metre, &mut meshes, &mut images)
+                });
                 let mut parts = Vec::new();
                 for (i, part) in model.parts.iter().enumerate() {
                     // A laid decal has no bones (identity palette).
@@ -649,7 +726,18 @@ pub fn sync_objects(
                         library.material(part, &look, &mut images, &mut materials)
                     };
                     if let Some(material) = material {
-                        let mesh = if !part.decal.is_empty() {
+                        let mesh = if let (false, Some(facet)) =
+                            (part.decal.is_empty(), part.facet.as_ref())
+                        {
+                            // Hook W30: a project model's ground, laid as
+                            // the decal is, in its faces' colours.
+                            meshes.add(crate::render::models3d::project::ground_mesh(
+                                world.terrain(),
+                                &part.decal,
+                                &facet.decal_colours,
+                                transform.to_matrix(),
+                            ))
+                        } else if !part.decal.is_empty() {
                             // GFX-OBJ-2.3: the decal laid on the terrain.
                             let to_world = transform.to_matrix();
                             let decal: Vec<_> = part
@@ -679,13 +767,40 @@ pub fn sync_objects(
                         // GFX-VIEW-2.5a: the decal and elements marked
                         // `shadowCast="false"` cast no shadow.
                         let casts = placed.shadow && part.decal.is_empty();
-                        parts.push((mesh, material, casts));
+                        let version = far_model.as_ref().map(|_| TreeVersion { far: false });
+                        parts.push((mesh, material, casts, version));
                     }
                 }
-                let entity = commands
-                    .spawn((Object3d, transform, Visibility::default()))
+                // Hook W30b: the far version's parts, shown instead of the
+                // model's while the tree is small on the screen.
+                if let Some(far) = &far_model {
+                    for (i, part) in far.parts.iter().enumerate() {
+                        if !part.decal.is_empty() {
+                            continue;
+                        }
+                        if let Some(material) =
+                            library.rest_material(far, i, &look, &mut images, &mut materials)
+                        {
+                            parts.push((
+                                part.mesh.clone(),
+                                material,
+                                placed.shadow,
+                                Some(TreeVersion { far: true }),
+                            ));
+                        }
+                    }
+                }
+                let mut parent = commands.spawn((Object3d, transform, Visibility::default()));
+                if let (Some(tree), Some(_)) = (tree_look, &far_model) {
+                    parent.insert(ProjectTree {
+                        extent: model.extent,
+                        far_below: tree.far_below,
+                        far: None,
+                    });
+                }
+                let entity = parent
                     .with_children(|children| {
-                        for (mesh, material, casts) in parts {
+                        for (mesh, material, casts, version) in parts {
                             // GFX-WATER-2.6b: the map's objects are in the
                             // mirror image of a flat view with every detail.
                             let mut child = children.spawn((
@@ -695,6 +810,16 @@ pub fn sync_objects(
                             ));
                             if !casts {
                                 child.insert(bevy::light::NotShadowCaster);
+                            }
+                            if let Some(version) = version {
+                                // Shown by `tree_versions` (the far one
+                                // hidden until then).
+                                let shown = if version.far {
+                                    Visibility::Hidden
+                                } else {
+                                    Visibility::Inherited
+                                };
+                                child.insert((version, shown));
                             }
                         }
                     })

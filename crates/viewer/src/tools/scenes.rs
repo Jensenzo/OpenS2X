@@ -169,6 +169,60 @@ pub fn building(world: &mut World, player: PlayerId, building: u32) -> Option<Po
     None
 }
 
+/// Two finished buildings side by side by the headquarters (made with
+/// `CreateBuilding`, each with its road to the headquarters' flag): `first`
+/// on the first field that takes it, `second` on a field two steps along
+/// the row from it (to its right on screen). For comparing a project's
+/// model with an original house (hook W30). The first one's field.
+pub fn pair(world: &mut World, player: PlayerId, first: u32, second: u32) -> Option<Point> {
+    let home = home_flag(world, player)?;
+    let create = |world: &mut World, building: u32, at: Point| -> bool {
+        let Some(flag) = world.terrain().neighbour(at, FLAG_DIRECTION) else {
+            return false;
+        };
+        let mut trial = world.clone();
+        let placed = apply(
+            &mut trial,
+            vec![Command::CreateBuilding {
+                player,
+                building,
+                at,
+                settler: None,
+            }],
+        ) && apply(
+            &mut trial,
+            vec![Command::BuildRoad {
+                player,
+                from: home,
+                to: flag,
+            }],
+        );
+        if placed {
+            *world = trial;
+        }
+        placed
+    };
+    for at in own_fields(world, player, home, 8) {
+        if grid::distance(home, at) < 3 {
+            continue;
+        }
+        // Two steps along the row, towards +x (direction 0).
+        let Some(beside) = world
+            .terrain()
+            .neighbour(at, 0)
+            .and_then(|p| world.terrain().neighbour(p, 0))
+        else {
+            continue;
+        };
+        let mut trial = world.clone();
+        if create(&mut trial, first, at) && create(&mut trial, second, beside) {
+            *world = trial;
+            return Some(at);
+        }
+    }
+    None
+}
+
 /// A finished military building of type `building` by the headquarters
 /// (as `building`, but made with `CreateBuilding`), the game then played on
 /// until `soldiers` are inside (at most 6000 ticks); with `coins_off` its

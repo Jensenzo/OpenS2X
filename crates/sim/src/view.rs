@@ -319,9 +319,12 @@ impl World {
         // TRN-FREE-6.4a, T24: sent home off its field's point, it is on the
         // field its sample truncates to, as a builder is (ECO-HQ-4.6b);
         // TRN-FREE-5.1, MAP-GRID-4.3: a worker on the lattice too.
+        // MIL-ATK-6.6 (T31): a soldier dying on his offset sample too.
         let on_lattice = matches!(
             s.job,
-            SettlerJob::Leaving { stand: Some(_), .. } | SettlerJob::Worker { .. }
+            SettlerJob::Leaving { stand: Some(_), .. }
+                | SettlerJob::Worker { .. }
+                | SettlerJob::Dying { stand: Some(_) }
         );
         if let (true, Some(f)) = (on_lattice, &view.fine) {
             view.walk = Step::standing(grid::sample_field_truncating(f.step.at));
@@ -420,8 +423,14 @@ impl World {
                     waiting: matches!(step, AttackStep::Waiting | AttackStep::Arrived),
                 }
             }
-            SettlerJob::Defend { health, step, .. } => {
+            SettlerJob::Defend {
+                health, step, home, ..
+            } => {
                 view.health = Some(*health);
+                // MIL-ATK-5.3 (T34): held inside, as a present soldier.
+                if *step == DefendStep::Held {
+                    view.hidden = standing_on(home.at);
+                }
                 view.request = self.fight_request(n, s);
                 view.detail = Some(format!("{step:?}"));
                 Activity::Defend {
@@ -442,7 +451,7 @@ impl World {
                 }
                 Activity::Specialist { flag: *flag }
             }
-            SettlerJob::Dying => Activity::Dying,
+            SettlerJob::Dying { .. } => Activity::Dying,
             // TRN-CARRY-7.1a: until it notices, it still holds its ware.
             SettlerJob::Released { carrier, step, .. } => {
                 if let ReleasedStep::Unnoticed { .. } = step {

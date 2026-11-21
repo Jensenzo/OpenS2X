@@ -391,7 +391,7 @@ fn sol_4_4_a_released_defender_fights_on_then_goes_to_a_warehouse() {
     assert!(listed(&world, TARGET, inside) && listed(&world, TARGET, extra));
     let mut ended = None;
     for _ in 0..3000 {
-        if world.settlers[attacker].is_none() {
+        if fallen(&world, attacker) {
             ended = Some(world.tick());
             break;
         }
@@ -406,6 +406,16 @@ fn sol_4_4_a_released_defender_fights_on_then_goes_to_a_warehouse() {
     }
     assert!(ended.is_some(), "the attacker fell");
     world.step();
+    // T32: he acts in his update after the one that saw the pair gone.
+    while matches!(
+        world.settlers[defender].as_ref().unwrap().job,
+        SettlerJob::Defend {
+            step: DefendStep::Ended,
+            ..
+        }
+    ) {
+        world.step();
+    }
     let job = &world.settlers[defender].as_ref().unwrap().job;
     assert!(
         !matches!(job, SettlerJob::Defend { .. } | SettlerJob::Garrison { .. }),
@@ -537,14 +547,24 @@ fn sol_4_4_a_defender_whose_home_goes_fights_on() {
     };
     assert!(fights(&world), "he fights on");
     for _ in 0..3000 {
-        if world.settlers[attacker].is_none() {
+        if fallen(&world, attacker) {
             break;
         }
         assert!(fights(&world));
         world.step();
     }
-    assert!(world.settlers[attacker].is_none(), "the attacker fell");
+    assert!(fallen(&world, attacker), "the attacker fell");
     world.step();
+    // T32: he acts in his update after the one that saw the pair gone.
+    while matches!(
+        world.settlers[defender].as_ref().unwrap().job,
+        SettlerJob::Defend {
+            step: DefendStep::Ended,
+            ..
+        }
+    ) {
+        world.step();
+    }
     let job = &world.settlers[defender].as_ref().unwrap().job;
     assert!(
         !matches!(job, SettlerJob::Defend { .. } | SettlerJob::Garrison { .. }),
@@ -1061,6 +1081,13 @@ fn pair_on_field(ra: usize, ha: u32, rd: usize, hd: u32) -> (World, usize, usize
     (world, attacker, defender, field)
 }
 
+/// MIL-ATK-6.6 (T31): the soldier fell: dying on his spot, or gone.
+pub(crate) fn fallen(world: &World, id: usize) -> bool {
+    world.settlers[id]
+        .as_ref()
+        .is_none_or(|s| matches!(s.job, SettlerJob::Dying { .. }))
+}
+
 fn health(world: &World, id: usize) -> Option<u32> {
     match world.settlers[id].as_ref()?.job {
         SettlerJob::Attack { health, .. } | SettlerJob::Defend { health, .. } => Some(health),
@@ -1164,7 +1191,11 @@ fn atk_t11_death_comes_one_tick_after_the_hit() {
     assert_eq!(world.attack_records()[0].counter, 1, "no new round");
     assert!(world.settlers[defender].is_some());
     world.step();
-    assert!(world.settlers[defender].is_none());
+    // T31: he dies on his spot (TRN-CARRY-7.1), in no pair.
+    assert!(matches!(
+        world.settlers[defender].as_ref().unwrap().job,
+        SettlerJob::Dying { stand: None }
+    ));
     assert!(!world
         .military_at(TARGET)
         .unwrap()
@@ -1174,6 +1205,545 @@ fn atk_t11_death_comes_one_tick_after_the_hit() {
     let next = world.attack_records()[0].opponent.expect("a new opponent");
     assert_ne!(next, defender);
     assert!(health(&world, attacker).is_some());
+}
+
+// T31 (MIL-ATK-6.6, E-mil-025): a soldier killed in a duel dies as every
+// settler (TRN-CARRY-7.1): from his update that sees his health at 0 (tick
+// t) he stands dying where he is, an attacker on his offset sample (his
+// field the one it truncates to), for the 28 ticks of the dying and one
+// more update: present in t .. t + 28, gone from t + 29. Meanwhile he is in
+// no pair and on no soldier list.
+// spec: MIL-ATK-6.6 (T31), TRN-CARRY-7.1, MIL-ATK-6.1a
+#[test]
+fn atk_t31_the_dead_soldier_dies_on_his_spot() {
+    use crate::view::{Activity, SettlerRef};
+    let (mut world, attacker, defender, field) = pair_on_field(0, 1, 0, 3);
+    // His step off the point: one lattice step south-east of it.
+    let point = crate::grid::field_sample(field);
+    let (columns, rows) = world.terrain.sample_size();
+    let off = crate::grid::neighbour(point, crate::grid::Direction::ALL[3], columns, rows).unwrap();
+    assert_ne!(off, point);
+    world.attackers[0].offset = Some(crate::combat::OffsetStep {
+        walk: crate::movement::LatticeWalk::standing(off),
+        back: false,
+    });
+    // The hit lands on the attacker, who strikes in this round.
+    world.attackers[0].hit = true;
+    world.attackers[0].counter = 0;
+    world.step();
+    assert_eq!(health(&world, attacker), Some(0));
+    world.step();
+    let t = world.tick();
+    let view = |w: &World| w.settler_view(SettlerRef::Settler(attacker));
+    let v = view(&world).expect("dying, not gone");
+    assert_eq!(v.activity, Activity::Dying);
+    assert_eq!(v.fine.expect("on his sample").step.at, off);
+    assert_eq!(v.walk.at, crate::grid::sample_field_truncating(off));
+    assert!(world.attack_records().iter().all(|r| r.soldier != attacker));
+    assert!(!listed(&world, (40, 20), attacker));
+    let _ = defender;
+    let mut last = t;
+    while view(&world).is_some() {
+        let v = view(&world).unwrap();
+        assert_eq!(v.activity, Activity::Dying, "tick {}", world.tick());
+        assert_eq!(v.fine.unwrap().step.at, off, "he does not move");
+        last = world.tick();
+        world.step();
+        assert!(world.tick() < t + 100, "never removed");
+    }
+    assert_eq!(last, t + 28, "28 ticks of dying and one more update");
+}
+
+// T31a (MIL-ATK-6.6, TRN-CARRY-7.1 corrected, E-mil-027): 14 ticks into a
+// dying (dying from t, in t + 14) the skeleton doodad the config names is
+// put on the dying settler's sample (an attacker's offset sample, a
+// defender's field point) and takes the next object number; none when a
+// doodad already stands on that sample, none when the config names none.
+// spec: MIL-ATK-6.6 (T31a), TRN-CARRY-7.1, SIM-START-4.2
+#[test]
+fn atk_t31a_the_skeleton_doodad_fourteen_ticks_into_the_dying() {
+    const SKULL: u32 = 77;
+    let kill_attacker = |skull: Option<u32>, lying: bool| {
+        let (mut world, attacker, _, field) = pair_on_field(0, 1, 0, 3);
+        world.settings.skeleton_doodad = skull;
+        let point = crate::grid::field_sample(field);
+        let (columns, rows) = world.terrain.sample_size();
+        let off =
+            crate::grid::neighbour(point, crate::grid::Direction::ALL[3], columns, rows).unwrap();
+        world.attackers[0].offset = Some(crate::combat::OffsetStep {
+            walk: crate::movement::LatticeWalk::standing(off),
+            back: false,
+        });
+        if lying {
+            world.skeletons.insert(
+                off,
+                crate::Skeleton {
+                    doodad: SKULL,
+                    number: 1,
+                    field,
+                },
+            );
+        }
+        world.attackers[0].hit = true;
+        world.attackers[0].counter = 0;
+        world.step();
+        world.step();
+        assert!(matches!(
+            world.settlers[attacker].as_ref().unwrap().job,
+            SettlerJob::Dying { .. }
+        ));
+        (world, off, field)
+    };
+    let (mut world, off, field) = kill_attacker(Some(SKULL), false);
+    for _ in 1..14 {
+        world.step();
+        assert!(world.skeletons().next().is_none(), "not before t + 14");
+    }
+    let before = world.next_object();
+    world.step();
+    let laid: Vec<_> = world.skeletons().map(|(at, s)| (at, *s)).collect();
+    assert_eq!(laid.len(), 1, "one skeleton at t + 14");
+    assert_eq!(laid[0].0, off, "on his sample");
+    assert_eq!(laid[0].1.doodad, SKULL);
+    assert_eq!(
+        laid[0].1.field,
+        crate::grid::sample_field_truncating(off),
+        "the field he lies on"
+    );
+    let _ = field;
+    assert!(laid[0].1.number >= before, "a new object number");
+    // A skeleton already there: none made, no number taken by it.
+    let (mut world, ..) = kill_attacker(Some(SKULL), true);
+    for _ in 1..=14 {
+        world.step();
+    }
+    assert_eq!(world.skeletons().count(), 1, "the one lying there only");
+    // No skeleton doodad in the config: none.
+    let (mut world, ..) = kill_attacker(None, false);
+    for _ in 1..=30 {
+        world.step();
+    }
+    assert_eq!(world.skeletons().count(), 0);
+}
+
+// T31a: the number is the counter's value at that moment, as any object
+// made then (SIM-START-4.2); a defender dying on the field's point lays it
+// on that point.
+// spec: MIL-ATK-6.6 (T31a), TRN-CARRY-7.1, SIM-START-4.2
+#[test]
+fn atk_t31a_the_skeleton_takes_the_counters_number() {
+    let (mut world, _, defender, field) = pair_on_field(0, 3, 0, 1);
+    world.settings.skeleton_doodad = Some(5);
+    world.attackers[0].hit = true;
+    world.attackers[0].counter = 1;
+    world.step();
+    world.step();
+    assert!(matches!(
+        world.settlers[defender].as_ref().unwrap().job,
+        SettlerJob::Dying { stand: None }
+    ));
+    for _ in 1..14 {
+        world.step();
+    }
+    // Nothing else makes an object in this quiet scene at that tick: the
+    // skeleton takes the counter's value and raises it by one.
+    let before = world.next_object();
+    world.step();
+    let (at, s) = world.skeletons().next().expect("laid");
+    assert_eq!(at, crate::grid::field_sample(field));
+    assert_eq!(s.number, before);
+    assert_eq!(world.next_object(), before + 1);
+}
+
+// GFX-OBJ-1.4a: a skeleton goes for good when its field becomes a road,
+// flag or building field (its type deletes by street, as every doodad type
+// the scripts leave so).
+// spec: GFX-OBJ-1.4a, TRN-CARRY-7.1
+#[test]
+fn a_skeleton_goes_with_a_road_on_its_field() {
+    let (mut world, ..) = pair_on_field(0, 3, 0, 3);
+    world.skeletons.insert(
+        (10, 10),
+        crate::Skeleton {
+            doodad: 5,
+            number: 1,
+            field: (2, 2),
+        },
+    );
+    world.remove_doodads((3, 2), crate::DOODADS_BY_STREET);
+    assert_eq!(world.skeletons().count(), 1);
+    world.remove_doodads((2, 2), crate::DOODADS_BY_STREET);
+    assert_eq!(world.skeletons().count(), 0);
+}
+
+// T32 (MIL-ATK-6.6 as corrected, E-mil-025, E-mil-026): the target's
+// defender whose attacker dies in tick t (the dead one's update) notices it
+// in his first update after the dead one's and starts home in his update
+// after that: t + 1 when he comes after the dead one in the settlers'
+// order, t + 2 when before. His way home is the walk home of 4.4: a free
+// walk to his building's flag, on its point in one update, and in that
+// update the step into the building.
+// spec: MIL-ATK-6.6 (T32), MIL-ATK-4.4
+#[test]
+fn atk_t32_the_survivor_acts_two_updates_after_the_death_counted_from_his_own() {
+    let run = |attacker_first: bool| {
+        let (mut world, attacker, defender, _) = pair_on_field(0, 1, 0, 3);
+        // ECO-REQ-0.2: the soldiers' list in number order.
+        world.settlers[defender].as_mut().unwrap().number = 100;
+        world.settlers[attacker].as_mut().unwrap().number = if attacker_first { 50 } else { 150 };
+        world.attackers[0].hit = true;
+        world.attackers[0].counter = 0;
+        world.step();
+        world.step();
+        assert!(matches!(
+            world.settlers[attacker].as_ref().unwrap().job,
+            SettlerJob::Dying { .. }
+        ));
+        let t = world.tick();
+        let walking_home = |w: &World| {
+            matches!(
+                w.settlers[defender].as_ref().unwrap().job,
+                SettlerJob::Defend {
+                    step: DefendStep::Back,
+                    ..
+                }
+            )
+        };
+        assert!(!walking_home(&world));
+        while !walking_home(&world) {
+            world.step();
+            assert!(world.tick() < t + 10);
+        }
+        let waited = world.tick() - t;
+        (world, defender, waited)
+    };
+    // The defender after the dead attacker (a higher number): t + 1.
+    let (_, _, after) = run(true);
+    assert_eq!(after, 1, "after the dead one: t + 1");
+    // Before him: t + 2.
+    let (mut world, defender, before) = run(false);
+    assert_eq!(before, 2, "before the dead one: t + 2");
+    // Home through his flag: the walk ends on the flag, the step into the
+    // building starts in that update.
+    let flag = world.flag_of(TARGET);
+    let s = world.settlers[defender].as_ref().unwrap();
+    assert_eq!(s.walker.path.back(), Some(&flag), "a free walk to his flag");
+    let mut on_flag = None;
+    for _ in 0..200 {
+        world.step();
+        let s = world.settlers[defender].as_ref().unwrap();
+        if on_flag.is_none() && s.walker.at == flag {
+            on_flag = Some(world.tick());
+            assert_eq!(
+                s.walker.path.iter().copied().collect::<Vec<_>>(),
+                vec![TARGET],
+                "the step in ordered at once"
+            );
+            assert!(
+                s.walker.next.is_none(),
+                "at progress 0, moving from the next tick"
+            );
+        }
+        if !matches!(s.job, SettlerJob::Defend { .. }) {
+            assert_eq!(s.walker.at, TARGET, "home");
+            break;
+        }
+    }
+    assert!(on_flag.is_some(), "he passed his flag");
+}
+
+// T34 (MIL-ATK-5.3, E-mil-026): the target's own soldier paired with an
+// attacker stays idle inside (with his opponent, no candidate any more)
+// until, in one of his updates, his attacker stands on the target's flag
+// field or has arrived (the end of his offset step, 6.1a); he turns to
+// wait-for-leave in that update and leaves in his next (under the
+// cooldown, through his flag). (a) Paired by an attacker waiting on his
+// field: held through the attacker's step, wait-for-leave in his first
+// update after it ended. (b) Paired by an attacker at the door: at once.
+// spec: MIL-ATK-5.3 (T34), MIL-ATK-6.1a, MIL-ATK-4.1
+#[test]
+fn atk_t34_the_targets_defender_is_held_until_his_attacker_is_there() {
+    let job = |w: &World, id: usize| w.settlers[id].as_ref().unwrap().job.clone();
+    let left = |w: &World, id: usize| {
+        let s = w.settlers[id].as_ref().unwrap();
+        s.walker.at != TARGET || s.walker.is_walking()
+    };
+    // (a) The attacker waits unpaired on his field (49, 20), on its point.
+    for attacker_first in [true, false] {
+        let (mut world, attacker, defender, _) = pair_on_field(0, 3, 0, 3);
+        // Undo the hand-made pairing: the defender inside, idle.
+        world.attackers[0].opponent = None;
+        world.attackers[0].offset = None;
+        let home = world.target_of(TARGET).unwrap();
+        {
+            let s = world.settlers[defender].as_mut().unwrap();
+            s.walker = Walker::new(TARGET);
+            s.job = SettlerJob::Garrison {
+                target: home,
+                health: 3,
+                heal: 0,
+            };
+        }
+        // The barracks' other soldier leaves: he is the one to be paired.
+        let other = world.military_at(TARGET).unwrap().soldiers[0];
+        assert_ne!(other, defender);
+        world
+            .military
+            .get_mut(&TARGET)
+            .unwrap()
+            .soldiers
+            .retain(|&s| s != other);
+        world.settlers[other] = None;
+        world.settlers[defender].as_mut().unwrap().number = 100;
+        world.settlers[attacker].as_mut().unwrap().number = if attacker_first { 50 } else { 150 };
+        let mut paired = None;
+        let mut step_ended = None;
+        let mut turned = None;
+        for _ in 0..200 {
+            world.step();
+            let t = world.tick();
+            let record = world.attack_records()[0].clone();
+            if paired.is_none() && record.opponent.is_some() {
+                paired = Some(t);
+            }
+            if step_ended.is_none()
+                && record
+                    .offset
+                    .is_some_and(|o| o.walk.is_done(&world.terrain) && !o.back)
+                && record.opponent.is_some()
+            {
+                step_ended = Some(t);
+            }
+            match job(&world, defender) {
+                SettlerJob::Defend {
+                    step: DefendStep::Leaving,
+                    ..
+                } if turned.is_none() => {
+                    turned = Some(t);
+                    assert!(!left(&world, defender));
+                }
+                SettlerJob::Defend { .. } if turned.is_none() => {
+                    assert!(!left(&world, defender), "held inside, tick {t}");
+                    assert!(paired.is_some());
+                }
+                _ => {}
+            }
+            if left(&world, defender) {
+                let (turned, step_ended) = (turned.unwrap(), step_ended.unwrap());
+                // His first update after the step ended: the same tick when
+                // he comes after the attacker, the next when before.
+                let expect = if attacker_first {
+                    step_ended
+                } else {
+                    step_ended + 1
+                };
+                assert_eq!(
+                    turned, expect,
+                    "wait-for-leave (attacker first: {attacker_first})"
+                );
+                assert_eq!(t, turned + 1, "the leave in his next update");
+                assert!(paired.unwrap() + 2 < step_ended, "the step took its ticks");
+                break;
+            }
+        }
+        assert!(turned.is_some(), "he turned to wait-for-leave");
+    }
+    // (b) An attacker reaching the door (the target's flag) pairs there;
+    // the defender, updated after him, turns in that same tick.
+    let (mut world, attacker, defender, _) = pair_on_field(0, 3, 0, 3);
+    world.attackers[0].opponent = None;
+    world.attackers[0].offset = None;
+    world.attackers[0].field = None;
+    let home = world.target_of(TARGET).unwrap();
+    let guard = world.target_of((40, 20)).unwrap();
+    {
+        let s = world.settlers[defender].as_mut().unwrap();
+        s.walker = Walker::new(TARGET);
+        s.number = 100;
+        s.job = SettlerJob::Garrison {
+            target: home,
+            health: 3,
+            heal: 0,
+        };
+    }
+    let other = world.military_at(TARGET).unwrap().soldiers[0];
+    world
+        .military
+        .get_mut(&TARGET)
+        .unwrap()
+        .soldiers
+        .retain(|&s| s != other);
+    world.settlers[other] = None;
+    let door = world.flag_of(TARGET);
+    {
+        let s = world.settlers[attacker].as_mut().unwrap();
+        s.number = 50;
+        s.walker = Walker::new(door);
+        s.job = SettlerJob::Attack {
+            home: guard,
+            health: 3,
+            step: AttackStep::Walking,
+        };
+    }
+    world.step();
+    assert!(
+        world.attack_records()[0].opponent.is_some(),
+        "paired at the door"
+    );
+    assert!(matches!(
+        job(&world, defender),
+        SettlerJob::Defend {
+            step: DefendStep::Leaving,
+            ..
+        }
+    ));
+    world.step();
+    assert!(left(&world, defender), "out in the next update");
+}
+
+// T33, T33a (MIL-ATK-4.4, E-mil-025, E-mil-026): a soldier walking home
+// ends the walk with the step into the building in one update U; at a
+// building that is no warehouse his return ends in his next update, and
+// only then is he idle (a candidate). At a castle (a warehouse, its
+// soldiers on its door field) the walk on to the door field is ordered in
+// U itself (no standing tick), and he is idle in the update it ends.
+// spec: MIL-ATK-4.4 (T33, T33a), MIL-SOL-6.5
+#[test]
+fn atk_t33_home_one_update_after_the_step_in_but_not_at_a_castle() {
+    let walking_in = |world: &mut World, at: Point| {
+        let target = world.target_of(at).unwrap();
+        let owner = world.building_at(at).unwrap().owner;
+        let flag = world.flag_of(at);
+        let mut walker = Walker::new(flag);
+        walker.walk([at]);
+        let id = world.add_settler(Settler {
+            number: 1,
+            player: owner,
+            profession: RANK[0],
+            list: crate::SettlerList::Soldiers,
+            walker,
+            job: SettlerJob::Defend {
+                home: target,
+                health: 3,
+                step: DefendStep::Back,
+                opponent: None,
+                intercept: false,
+                defends: None,
+            },
+            timer: 0,
+            carrying: None,
+        });
+        world.military.get_mut(&at).unwrap().soldiers.push(id);
+        id
+    };
+    let idle = |world: &World, id: usize| {
+        matches!(
+            world.settlers[id].as_ref().unwrap().job,
+            SettlerJob::Garrison { .. }
+        )
+    };
+    // A barracks: one update standing in it, then idle.
+    let mut world = scene();
+    fill(&mut world, P1, BARRACKS, TARGET, &[(0, 3)]);
+    // An enemy near: the barracks wants all its soldiers (MIL-SOL-4.4).
+    fill(&mut world, P0, GUARD, (40, 20), &[(0, 3), (0, 3)]);
+    let id = walking_in(&mut world, TARGET);
+    let mut stepped_in = None;
+    for _ in 0..100 {
+        world.step();
+        let s = world.settlers[id].as_ref().unwrap();
+        if stepped_in.is_none() && s.walker.at == TARGET && !s.walker.is_walking() {
+            stepped_in = Some(world.tick());
+            assert!(
+                !idle(&world, id),
+                "still returning in the update the step ends"
+            );
+        } else if let Some(u) = stepped_in {
+            assert!(idle(&world, id), "idle in the next update");
+            assert_eq!(world.tick(), u + 1);
+            break;
+        }
+    }
+    assert!(stepped_in.is_some());
+    // The castle (P1's headquarters): on to its door field at once, idle in
+    // the update that walk ends.
+    let hq = (85, 20);
+    // ECO-CAT-2.4: the castle's door north-west (direction 4).
+    let kind = world.building_at(hq).unwrap().building_type;
+    world.building_types.get_mut(&kind).unwrap().doors = [Some(4); 3];
+    let door = world.door_field(hq);
+    assert_ne!(door, hq);
+    let id = walking_in(&mut world, hq);
+    let mut on_castle = None;
+    for _ in 0..100 {
+        world.step();
+        let s = world.settlers[id].as_ref().unwrap();
+        if on_castle.is_none() && s.walker.at == hq && s.walker.next.is_none() {
+            on_castle = Some(world.tick());
+            assert_eq!(
+                s.walker.path.iter().copied().collect::<Vec<_>>(),
+                vec![door],
+                "the walk on to the door field in the same update"
+            );
+            assert!(!idle(&world, id));
+        }
+        if s.walker.at == door && !s.walker.is_walking() {
+            assert!(idle(&world, id), "idle in the update the walk ends");
+            break;
+        }
+        assert!(!idle(&world, id), "not idle before the door field");
+    }
+    assert!(on_castle.is_some());
+}
+
+// T35 (MIL-ATK-5.1 corrected, E-mil-029): a reinforcement walking in from a
+// warehouse ends his step onto the building's field in update U, standing
+// there still walking in: no candidate of 5.1 in U; he is one from his next
+// update (so an attacker updated before him pairs with him in U + 2).
+// spec: MIL-ATK-5.1 (T35), MIL-ATK-5.2
+#[test]
+fn atk_t35_a_reinforcement_is_a_candidate_one_update_after_his_step_in() {
+    let mut world = scene();
+    // A private inside, and an enemy near (the barracks keeps its soldiers).
+    fill(&mut world, P1, BARRACKS, TARGET, &[(0, 3)]);
+    fill(&mut world, P0, GUARD, (40, 20), &[(0, 3), (0, 3)]);
+    let private = world.military_at(TARGET).unwrap().soldiers[0];
+    let target = world.target_of(TARGET).unwrap();
+    let mut walker = Walker::new(world.flag_of(TARGET));
+    walker.walk([TARGET]);
+    // A general walking in: "prefer strong" picks him once he is a candidate.
+    let id = world.add_settler(Settler {
+        number: 1,
+        player: P1,
+        profession: RANK[4],
+        list: crate::SettlerList::Soldiers,
+        walker,
+        job: SettlerJob::ToMilitary { target, health: 7 },
+        timer: 0,
+        carrying: None,
+    });
+    world.military.get_mut(&TARGET).unwrap().soldiers.push(id);
+    let mut step_ended = None;
+    for _ in 0..100 {
+        world.step();
+        let s = world.settlers[id].as_ref().unwrap();
+        let chosen = world.pick_defender(TARGET, true);
+        if step_ended.is_none() && s.walker.at == TARGET && !s.walker.is_walking() {
+            step_ended = Some(world.tick());
+            assert_eq!(
+                chosen,
+                Some(private),
+                "not a candidate in the update his step ends"
+            );
+        } else if let Some(u) = step_ended {
+            assert_eq!(chosen, Some(id), "a candidate from his next update");
+            assert_eq!(world.tick(), u + 1);
+            return;
+        } else {
+            assert_eq!(chosen, Some(private), "walking in");
+        }
+    }
+    panic!("he never stepped in");
 }
 
 // T9, T10: hit chances.
@@ -1789,7 +2359,7 @@ fn atk_t20_the_interceptor_waits_and_fights_on_the_next_attackers_field() {
         };
     }
     let job = |world: &World| world.settlers[interceptor].as_ref().unwrap().job.clone();
-    let alive = |world: &World, id: usize| world.settlers[id].is_some();
+    let alive = |world: &World, id: usize| !fallen(world, id);
     let mut waited = false;
     let mut fought_on_w = false;
     for _ in 0..4000 {

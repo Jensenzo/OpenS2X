@@ -2296,3 +2296,188 @@ fn the_swim_test_is_the_water_level() {
     assert!(!swims(level + 3.0, 2.0), "dry ground above the water");
     assert!(swims(level - 5.0, 2.0));
 }
+
+/// A world of 8 x 8 flat fields with two trees of kind 7 (1001 ticks to
+/// ripe): a ripe one on (2, 2) and a young one on (5, 5) (`ripe_in` 667),
+/// and the lookup giving kind 7 the element `tree_01` (start size 0.1,
+/// 0.0009 a tick).
+fn two_trees() -> (World, Lookup, s2_assets::landscape::LandscapeElement) {
+    use s2_assets::landscape::{ElementType, LandscapeElement};
+    let n = 64;
+    let terrain = Terrain {
+        width: 8,
+        height: 8,
+        heights: vec![0; n],
+        height_floor: -100,
+        states: vec![0; n],
+        samples: Vec::new(),
+    };
+    let kind = s2_sim::DepositKind {
+        id: 7,
+        good: None,
+        next: None,
+        elevation: 1,
+        grow_ticks: 1001,
+        blocking: false,
+        life_time: None,
+        needs_plantable: false,
+        random_offset: false,
+    };
+    let rules = s2_sim::Rules {
+        deposit_kinds: vec![kind],
+        ..s2_sim::Rules::empty()
+    };
+    let deposit = |field: (u32, u32), ripe_in| s2_sim::MapDeposit {
+        field,
+        kind: 7,
+        position: s2_sim::grid::field_sample(field),
+        ripe_in,
+    };
+    let setup = s2_sim::GameSetup {
+        deposits: vec![deposit((2, 2), 0), deposit((5, 5), 667)],
+        ..Default::default()
+    };
+    let world = World::new_game(1, terrain, rules, &setup);
+    let mut lookup = Lookup::default();
+    lookup.deposits.insert(
+        7,
+        DepositLook {
+            gfx_name: "tree_01".into(),
+            start_size: Some(0.1),
+            speed: Some(0.0009),
+        },
+    );
+    let element = LandscapeElement {
+        name: "tree_01".into(),
+        mesh: "data/x/tree01.gr2".into(),
+        shader: "tree_shader.fx".into(),
+        rot: [0.0, 360.0],
+        scale_x: [0.8, 1.0],
+        scale_y: [0.8, 1.0],
+        scale_z: [0.8, 1.0],
+        offset: [0.0, 0.0],
+        kind: ElementType::Tree,
+        blend_mode: 0,
+        align_on_water: false,
+        shadow_cast: true,
+    };
+    (world, lookup, element)
+}
+
+/// Hook W30b: a tree kind with a project's look is drawn with its model in
+/// the project tree family, with the same turn, sizes, place and shadow as
+/// the original's (the element's draws, in the same order); a growing one
+/// by the look's rule. Without a look everything is as before.
+// spec: GFX-OBJ-1.4, GFX-ANIM-3.8b
+#[test]
+fn a_project_tree_takes_the_originals_place() {
+    let (world, mut lookup, element) = two_trees();
+    let frame = Frame::new(8, 8);
+    let elements = [element];
+    let scenery = Scenery {
+        elements: &elements,
+        ..Scenery::default()
+    };
+    let place = |lookup: &Lookup| {
+        let mut poses = Poses::with_rng(s2_sim::rng::Rng::new(VIEW_SEED));
+        let mut out = objects(
+            &world,
+            lookup,
+            &ModelTables::default(),
+            &scenery,
+            &frame,
+            false,
+            &mut poses,
+        );
+        out.retain(|p| p.key.0 == Kind::Deposit);
+        out.sort_by_key(|p| p.key);
+        out
+    };
+    let original = place(&lookup);
+    assert_eq!(original.len(), 2);
+    assert!(original.iter().all(|p| p.file == "data/x/tree01.gr2"));
+    assert!(original
+        .iter()
+        .all(|p| p.family == models3d::Family::Tree && p.shadow));
+    // No look of the kind's name: the same.
+    lookup.tree_looks = tree_looks_by_kind(
+        [(7, Some("BirchA"))],
+        &[crate::extend::TreeLook::new("FirA", "fir.glb")],
+    );
+    assert!(lookup.tree_looks.is_empty());
+    assert_eq!(place(&lookup), original);
+    // A look: its model and family, the rest as the original's.
+    let mut look = crate::extend::TreeLook::new("BirchA", "data/trees/birch.glb");
+    lookup.tree_looks = tree_looks_by_kind([(7, Some("BirchA")), (8, None)], &[look.clone()]);
+    let project = place(&lookup);
+    for (p, o) in project.iter().zip(&original) {
+        assert_eq!(p.file, "data/trees/birch.glb");
+        assert_eq!(p.family, models3d::Family::FacetTree);
+        assert_eq!(
+            (p.key, p.at, p.heading, p.scale, p.shadow),
+            (o.key, o.at, o.heading, o.scale, o.shadow)
+        );
+    }
+    // The young tree: the original's growing; with RootWidth its width by
+    // the square root of its size, as high.
+    let young = |placed: &[Placed]| placed[1].scale;
+    let full = place(&Lookup {
+        tree_looks: HashMap::new(),
+        ..lookup.clone()
+    });
+    let s = deposit_size(
+        &world,
+        7,
+        world.deposit((5, 5)).expect("the young tree").state,
+        &lookup.deposits[&7],
+    );
+    assert!(s > 0.0 && s < 1.0 / 3.0, "{s}");
+    let element_scale = [0, 1, 2].map(|k| full[1].scale[k] / growth_scale(s)[k]);
+    look.growth = crate::extend::TreeGrowth::RootWidth;
+    lookup.tree_looks = tree_looks_by_kind([(7, Some("BirchA"))], &[look]);
+    let root = place(&lookup);
+    let want = [0, 1, 2].map(|k| element_scale[k] * root_width_growth(s)[k]);
+    for (got, want) in young(&root).iter().zip(want) {
+        assert!((got - want).abs() < 1e-4, "{:?}", young(&root));
+    }
+    assert_ne!(young(&root)[0], young(&full)[0]);
+    assert!((young(&root)[1] - young(&full)[1]).abs() < 1e-6);
+    // The ripe one is full grown either way.
+    assert_eq!(root[0].scale, full[0].scale);
+}
+
+/// Hook W30b, `TreeGrowth::RootWidth`: height s, width the square root of
+/// s; a third-grown tree 0.577 wide, both rules full at 1.
+// spec: GFX-ANIM-3.8b
+#[test]
+fn root_width_growth_by_size() {
+    let close = |a: [f32; 3], b: [f32; 3]| a.iter().zip(&b).all(|(a, b)| (a - b).abs() < 1e-5);
+    assert!(close(root_width_growth(0.1), [0.316_228, 0.1, 0.316_228]));
+    assert!(close(
+        root_width_growth(1.0 / 3.0),
+        [0.577_350, 1.0 / 3.0, 0.577_350]
+    ));
+    assert!(close(root_width_growth(0.25), [0.5, 0.25, 0.5]));
+    assert!(close(root_width_growth(1.0), growth_scale(1.0)));
+    assert!(close(root_width_growth(0.0), [0.0; 3]));
+}
+
+/// Hook W30b: looks find their kind by its rules name; a later look of a
+/// name wins; none: no entry.
+// spec: none (hook W30b: a look names its kind by the rules name)
+#[test]
+fn tree_looks_find_their_kinds() {
+    use crate::extend::TreeLook;
+    let kinds = [(1, Some("BirchA")), (2, Some("FirA")), (3, None)];
+    assert!(tree_looks_by_kind(kinds, &[]).is_empty());
+    let looks = tree_looks_by_kind(
+        kinds,
+        &[
+            TreeLook::new("BirchA", "a.glb"),
+            TreeLook::new("BirchA", "b.glb"),
+            TreeLook::new("PalmB", "p.glb"),
+        ],
+    );
+    assert_eq!(looks.len(), 1);
+    assert_eq!(looks[&1].model, "b.glb");
+}

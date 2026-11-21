@@ -1327,3 +1327,132 @@ fn a_felled_tree_falls_to_the_woodcutters_left() {
     let b = top([3.0, 0.0, 0.0]);
     assert!((b[2] + s).abs() < 1e-5 && b[0].abs() < 1e-5, "{b:?}");
 }
+
+// spec: none (hook W30: a project building's smoke rises from its start for as long as the building works)
+#[test]
+fn a_project_buildings_effect_runs_while_it_works() {
+    // Not working: none.
+    assert!(!building_effect_on(None, 0.0, 5.0));
+    // From the work's start (a start of 0 at once).
+    assert!(building_effect_on(Some(5.0), 0.0, 5.0));
+    // A later start in clip seconds, 1.8 of them a game second.
+    assert!(!building_effect_on(Some(5.0), 0.9, 5.4));
+    assert!(building_effect_on(Some(5.0), 0.9, 5.5));
+    // And on, as long as the work goes on.
+    assert!(building_effect_on(Some(5.0), 0.9, 500.0));
+}
+
+/// Hook W30b: a tree shows its far version while its size on the screen is
+/// below the share: a 9 m tree in a view of span 0.5246 (29.4 degrees) is
+/// 0.1 of the view's height at depth 171.6; behind the camera never.
+// spec: none (hook W30b: the far version by the size on the screen)
+#[test]
+fn a_tree_far_away_shows_its_far_version() {
+    let span = 2.0 * (29.4f32.to_radians() * 0.5).tan();
+    assert!((span - 0.5246).abs() < 1e-3);
+    let at = 9.0 / (0.1 * span);
+    assert!(!far_version(9.0, at - 1.0, span, 0.1));
+    assert!(far_version(9.0, at + 1.0, span, 0.1));
+    assert!(!far_version(9.0, -500.0, span, 0.1));
+    // A share of 0: never far.
+    assert!(!far_version(9.0, 1.0e6, span, 0.0));
+}
+
+/// Hook W30b: the default switch in the game's camera (GFX-VIEW-3.3, 3.5):
+/// in a 16:9 view a grown 10 m tree at the farthest zoom is far from the
+/// view's top to its bottom, at the default zoom full but along its far
+/// edge, at zoom 2 full everywhere; a sapling a tenth of the size is far.
+// spec: GFX-VIEW-3.3, GFX-VIEW-3.5 (the depths of the view's top, middle
+// and bottom by zoom); none (hook W30b: the default switch)
+#[test]
+fn the_default_switch_by_zoom() {
+    use crate::render::world3d::{vertical_fov, DISTANCE_PER_ZOOM};
+    let fov = vertical_fov(16.0 / 9.0);
+    let span = 2.0 * (fov * 0.5).tan();
+    // The eye 0.8815 x the distance above the ground (the back direction
+    // of pitch -0.8 with y x 1.4), the view 53.13 degrees down.
+    let depths = |zoom: u8| {
+        let h = 0.8815 * DISTANCE_PER_ZOOM * f32::from(zoom);
+        let pitch = 0.8f32.asin();
+        let half = fov * 0.5;
+        [half, 0.0, -half].map(|off: f32| h / (pitch - off).sin() * off.cos())
+    };
+    let far = |size: f32, zoom: u8| {
+        depths(zoom).map(|d| far_version(size, d, span, crate::extend::TREE_FAR_BELOW))
+    };
+    assert_eq!(far(10.0, 4), [true, true, true]);
+    assert_eq!(far(10.0, 3), [true, false, false]);
+    assert_eq!(far(9.0, 3), [true, true, false]);
+    assert_eq!(far(10.0, 2), [false, false, false]);
+    assert_eq!(far(1.0, 2), [true, true, true]);
+}
+
+/// Hook W30b: `tree_versions` shows each tree's one version by the main
+/// camera (not the mirror's), touching only trees whose version changes.
+// spec: none (hook W30b: each tree one version, by the main camera)
+#[test]
+fn tree_versions_follow_the_camera() {
+    use bevy::ecs::system::RunSystemOnce;
+    let mut world = World::new();
+    let projection = Projection::Perspective(PerspectiveProjection {
+        fov: 29.4f32.to_radians(),
+        ..default()
+    });
+    let camera = world
+        .spawn((
+            MapCamera3d,
+            Transform::from_xyz(0.0, 0.0, 0.0).looking_to(-Vec3::Z, Vec3::Y),
+            projection.clone(),
+        ))
+        .id();
+    // The mirror's camera far below: not asked.
+    world.spawn((
+        MapCamera3d,
+        MirrorCamera3d,
+        Transform::from_xyz(0.0, -1.0e4, 0.0).looking_to(-Vec3::Z, Vec3::Y),
+        projection,
+    ));
+    let tree = |world: &mut World, z: f32| {
+        let near = world
+            .spawn((TreeVersion { far: false }, Visibility::Inherited))
+            .id();
+        let far = world
+            .spawn((TreeVersion { far: true }, Visibility::Hidden))
+            .id();
+        let parent = world
+            .spawn((
+                Transform::from_xyz(0.0, -4.5, z),
+                ProjectTree {
+                    extent: [6.0, 9.0, 6.0],
+                    far_below: 0.1,
+                    far: None,
+                },
+            ))
+            .add_children(&[near, far])
+            .id();
+        (parent, near, far)
+    };
+    let (close, close_near, close_far) = tree(&mut world, -50.0);
+    let (distant, distant_near, distant_far) = tree(&mut world, -500.0);
+    world.run_system_once(tree_versions).expect("runs");
+    let shown = |world: &World, e: Entity| *world.get::<Visibility>(e).expect("visibility");
+    assert_eq!(shown(&world, close_near), Visibility::Inherited);
+    assert_eq!(shown(&world, close_far), Visibility::Hidden);
+    assert_eq!(shown(&world, distant_near), Visibility::Hidden);
+    assert_eq!(shown(&world, distant_far), Visibility::Inherited);
+    assert_eq!(world.get::<ProjectTree>(close).unwrap().far, Some(false));
+    assert_eq!(world.get::<ProjectTree>(distant).unwrap().far, Some(true));
+    // The camera moves close to the distant one: it turns to its model.
+    world
+        .get_mut::<Transform>(camera)
+        .expect("camera")
+        .translation
+        .z = -460.0;
+    world.run_system_once(tree_versions).expect("runs");
+    assert_eq!(shown(&world, distant_near), Visibility::Inherited);
+    assert_eq!(shown(&world, distant_far), Visibility::Hidden);
+    // Grown to a tenth of its size it is small again: far.
+    world.get_mut::<Transform>(distant).expect("tree").scale = Vec3::splat(0.1);
+    world.run_system_once(tree_versions).expect("runs");
+    assert_eq!(shown(&world, distant_far), Visibility::Inherited);
+}

@@ -2879,7 +2879,7 @@ fn t35_going_home_takes_the_lowest_road_length() {
         profession: BUILDER,
         list: SettlerList::Constructors,
         walker: crate::movement::Walker::new(middle),
-        job: SettlerJob::Dying,
+        job: SettlerJob::Dying { stand: None },
         timer: 0,
         carrying: None,
     };
@@ -3074,7 +3074,7 @@ fn t36_going_home_off_a_flag_counts_the_first_leg() {
         profession: BUILDER,
         list: SettlerList::Constructors,
         walker: crate::movement::Walker::new(near),
-        job: SettlerJob::Dying,
+        job: SettlerJob::Dying { stand: None },
         timer: 0,
         carrying: None,
     };

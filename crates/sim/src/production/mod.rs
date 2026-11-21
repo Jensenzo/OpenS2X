@@ -1647,6 +1647,15 @@ impl World {
             SettlerJob::Leaving { .. } => return self.leaving_fine_position(settler),
             // MIL-ATK-6.1a: an attacker's step off his waiting field's point.
             SettlerJob::Attack { .. } => return self.attacker_fine_position(settler),
+            // MIL-ATK-6.6 (T31): dying where his offset step left him.
+            SettlerJob::Dying { stand: Some(at) } => {
+                return Some(FinePosition {
+                    at: *at,
+                    next: None,
+                    progress_bits: 0,
+                    facing: None,
+                })
+            }
             _ => return None,
         };
         let field = settler.walker.at;

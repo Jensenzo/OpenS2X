@@ -373,6 +373,7 @@ mod tests {
                 decal: Vec::new(),
                 piece: 0,
                 group: 0,
+                facet: None,
             }],
             skeleton: Some(Arc::new(Skeleton {
                 name: "root".into(),

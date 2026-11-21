@@ -443,6 +443,9 @@ pub struct World {
     next_order: u32,
     /// ECO-SPC-3.2: the geologists' signs.
     signs: BTreeMap<Point, Sign>,
+    /// TRN-CARRY-7.1 (T31a): the skeleton doodads dying settlers left, by
+    /// the height sample they lie on.
+    pub(crate) skeletons: BTreeMap<Point, Skeleton>,
     /// UI-GAME-8.5: each player's statistics series.
     statistics: BTreeMap<PlayerId, statistics::PlayerStatistics>,
     /// CAM: the game's mission, if it has one.
@@ -597,6 +600,7 @@ impl std::fmt::Debug for World {
             specialist_rules,
             next_order,
             signs,
+            skeletons,
             statistics,
             mission,
             mission_events,
@@ -711,6 +715,7 @@ impl std::fmt::Debug for World {
             .field("specialist_rules", specialist_rules)
             .field("next_order", next_order)
             .field("signs", signs)
+            .field("skeletons", skeletons)
             .field("statistics", statistics)
             .field("mission", mission)
             .field("mission_events", mission_events);
@@ -904,6 +909,7 @@ impl World {
             specialist_rules: rules.specialists,
             next_order: 0,
             signs: BTreeMap::new(),
+            skeletons: BTreeMap::new(),
             statistics: BTreeMap::new(),
             mission: None,
             mission_events: Vec::new(),
@@ -1667,9 +1673,17 @@ impl World {
     }
 
     /// GFX-OBJ-1.4a: the doodads on `field` that `which` removes are gone
-    /// for good.
+    /// for good. A skeleton's type deletes by street (the scripts leave the
+    /// switch on), so every kind of removal takes the skeletons of the field.
     pub(crate) fn remove_doodads(&mut self, field: Point, which: u8) {
         *self.doodads_removed.entry(field).or_insert(0) |= which;
+        self.skeletons.retain(|_, s| s.field != field);
+    }
+
+    /// TRN-CARRY-7.1 (T31a): the skeleton doodads on the map, by the height
+    /// sample each lies on.
+    pub fn skeletons(&self) -> impl Iterator<Item = (Point, &Skeleton)> {
+        self.skeletons.iter().map(|(&at, s)| (at, s))
     }
 
     /// GFX-OBJ-1.4a: the fields whose map doodads are gone for good, and
@@ -1709,6 +1723,20 @@ impl World {
         }
         self.doodads_removed = removed;
     }
+}
+
+/// TRN-CARRY-7.1 (T31a, E-mil-027): the skeleton doodad a dying settler
+/// leaves (`cfg_setSettlerSkeletonDoodad`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Skeleton {
+    /// Its doodad type.
+    pub doodad: u32,
+    /// Its object number (SIM-START-4.2).
+    pub number: u32,
+    /// The field he lay on (the field the views show him on): its own field,
+    /// whose road, flag or building removes it (GFX-OBJ-1.4a; ours the field
+    /// his sample truncates to until Q-1072 is answered).
+    pub field: Point,
 }
 
 /// GFX-OBJ-1.4a (i): a field's doodads whose type deletes by street are gone.
