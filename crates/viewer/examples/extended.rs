@@ -20,8 +20,8 @@ use s2_viewer::extend::{
     CameraFollow, CurrentSettings, MapThings, MenuEntry, MusicSlot, PageWidget,
 };
 use s2_viewer::{
-    BuildingLook, Captions, EffectRule, Extensions, ProjectEvent, RenderOptions, SettingsOptions,
-    TreeGrowth, TreeLook,
+    BuildingLook, Captions, EffectRule, Extensions, ObjectLook, ProjectEvent, RenderOptions,
+    SettingsOptions, TreeGrowth, TreeLook,
 };
 
 /// The woodcutter's hut costs one more stone: an overlay sees the
@@ -207,6 +207,28 @@ fn main() -> std::process::ExitCode {
                     look.growth = TreeGrowth::RootWidth;
                     look
                 })
+            })
+            .into_iter()
+            .flatten()
+            .collect(),
+        // Hook W30c: the repository's test stone piles for the stonemason's
+        // rocks (a pile of one, two and three stones for its six states),
+        // its grain tuft for the fields and its sign for the empty sign,
+        // when the asset folder holds them (`S2_NEXT_ASSETS/stones_3.glb`).
+        object_looks: std::env::var_os("S2_NEXT_ASSETS")
+            .filter(|dir| std::path::Path::new(dir).join("stones_3.glb").is_file())
+            .map(|_| {
+                [
+                    ("StoneResourceA01", "stones_1.glb"),
+                    ("StoneResourceA02", "stones_2.glb"),
+                    ("StoneRessourceA03", "stones_3.glb"),
+                    ("StoneRessourceA04", "stones_3.glb"),
+                    ("StoneRessourceA05", "stones_3.glb"),
+                    ("StoneRessourceA06", "stones_3.glb"),
+                    ("Field01", "grain_tuft.glb"),
+                    ("Empty", "sign_post.glb"),
+                ]
+                .map(|(kind, file)| ObjectLook::new(kind, file))
             })
             .into_iter()
             .flatten()

@@ -1,6 +1,7 @@
 //! Drawing: the 3D view and its geometry, terrain, models, textures and
 //! colours, the 2D map view, the ship window's view.
 
+pub(crate) mod ground_study;
 pub(crate) mod models3d;
 pub(crate) mod palette;
 pub(crate) mod scene;

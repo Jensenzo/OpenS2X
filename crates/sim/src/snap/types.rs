@@ -86,6 +86,7 @@ snap_struct!(crate::World {
     decorations_cleared,
     doodads_removed @ 71 = std::collections::BTreeMap::new(),
     linked_home @ 73 = std::collections::BTreeMap::new(),
+    home_warehouse @ 95 = std::collections::BTreeMap::new(),
     field_marks,
     mark_movers,
     inputs,
@@ -178,7 +179,8 @@ snap_struct!(crate::combat::AttackRecord {
     field,
     opponent,
     hit,
-    offset @ 74 = None
+    offset @ 74 = None,
+    paired @ 96 = 0
 });
 snap_struct!(crate::combat::OffsetStep { walk, back });
 snap_struct!(crate::combat::Duel {
@@ -186,7 +188,7 @@ snap_struct!(crate::combat::Duel {
     attacker,
     defender
 });
-snap_enum!(crate::command::Command { Noop { player }, PlaceFlag { player, at }, BuildRoad { player, from, to }, PlaceBuilding { player, building, at }, BuildWaterway { player, from, to }, StartRoute { player, at, waterway }, ExtendRoute { player, to }, CancelRoute { player }, RemoveBuilding { player, at }, UpgradeBuilding { player, at }, RemoveRoad { player, at }, RemoveFlag { player, at }, ExpeditionStart { player, at }, ExpeditionStop { player, ship }, ExpeditionBuildHarbor { player, ship }, ExpeditionGo { player, ship, direction }, DropWare { player, good, at, destination }, ProductionToggle { player, at }, ProductionSwitch { player, at }, ToolWeight { player, slot, per_mille }, ToolExclusive { player, slot }, ToolClearExclusive { player }, ToolReset { player }, WarehouseCycle { player, at, good }, WarehouseToggle { player, at, good, stop }, WarehouseSet { player, at, good, stop, on }, WarehouseAll { player, at, mode, settlers }, DistributionWeight { player, table, entry, thousandths }, DistributionReset { player, table }, PriorityMove { player, from, to }, PriorityReset { player }, MilitaryAllocation { player, class, thousandths }, MilitaryAttackStrength { player, thousandths }, MilitaryDefenders { player, thousandths }, MilitaryDefenseType { player, strong }, MilitaryReset { player }, ToggleCoinSupply { player, at }, ToggleMoveOut { player, at }, SetCastleSoldiers { player, at, rank, amount }, Attack { player, target, count, strong_first }, AddGoods { player, good, amount }, ClearGoods { player }, LockBuilding { player, building }, CreateBuilding { player, building, at, settler }, CreateStreet { player, from, to }, CreateShip { player, at }, NameShip { player, ship, name }, RemoveTrigger { name }, Cheat { player, cheat }, OrderGeologist { player, at }, OrderScout { player, at }, DebugSupplySite { player, at, wares, workers }, PlanRoad { player, from, to }, PlanBuilding { player, building, at, records }, TearDown { player, at }, ChooseRecipe { player, at, index }, DeepenMine { player, at }, PaveRoad { player, at } });
+snap_enum!(crate::command::Command { Noop { player }, PlaceFlag { player, at }, BuildRoad { player, from, to }, PlaceBuilding { player, building, at }, BuildWaterway { player, from, to }, StartRoute { player, at, waterway }, ExtendRoute { player, to }, CancelRoute { player }, RemoveBuilding { player, at }, UpgradeBuilding { player, at }, RemoveRoad { player, at }, RemoveFlag { player, at }, ExpeditionStart { player, at }, ExpeditionStop { player, ship }, ExpeditionBuildHarbor { player, ship }, ExpeditionGo { player, ship, direction }, DropWare { player, good, at, destination }, ProductionToggle { player, at }, ProductionSwitch { player, at }, ToolWeight { player, slot, per_mille }, ToolExclusive { player, slot }, ToolClearExclusive { player }, ToolReset { player }, WarehouseCycle { player, at, good }, WarehouseToggle { player, at, good, stop }, WarehouseSet { player, at, good, stop, on }, WarehouseAll { player, at, mode, settlers }, DistributionWeight { player, table, entry, thousandths }, DistributionReset { player, table }, PriorityMove { player, from, to }, PriorityReset { player }, MilitaryAllocation { player, class, thousandths }, MilitaryAttackStrength { player, thousandths }, MilitaryDefenders { player, thousandths }, MilitaryDefenseType { player, strong }, MilitaryReset { player }, ToggleCoinSupply { player, at }, ToggleMoveOut { player, at }, SetCastleSoldiers { player, at, rank, amount }, Attack { player, target, count, strong_first }, AddGoods { player, good, amount }, ClearGoods { player }, LockBuilding { player, building }, CreateBuilding { player, building, at, settler }, CreateStreet { player, from, to }, CreateShip { player, at }, NameShip { player, ship, name }, RemoveTrigger { name }, Cheat { player, cheat }, OrderGeologist { player, at }, OrderScout { player, at }, DebugSupplySite { player, at, wares, workers }, PlanRoad { player, from, to }, PlanBuilding { player, building, at, records }, TearDown { player, at }, ChooseRecipe { player, at, index }, DeepenMine { player, at }, PaveRoad { player, at }, PlanHarbour { player, ship, records } });
 snap_enum!(crate::command::Rejection {
     OutsideMap,
     NotOwned,
@@ -407,7 +409,8 @@ snap_struct!(crate::movement::Walker {
     path,
     held,
     pauses,
-    road_to
+    road_to,
+    first_heights @ 94 = None
 });
 snap_struct!(crate::movement::FreeRoute { cost, fields });
 snap_struct!(crate::movement::LatticeWalk {
@@ -557,7 +560,7 @@ snap_struct!(crate::production::Ground {
     for_planting,
     tree_type
 });
-snap_enum!(crate::production::Work { Begin, WaitInputs, Off, Working, Take { second }, WaitRoom { score }, WaitTarget { countdown }, WaitSpot { countdown }, FishRetry, WaitShip { countdown }, Donkey, OutNext { spot }, Out { spot }, ToSpot { spot }, Approach { spot }, AtSpot { spot }, TakeWare { second, stand }, StandBack { stand, score }, Return { stand, score }, WaitBack { score }, Back { score }, AtFlag, WaitFlag, PutDown { second }, In, StepIn, Rest, AtShip { spot, phase } });
+snap_enum!(crate::production::Work { Begin, WaitInputs, Off, Working, Take { second }, WaitRoom { score }, WaitTarget { countdown }, WaitSpot { countdown }, FishRetry, WaitShip { countdown }, Donkey, OutNext { spot }, Out { spot }, ToSpot { spot }, Approach { spot, walk @ 92 = None }, AtSpot { spot }, TakeWare { second, stand }, StandBack { stand, score }, Return { stand, score, walk @ 92 = None }, WaitBack { score }, Back { score }, AtFlag, WaitFlag, PutDown { second }, In, StepIn, Rest, AtShip { spot, phase } });
 snap_struct!(crate::requests::Warehouse {
     stock,
     cooldown,

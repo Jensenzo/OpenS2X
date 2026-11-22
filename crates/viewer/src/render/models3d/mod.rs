@@ -255,6 +255,9 @@ pub enum Family {
     /// swaying as the original's trees (GFX-OBJ-2.4), each face lit by the
     /// normal of the face as it moves.
     FacetTree = 17,
+    /// Hook W30c: a project's map object (a stone pile, a grain field, a
+    /// decoration, a sign; `project`): a project's tree without the sway.
+    FacetObject = 18,
 }
 
 impl Family {

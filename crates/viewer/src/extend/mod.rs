@@ -106,6 +106,40 @@ pub struct Extensions {
     /// and a far version) in place of their landscape element's. Default
     /// none: every tree as the original draws it.
     pub tree_looks: Vec<TreeLook>,
+    /// Hook W30c: the other things lying on the map (the stonemason's
+    /// rocks, the grain fields, the decorations, the geologists' signs)
+    /// drawn with a project's own model (a `.glb`) in place of their
+    /// landscape element's, by their rules name. Default none: every one as
+    /// the original draws it.
+    pub object_looks: Vec<ObjectLook>,
+}
+
+/// Hook W30c: the look of a kind of thing lying on the map from a
+/// project's own model, a binary glTF file (`.glb`), drawn where and as the
+/// game draws that kind (its place, its turn and sizes, a field's growing,
+/// a pile's sinking, shadows, the day's light). What the file must hold:
+/// `docs/extending.md`, "A map object's own model".
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectLook {
+    /// The kind by its name in the rules: a deposit kind's `dp_setName`
+    /// that is not a tree (`Field01`, `StoneResourceA01` .. the six states
+    /// of a stone pile, each its own kind) or a doodad type's `dd_setName`
+    /// (`bush01`, `rock 1`, `Coal (few)`, ...). A tree kind is drawn by
+    /// [`TreeLook`]s only.
+    pub object: String,
+    /// The model: its path below the install (`data/...`, any case), found
+    /// in the asset folders first, as the install's files.
+    pub model: String,
+}
+
+impl ObjectLook {
+    /// The kind `object`'s look from `model`.
+    pub fn new(object: &str, model: &str) -> Self {
+        Self {
+            object: object.into(),
+            model: model.into(),
+        }
+    }
 }
 
 /// Hook W30b: a tree kind's look from a project's own model, a binary glTF
@@ -667,20 +701,22 @@ struct Shared {
     music_external: bool,
     building_looks: Vec<BuildingLook>,
     tree_looks: Vec<TreeLook>,
+    object_looks: Vec<ObjectLook>,
 }
 
 static SHARED: OnceLock<Shared> = OnceLock::new();
 
 /// Keep the asset folders, render options, the music switch and the
-/// buildings' and trees' own looks for [`find`], [`render`],
-/// [`music_external`], [`building_looks`] and [`tree_looks`]. The first
-/// call wins (one game per process).
+/// buildings', trees' and map objects' own looks for [`find`], [`render`],
+/// [`music_external`], [`building_looks`], [`tree_looks`] and
+/// [`object_looks`]. The first call wins (one game per process).
 pub(crate) fn install(
     asset_folders: Vec<PathBuf>,
     render: RenderOptions,
     music_external: bool,
     building_looks: Vec<BuildingLook>,
     tree_looks: Vec<TreeLook>,
+    object_looks: Vec<ObjectLook>,
 ) {
     let _ = SHARED.set(Shared {
         asset_folders,
@@ -688,6 +724,7 @@ pub(crate) fn install(
         music_external,
         building_looks,
         tree_looks,
+        object_looks,
     });
 }
 
@@ -699,6 +736,31 @@ pub(crate) fn building_looks() -> &'static [BuildingLook] {
 /// Hook W30b: the tree kinds' own looks (none until [`install`]).
 pub(crate) fn tree_looks() -> &'static [TreeLook] {
     SHARED.get().map_or(&[][..], |s| &s.tree_looks[..])
+}
+
+/// Hook W30c: the map objects' own looks (none until [`install`]).
+pub(crate) fn object_looks() -> &'static [ObjectLook] {
+    SHARED.get().map_or(&[][..], |s| &s.object_looks[..])
+}
+
+/// Hook W30c: the first of `models` (looks' files) that cannot be drawn:
+/// not found in `folders` or below `root`, or not a model the reader takes.
+/// The error starts with the file's name.
+pub(crate) fn unusable_model<'a>(
+    folders: &[PathBuf],
+    root: &std::path::Path,
+    models: impl IntoIterator<Item = &'a str>,
+) -> Result<(), String> {
+    for model in models {
+        let path = s2_assets::find_in(folders, root, model)
+            .map_err(|e| format!("{model}: not found ({e})"))?;
+        let data = crate::files::read(&path).map_err(|e| format!("{model}: {e}"))?;
+        let glb = s2_assets::glb::load(&data).map_err(|e| format!("{model}: {e}"))?;
+        if glb.meshes.is_empty() {
+            return Err(format!("{model}: the file holds no mesh"));
+        }
+    }
+    Ok(())
 }
 
 /// The project plays the music (false until [`install`]).

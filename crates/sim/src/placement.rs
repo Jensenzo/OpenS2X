@@ -540,7 +540,7 @@ impl World {
 
     /// [`World::put_building`] with `records` object numbers taken right
     /// after the building's own (SIM-START-4.4 b).
-    fn put_building_numbered(
+    pub(crate) fn put_building_numbered(
         &mut self,
         player: PlayerId,
         building_type: u32,
@@ -646,6 +646,12 @@ impl World {
     /// soldiers go home, and an applied military building releases its
     /// land (TER-4.1).
     pub(crate) fn delete_building(&mut self, at: Point) {
+        self.delete_building_as(at, false);
+    }
+
+    /// [`World::delete_building`]; `lost_land`: for land lost (TER-6.2, 6.3),
+    /// before the settlers' part of the tick (TRN-FREE-6.4a, T49).
+    pub(crate) fn delete_building_as(&mut self, at: Point, lost_land: bool) {
         let building = *self.building_at(at).expect("a building to delete");
         // What lies in it is lost with it: its stock, its inputs, the
         // materials on its site.
@@ -717,6 +723,7 @@ impl World {
             builder_work,
             builder_approach,
             builder_walk,
+            lost_land,
         );
         self.release_target(at);
         // W20: a later building on the field starts with the first recipe.

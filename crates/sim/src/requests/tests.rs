@@ -2407,6 +2407,47 @@ fn t20_a_served_order_comes_back_at_the_delivery() {
     assert_eq!(planks(&world, site), [(first.made, 0), (second.made, 0)]);
 }
 
+// ECO-REQ-5.3h (ECO-REQ T43): a destroyed ware's order is open again as it
+// was: last among the open orders, with the stamp it was chosen with and its
+// place in the order the orders were made; no order of the building is
+// dropped. Not a new order (stamp 0, a new place).
+// spec: ECO-REQ-5.3h (T43), TRN-ROAD-6.4
+#[test]
+fn t43_a_destroyed_wares_order_comes_back_as_it_was() {
+    let mut world = game(&full_stock());
+    let site = (16, 12);
+    apply_all(&mut world, vec![place(HUT, site)]);
+    world.orders.clear();
+    world.order(site, PLANK);
+    world.order(site, PLANK);
+    let target = world.target_of(site).unwrap();
+    let chosen = world.orders.remove(1);
+    let chosen = crate::Order {
+        stamp: 13398,
+        ..chosen
+    };
+    let flag = world.flag_of(site);
+    let ware = world.new_ware_at(PLANK, flag, Some(flag), Some(target));
+    world.wares[ware].as_mut().unwrap().order = Some(chosen);
+    let made = world.orders_made;
+    world.destroy_ware(ware);
+    let planks: Vec<(u64, u64)> = world
+        .orders()
+        .iter()
+        .filter(|o| o.target.at == site && o.good == PLANK)
+        .map(|o| (o.made, o.stamp))
+        .collect();
+    let first = world.orders()[0];
+    assert_eq!(planks, [(first.made, 0), (chosen.made, 13398)]);
+    assert_eq!(
+        world.orders().last().copied(),
+        Some(chosen),
+        "appended last"
+    );
+    assert_eq!(world.orders_made, made, "no new order made");
+    assert!(world.wares().all(|(id, _)| id != ware));
+}
+
 // ECO-REQ-5.3c, TRN-CARRY-4.4 (ECO-REQ T19): the helper's walk waits for
 // its ware's entry check: the check of t + 1 raises the flag's bar, the one
 // of t + 2 admits the ware (its place counts from then) and orders the

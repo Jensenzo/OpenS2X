@@ -272,7 +272,14 @@ pub enum Work {
     /// ECO-OUT-3.4, 4.6: walking to the last field before `spot`.
     ToSpot { spot: Point },
     /// TRN-FREE-5: the fine approach to the object on `spot`.
-    Approach { spot: Point },
+    Approach {
+        spot: Point,
+        /// TRN-FREE-5.3 (T48): the walk along the approach's samples, each
+        /// step's rate from the heights when it starts (None: a game of
+        /// format 91 or older, or one restored from the original's save,
+        /// timed from its order).
+        walk: Option<movement::LatticeWalk>,
+    },
     /// ECO-OUT-3.5, 4.7: the work or planting action at `spot`.
     AtSpot { spot: Point },
     /// ECO-OUT-3.7: taking the log or stone; `stand` is the height sample
@@ -287,7 +294,12 @@ pub enum Work {
     StandBack { stand: Option<Point>, score: i64 },
     /// TRN-FREE-5.6: the fine walk back along the lattice from `stand` to
     /// the point of his field (where his walk out stopped).
-    Return { stand: Point, score: i64 },
+    Return {
+        stand: Point,
+        score: i64,
+        /// TRN-FREE-5.3 (T48): as `Approach`'s.
+        walk: Option<movement::LatticeWalk>,
+    },
     /// ECO-OUT-3.8a: on his field, the walk of one step to the flag waits
     /// until his ware is admitted there.
     WaitBack { score: i64 },
@@ -1033,10 +1045,10 @@ impl World {
                 WorkCycle::Gatherer | WorkCycle::Forester | WorkCycle::Farm => {
                     // TRN-FREE-5: on the lattice to the object, stopping
                     // short by its elevation size.
-                    let ticks = self.approach_ticks(settler.walker.at, spot, false);
+                    let (ticks, walk) = self.approach_walk(settler.walker.at, spot, false);
                     if ticks > 0 {
                         settler.timer = ticks;
-                        Work::Approach { spot }
+                        Work::Approach { spot, walk }
                     } else {
                         settler.timer = kind.production_ticks;
                         self.arm_removal(kind.cycle, kind.production_ticks, spot);
@@ -1048,10 +1060,10 @@ impl World {
                     // lattice walk towards the animal's point; T25, T27: at
                     // its position now (the start field of a step).
                     let spot = self.hunted_field(at, spot);
-                    let ticks = self.approach_ticks(settler.walker.at, spot, true);
+                    let (ticks, walk) = self.approach_walk(settler.walker.at, spot, true);
                     if ticks > 0 {
                         settler.timer = ticks;
-                        Work::Approach { spot }
+                        Work::Approach { spot, walk }
                     } else {
                         self.hunter_at_animal(settler, at, spot, &kind)
                     }
@@ -1107,10 +1119,28 @@ impl World {
                 }
                 work
             }
-            Work::Approach { spot } if timer_done && kind.cycle == WorkCycle::Hunter => {
+            Work::Approach { spot, .. } if timer_done && kind.cycle == WorkCycle::Hunter => {
                 self.hunter_at_animal(settler, at, spot, &kind)
             }
-            Work::Approach { spot } if timer_done => {
+            // TRN-FREE-5.3 (T48): one tick of the approach; the steps not
+            // begun at the heights now give the ticks left.
+            Work::Approach {
+                spot,
+                walk: Some(mut walk),
+            } if !timer_done => {
+                let hunter = kind.cycle == WorkCycle::Hunter;
+                let steps = self
+                    .approach_steps(settler.walker.at, spot, hunter)
+                    .unwrap_or_default();
+                let speed = self.settings.settler_speed;
+                walk.advance_along(&self.terrain, speed, &steps);
+                settler.timer = walk.ticks_left_along(&self.terrain, speed, &steps);
+                Work::Approach {
+                    spot,
+                    walk: Some(walk),
+                }
+            }
+            Work::Approach { spot, .. } if timer_done => {
                 // ECO-OUT-3.5, 4.7: the production time.
                 settler.timer = kind.production_ticks;
                 self.arm_removal(kind.cycle, kind.production_ticks, spot);
@@ -1243,6 +1273,22 @@ impl World {
                 }
             }
             Work::Return { score, .. } if timer_done => self.walk_back(settler, flag, score, true),
+            // TRN-FREE-5.3 (T48): one tick of the walk back, as the approach.
+            Work::Return {
+                stand,
+                score,
+                walk: Some(mut walk),
+            } => {
+                let steps = self.return_steps(stand, settler.walker.at);
+                let speed = self.settings.settler_speed;
+                walk.advance_along(&self.terrain, speed, &steps);
+                settler.timer = walk.ticks_left_along(&self.terrain, speed, &steps);
+                Work::Return {
+                    stand,
+                    score,
+                    walk: Some(walk),
+                }
+            }
             Work::WaitBack { score } => self.walk_back(settler, flag, score, true),
             Work::Back { score }
                 if !settler.walker.is_walking() && settler.walker.next.is_none() =>
@@ -1370,8 +1416,9 @@ impl World {
     }
 
     /// ECO-FOOD-4.5: the catch. The hut's fish field gives one unit while
-    /// it holds fish; otherwise the field is forgotten and the first field
-    /// holding fish within the fishing distance of `stand` loses one, if
+    /// it holds fish; a remembered field emptied meanwhile gives nothing and
+    /// is forgotten (T63). Only a hut remembering no field takes from the
+    /// first field holding fish within the fishing distance of `stand`, if
     /// any.
     fn catch_fish(&mut self, at: Point, stand: Point) {
         let Some(fish) = self
@@ -1380,15 +1427,16 @@ impl World {
         else {
             return;
         };
-        let own = self.fish_fields.remove(&at).filter(|&f| {
-            self.resource_at(f)
-                .is_some_and(|r| r.good == fish && r.amount > 0)
-        });
-        match own {
+        match self.fish_fields.remove(&at) {
             Some(field) => {
-                self.take_unit(field);
-                if self.resource_at(field).is_some() {
-                    self.fish_fields.insert(at, field);
+                let holds = self
+                    .resource_at(field)
+                    .is_some_and(|r| r.good == fish && r.amount > 0);
+                if holds {
+                    self.take_unit(field);
+                    if self.resource_at(field).is_some() {
+                        self.fish_fields.insert(at, field);
+                    }
                 }
             }
             None => {
@@ -1612,14 +1660,25 @@ impl World {
         ))
     }
 
-    /// TRN-FREE-5.3: ticks of the fine approach from `field` to the object
-    /// on `spot`.
-    fn approach_ticks(&self, field: Point, spot: Point, hunter: bool) -> u32 {
+    /// TRN-FREE-5.3 (T48): the fine approach from `field` to the object on
+    /// `spot` ordered now: its ticks at the heights now and the walk, each
+    /// step's rate set when it starts (none without an object).
+    fn approach_walk(
+        &self,
+        field: Point,
+        spot: Point,
+        hunter: bool,
+    ) -> (u32, Option<movement::LatticeWalk>) {
         let Some(steps) = self.approach_steps(field, spot, hunter) else {
-            return 0;
+            return (0, None);
         };
-        let from = grid::field_sample(field);
-        movement::lattice_walk_ticks(&self.terrain, self.settings.settler_speed, from, &steps)
+        let speed = self.settings.settler_speed;
+        let walk =
+            movement::LatticeWalk::along(&self.terrain, speed, grid::field_sample(field), &steps);
+        (
+            walk.ticks_left_along(&self.terrain, speed, &steps),
+            Some(walk),
+        )
     }
 
     /// The sample the fine approach from `field` to the object on `spot`
@@ -1673,23 +1732,29 @@ impl World {
                 .map(|d| movement::direction_toward(at, d.position))
         };
         match *work {
-            Work::Approach { spot } => {
+            Work::Approach { spot, walk } => {
                 let steps = self.approach_steps(field, spot, hunter)?;
                 let from = grid::field_sample(field);
-                let total = movement::lattice_walk_ticks(
-                    &self.terrain,
-                    self.settings.settler_speed,
-                    from,
-                    &steps,
-                );
-                let elapsed = total.saturating_sub(settler.timer);
-                let (at, next, progress) = movement::lattice_walk_at(
-                    &self.terrain,
-                    self.settings.settler_speed,
-                    from,
-                    &steps,
-                    elapsed,
-                );
+                let (at, next, progress) = match walk {
+                    // TRN-FREE-5.3 (T48): the steps as walked.
+                    Some(walk) => walk.position_along(&steps),
+                    None => {
+                        let total = movement::lattice_walk_ticks(
+                            &self.terrain,
+                            self.settings.settler_speed,
+                            from,
+                            &steps,
+                        );
+                        let elapsed = total.saturating_sub(settler.timer);
+                        movement::lattice_walk_at(
+                            &self.terrain,
+                            self.settings.settler_speed,
+                            from,
+                            &steps,
+                            elapsed,
+                        )
+                    }
+                };
                 let facing = match next {
                     Some(n) => Some(movement::direction_toward(at, n)),
                     None => facing(at, spot),
@@ -1721,15 +1786,21 @@ impl World {
                 progress_bits: 0,
                 facing: None,
             }),
-            Work::Return { stand, .. } => {
+            Work::Return { stand, walk, .. } => {
                 let steps = self.return_steps(stand, field);
                 let speed = self.settings.settler_speed;
-                let total = movement::lattice_walk_ticks(&self.terrain, speed, stand, &steps);
-                let elapsed = total.saturating_sub(settler.timer);
                 // GFX-ANIM-3.8e (W + 63): in the tick it is ordered it is
                 // already walking, at progress 0.
-                let (at, next, progress) =
-                    movement::lattice_walk_at(&self.terrain, speed, stand, &steps, elapsed);
+                let (at, next, progress) = match walk {
+                    // TRN-FREE-5.3 (T48): the steps as walked.
+                    Some(walk) => walk.position_along(&steps),
+                    None => {
+                        let total =
+                            movement::lattice_walk_ticks(&self.terrain, speed, stand, &steps);
+                        let elapsed = total.saturating_sub(settler.timer);
+                        movement::lattice_walk_at(&self.terrain, speed, stand, &steps, elapsed)
+                    }
+                };
                 Some(FinePosition {
                     at,
                     next,
@@ -1818,9 +1889,15 @@ impl World {
         if steps.is_empty() {
             return self.walk_back(settler, flag, score, false);
         }
-        settler.timer =
-            movement::lattice_walk_ticks(&self.terrain, self.settings.settler_speed, stand, &steps);
-        Work::Return { stand, score }
+        // TRN-FREE-5.3 (T48): each step's rate when it starts.
+        let speed = self.settings.settler_speed;
+        let walk = movement::LatticeWalk::along(&self.terrain, speed, stand, &steps);
+        settler.timer = walk.ticks_left_along(&self.terrain, speed, &steps);
+        Work::Return {
+            stand,
+            score,
+            walk: Some(walk),
+        }
     }
 
     /// ECO-OUT-3.8, 4.8: the free walk to the flag itself. 3.8a (2), (3):
@@ -2229,7 +2306,13 @@ impl World {
             (Some(left), None, None) if left > 0 => (Work::AtSpot { spot: o.spot }, left),
             (None, Some(walk), None) => {
                 let left = self.approach_left_from(o.field, o.spot, walk, false)?;
-                (Work::Approach { spot: o.spot }, left)
+                (
+                    Work::Approach {
+                        spot: o.spot,
+                        walk: None,
+                    },
+                    left,
+                )
             }
             // FMT-SAV-3.5a (b, 2026-11-09 c), ECO-OUT-3.4, 4.6: on the rough
             // part of the walk out, walking to the last field before the
@@ -2404,7 +2487,10 @@ impl World {
                 movement::Walker::new(o.field),
             ),
             (None, Some(walk), None) => (
-                Work::Approach { spot: field },
+                Work::Approach {
+                    spot: field,
+                    walk: None,
+                },
                 self.approach_left_from(o.field, field, walk, true)?,
                 movement::Walker::new(o.field),
             ),

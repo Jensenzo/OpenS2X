@@ -23,6 +23,7 @@ simulation only through its public API (`docs/api.md`).
 | The look of a paved road | a project's street textures for paved roads (hook W21) | `RenderOptions::paved_road` (`StreetLook`) |
 | A building's own model | a building type drawn with a project's binary glTF model (`.glb`): its objects, door and work clips, owner's colour, ground patch and smoke, in the game's light (hook W30) | `Extensions::building_looks` (`BuildingLook`), `--building-model` |
 | A tree's own model | a tree kind drawn with a project's `.glb` and its far version, as the game draws its trees: turn and sizes, growing, felling and sinking, the wind, shadows, the day's light (hook W30b) | `Extensions::tree_looks` (`TreeLook`, `TreeGrowth`), `--tree-model` |
+| A map object's own model | the stonemason's stone piles (each state its own model), the grain fields, the map's decorations and blocking rocks and the geologists' signs drawn with a project's `.glb`, each where and as the game draws its kind: turn and sizes, a field's growing, a pile's states and sinking, shadows, the day's light (hook W30c) | `Extensions::object_looks` (`ObjectLook`), `--object-model` |
 | Deepening a mine | an exhausted mine of a type the overlay names is deepened for material a builder works; part of the ore comes back and the mine eats more food per product | `reborn.bp_setDeepening`, `reborn.bp_addDeepeningCost`, `reborn.bp_addDeepeningFood` (in an overlay), `Command::DeepenMine`, `World::can_deepen`, `World::mine_deepening` |
 | The pictures of the hooks' buttons | the Deepen and Next recipe buttons of a building's window and the road menu's Pave button drawn with a 48 x 48 cell of the project's picture | `Extensions::button_pictures` (`ButtonPictures`, `ButtonPicture`) |
 | A message when a project's rule finishes | the player's message when a mine's deepening is done or a road is paved, in the project's words (hook W24) | `Extensions::messages` (`ProjectEvent`) |
@@ -523,8 +524,8 @@ luminances add up to noon's 1.4377, all of it at the night's 0.5993, in
 between linearly). By day nothing changes. Windows that light up at night
 are not drawn (a light map of its own is not read).
 
-What it does not cover: skinned figures, map objects other than trees (see
-"A tree's own model"), a switch between whole graphics sets; a site model of
+What it does not cover: skinned figures, map objects (see "A tree's own
+model" and "A map object's own model"), a switch between whole graphics sets; a site model of
 a project's own (`site_of` borrows an original's); the original's
 per-building colour variation (GFX-OBJ-2.2: a project model is never tinted
 by the colour map) and its own light map (the night factor above is one
@@ -614,9 +615,106 @@ not read.
 - **Without any look**: nothing of it is read or computed; every tree is
   drawn as before (the golden images unchanged).
 
-What it does not cover: stone piles, grain fields, decorations and figures;
-alpha-tested leaves or a texture of a tree's own besides the palette; a
+What it does not cover: figures (stone piles, grain fields, decorations and
+signs: "A map object's own model", below); alpha-tested leaves or a texture of a tree's own besides the palette; a
 switch between whole graphics sets; a sound or effect at a project tree.
+
+### A map object's own model
+
+A project draws the other kinds of things lying on the map with models of its
+own, binary glTF files (`.glb`), in place of their landscape elements (hook
+W30c): the stonemason's stone piles, the grain fields, the map's decorations
+(the small ones and the blocking rocks) and the geologists' signs. A kind
+keeps its rules and its graphics name; only its look changes, so a look
+changes no rule and no state: a blocking rock blocks its field as before, a
+decoration under a new road goes as before, a sign stays under one as
+before. The files are found through the asset folders like any file of the
+install:
+
+```rust
+use s2_viewer::{Extensions, ObjectLook};
+
+let extensions = Extensions {
+    asset_folders: vec!["assets".into()], // assets/data/objects/frontier/stones_6.glb, ...
+    object_looks: vec![
+        ObjectLook::new("StoneRessourceA06", "data/objects/frontier/stones_6.glb"),
+        ObjectLook::new("Field01", "data/objects/frontier/grain_field.glb"),
+        ObjectLook::new("Coal (few)", "data/objects/frontier/sign_coal_s.glb"),
+        ObjectLook::new("bush01", "data/objects/frontier/bush.glb"),
+    ],
+    ..Default::default()
+};
+```
+
+| Field | Meaning |
+|---|---|
+| `object` | the kind drawn with it, by its name in the rules (below); every type of that name takes it; a later look of the same name wins. A tree kind's name does nothing here (trees: `tree_looks`) |
+| `model` | the `.glb` file's path below the install (`data/...`, any case), an asset folder's first |
+
+**The names.** The rules name is the script's own (`dp_setName` for a
+deposit, `dd_setName` for a doodad), spaces and brackets included;
+`s2-app rules deposits` and `s2-app rules doodads` list them with their
+graphics names.
+
+| Kind | Rules names |
+|---|---|
+| Stone piles (the first set), by how many stones are left | 6: `StoneRessourceA06`, 5: `StoneRessourceA05`, 4: `StoneRessourceA04`, 3: `StoneRessourceA03`, 2: `StoneResourceA02`, 1: `StoneResourceA01` (the rules spell the first two without the double s). Each stone taken replaces the pile by the kind of one stone fewer on the same place, so each state is its own look; the last one sinks into the ground over 18 ticks when its stone is taken, by its model's own height |
+| Stone piles (the second set, other maps) | the same with `!!!MED ` before: `!!!MED StoneRessourceA06` .. `!!!MED StoneResourceA01` |
+| The grain field | `Field01`: one model, grown as the game grows a field: from size 0.2 at sowing to 1 when ripe (106.7 s), its width min(3 s, 1) and its height s (GFX-ANIM-3.8b, the trees' rule); harvested, it sinks as a pile |
+| The geologists' signs | `Empty`, `Water`, `Coal (few)`, `Coal (medium)`, `Coal (much)`, `Iron (few)` .. `Iron (much)`, `Gold (few)` .. `Gold (much)`, `Granit (few)` .. `Granit (much)` |
+| Blocking rocks and the gate | `rock 1` .. `rock 4`, `!!MED rock 1` .. `!!MED rock 4`, `((LAVA rock 0` .. `((LAVA rock 2`, `Gate01` |
+| The other decorations (98) | `bush01`, `stone01` .. `stone04`, `stone01 grey` .. `stone04 grey`, `dead Tree 1`, `dead Tree 2`, `bones0` .. `bones3`, `grass01` .. `grass04`, `mushroom red`, `mushroom red big`, `mushroom brown`, `mushroom brown big`, `cactus01` .. `cactus04`, `high flower white big`, `high flower white`, `high flower red big`, `high flower red`, `high flower yellow big`, `high flower yellow`, `fern big`, `fern medium`, `fern small`, `swampthing01`, `swampthing02`, `swamp calmus 01` .. `03`, `agave big`, `agave medium`, `agave small`, `nettle`, `nettle big`, `nettle high`, `flower red`, `flower red big`, `flower red high` (and the same for `white`, `yellow`, `violet`), `grass translucent`, `grass translucent big dark`, `fingerpost E`, `fingerpost SE` .. `fingerpost NE`, `wreck`, `wreck big`, `shell`, `shell small`, `((LAVA fog`, `((LAVA fog high`, `((LAVA fog highest`, `((LAVA fog vertical`, `!!MED nettle`, `!!MED nettle big`, `!!MED nettle high`, `waterplant 1` .. `3`, `waterlily 1`, `waterlily 2`, `DoNotUse-Skull01` |
+
+From the command line: `--object-model <name>=<file>` (repeatable; quote a
+name with spaces), with `--assets` for the folder. `s2-viewer --map-name
+MP_2P_Storm_Coast --3d --assets tests/models --object-model
+bush01=stones_1.glb --object-model "Coal (few)=sign_post.glb"` draws Storm
+Coast's bushes with the repository's one-stone test pile
+(`scripts/make-test-objects.py`); `crates/viewer/examples/extended.rs` draws
+the first set's stone piles, the fields and the empty sign with the test
+models when `S2_NEXT_ASSETS` holds `stones_3.glb`.
+
+**A file that cannot be drawn stops the start.** Before the game starts the
+engine reads every look's file; one it cannot find or read ends the program
+with a line that starts with the file's name as the look gives it
+(`data/objects/frontier/stones_6.glb: not found (...)`), not a hole in the map.
+
+**What the file must hold.** As a tree's (above), anything else is not read.
+
+| Item | Rule |
+|---|---|
+| Frame | glTF's own: +Y up, metres (one unit a metre), **the origin at the thing's place on the ground**: the engine puts it there, upright on any slope, and turns it about +Y by the kind's own turn. It may reach a little below the ground (the original's piles reach 0.04 to 0.15 under, the rocks several metres) |
+| Size | as it stands (a field: ripe). The engine scales each instance by its kind's three random sizes and turns it by its random turn (GFX-OBJ-1.4: for most decorations a turn of 0 to 360 degrees and 0.8 to 1.2 on each axis; none for stone piles, the fingerposts and the gate). The original's sizes are in the slot sheet's section 5: a pile of six stones about 5 x 5 and 3.6 high, a field 1.1 x 1.3 and 1.8 high, a sign 2.0 high, a blocking rock up to 13 across |
+| Objects | one mesh (several nodes are drawn as one, at most 50); no `teamcolour`, no `ground` patch. `anchor_origin` is read but not used |
+| Faces | flat as authored; both sides drawn, each face lit by its own normal (a mesh without normals is fine) |
+| Colour | as a tree's: `TEXCOORD_0` into the base colour image (embedded PNG, its bytes the display colours) times `COLOR_0` RGB (the face's occlusion); the metallic-roughness image's green and blue as a building's. The palette may be of any size: the trees' 512 x 320 and the map objects' 512 x 512 both work (a side that is not a power of two is stretched to one, so a uv finds the same swatch). Opaque: alpha is not read |
+| Light | the game's sun and sky by day and night, as a project's tree: the instance's shadow cast (where its element casts one, as the original's) and received, no sway |
+
+**What the engine does with it**, as with the original's kinds otherwise:
+
+- **Placed**: where the original's instance stands (a deposit's fine
+  position, a doodad's sample, a sign's field), with its turn and sizes drawn
+  from the view's generator in the original's order (GFX-OBJ-1.4): a project's
+  bushes stand exactly where and how the original's would.
+- **A stone pile** shows the model of its state; when a stone is taken the
+  pile of one fewer takes its place (a new instance, its own model); the last
+  one sinks.
+- **A grain field** grows from sowing to ripe as above, re-placed every 20
+  ticks; the original's field shader also turns a young field green (GFX-OBJ-2.7):
+  a project's field is not tinted, its colours are the palette's at every size.
+- **Many of them**: each instance is one entity whose meshes and material are
+  the kind's shared ones, so the renderer batches a thousand bushes as it
+  batches the original's.
+- **Without any look**: nothing of it is read or computed; every map object is
+  drawn as before (the golden images unchanged).
+
+What it does not cover: the underwater haze of the original's rocks and signs
+(GFX-OBJ-2.5: a project's rock under water is drawn without it); the young
+field's green; the gate's water plane (`Gate_water`) and its frames; road
+flags, border markers and buoys (player-coloured, the roads' and borders'
+sheet), the ruins of buildings (the buildings'), animals; a far version (one
+model at every distance: these are small and simple); alpha-tested leaves or
+grass blades.
 
 ### Deepening a mine
 

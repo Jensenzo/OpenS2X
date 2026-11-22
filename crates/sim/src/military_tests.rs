@@ -346,6 +346,122 @@ fn ter_t7_buildings_on_lost_land_are_removed() {
     assert!(world.building_at((42, 25)).is_some());
 }
 
+// TRN-FREE T49 (TRN-FREE-6.4a, E-trn-042): a building removed because its
+// land is lost (TER-6.2, before the settlers' part of the tick) sends its
+// worker home from the removal tick R itself: the going-home state from R,
+// standing R, R + 1 and R + 2, the walk home at progress 0 in R + 3. (A
+// removal after the settlers' part, the computer player's, gives the tick
+// after, T28.)
+// spec: TRN-FREE-6.4a (TRN-FREE T49), TER-6.2
+#[test]
+fn trn_free_t49_a_worker_of_lost_land_goes_home_from_the_removal_tick() {
+    let mut world = owned_world(60, 50);
+    let at = (30, 25);
+    occupied(&mut world, P0, BARRACKS, at);
+    let hut = (35, 25);
+    finished(&mut world, P0, HUT, hut);
+    let target = world.target_of(hut).unwrap();
+    let worker = world.add_settler(Settler {
+        number: 0,
+        player: P0,
+        profession: RANK[0],
+        list: crate::SettlerList::Workers,
+        walker: Walker::new(hut),
+        job: SettlerJob::Worker {
+            target,
+            work: crate::production::Work::Off,
+        },
+        timer: 0,
+        carrying: None,
+    });
+    run(&mut world, 3);
+    world.submit(Command::RemoveBuilding { player: P0, at });
+    let mut removed = None;
+    for _ in 0..10 {
+        world.step();
+        if world.building_at(hut).is_none() {
+            // The tick just run (the counter is raised after it).
+            removed = Some(world.tick() - 1);
+            break;
+        }
+    }
+    let r = removed.expect("the hut goes with the land");
+    let s = world.settlers[worker].as_ref().expect("the worker");
+    assert!(
+        matches!(s.job, SettlerJob::Leaving { at, .. } if at == r),
+        "going home from R = {r}: {:?}",
+        s.job
+    );
+    for tick in ["R + 1", "R + 2"] {
+        world.step();
+        let s = world.settlers[worker].as_ref().unwrap();
+        assert!(!s.walker.has_walk(), "it stands in {tick}");
+    }
+    world.step();
+    let s = world.settlers[worker].as_ref().unwrap();
+    assert!(s.walker.has_walk(), "R + 3: the walk home ordered");
+    assert_eq!(s.walker.progress_bits, 0);
+}
+
+// TRN-FREE T50 (TRN-FREE-6.4a, E-trn-042): a worker on a free walk (back to
+// his building's flag from his work) when he is sent home does not stop
+// after the step in progress: he walks every step of it, and from its
+// arrival tick A stands in A and A + 1 and orders his walk home in A + 2.
+// spec: TRN-FREE-6.4a (TRN-FREE T50)
+#[test]
+fn trn_free_t50_a_worker_on_a_free_walk_completes_it() {
+    let mut world = owned_world(60, 50);
+    occupied(&mut world, P0, BARRACKS, (30, 25));
+    let hut = (35, 25);
+    finished(&mut world, P0, HUT, hut);
+    let target = world.target_of(hut).unwrap();
+    let mut walker = Walker::new((30, 28));
+    let path = [(31, 28), (32, 28), (33, 28), (34, 28)];
+    walker.walk(path);
+    let worker = world.add_settler(Settler {
+        number: 0,
+        player: P0,
+        profession: RANK[0],
+        list: crate::SettlerList::Workers,
+        walker,
+        job: SettlerJob::Worker {
+            target,
+            work: crate::production::Work::Back { score: 0 },
+        },
+        timer: 0,
+        carrying: None,
+    });
+    world.step();
+    world.step();
+    let w = &world.settlers[worker].as_ref().unwrap().walker;
+    assert!(
+        w.next.is_some() && !w.path.is_empty(),
+        "a step in progress, more to go"
+    );
+    world.submit(Command::RemoveBuilding {
+        player: P0,
+        at: hut,
+    });
+    let mut arrival = None;
+    for _ in 0..200 {
+        world.step();
+        let s = world.settlers[worker].as_ref().expect("the worker");
+        assert!(matches!(s.job, SettlerJob::Leaving { .. }), "{:?}", s.job);
+        if !s.walker.is_walking() {
+            arrival = Some(s.walker.at);
+            break;
+        }
+    }
+    assert_eq!(arrival, Some((34, 28)), "the whole walk, A");
+    world.step();
+    let s = world.settlers[worker].as_ref().unwrap();
+    assert!(!s.walker.has_walk(), "it stands in A + 1");
+    world.step();
+    let s = world.settlers[worker].as_ref().unwrap();
+    assert!(s.walker.has_walk(), "A + 2: the walk home ordered");
+    assert_eq!(s.walker.progress_bits, 0);
+}
+
 // T8: a flag on a field that becomes Border goes with its roads.
 // spec: TER-6.3, TER-6.4 (TER T8)
 #[test]
@@ -483,6 +599,175 @@ fn mil_t1_one_request_when_no_enemy() {
     assert_eq!(world.military_at(at).unwrap().soldiers.len(), 1);
 }
 
+// TRN-FREE T52 (TRN-FREE-6.4, E-trn-042): all three tries also on a flag:
+// a settler whose home search runs on a flag with no road finds no
+// warehouse by the road try (1); try 2 or 3 follows in the same tick, a free
+// walk to the warehouse's network flag at progress 0, and no wander step
+// (no draw).
+// spec: TRN-FREE-6.4 (TRN-FREE T52)
+#[test]
+fn trn_free_t52_on_a_flag_without_roads_the_free_walk_follows() {
+    let mut world = quiet_game();
+    let lone = (27, 22);
+    world.submit(Command::PlaceFlag {
+        player: P0,
+        at: lone,
+    });
+    world.step();
+    assert_eq!(world.flag_at(lone), Some(P0));
+    let id = world.add_settler(Settler {
+        number: 0,
+        player: P0,
+        profession: RANK[0],
+        list: crate::SettlerList::Soldiers,
+        walker: Walker::new(lone),
+        job: SettlerJob::Leaving {
+            step: crate::LeavingStep::Search,
+            at: 0,
+            stand: None,
+            health: Some(3),
+        },
+        timer: 0,
+        carrying: None,
+    });
+    let draws = world.rng().draws();
+    world.step();
+    let s = world.settlers[id].clone().expect("the settler");
+    assert!(
+        matches!(
+            s.job,
+            SettlerJob::Leaving {
+                step: crate::LeavingStep::ToFlag,
+                ..
+            }
+        ),
+        "a free walk to the network flag: {:?}",
+        s.job
+    );
+    assert_eq!(s.walker.destination(), world.flag_of(HQ));
+    assert_eq!(s.walker.progress_bits, 0);
+    assert!(
+        world.rng().draws() > draws,
+        "the free walk's draws (TRN-FREE-2), not a wander step"
+    );
+}
+
+// TRN-FREE T51 (TRN-FREE-6.4a, E-trn-042, Q-1075): a reinforcement still on
+// his walk out of the warehouse (to its own flag) when the building he goes
+// to is removed is not sent home then: he walks on to the flag; in the
+// update that walk ends there (A) he finds his target gone and shows the
+// going-home state; he stands in A .. A + 3 and starts home at progress 0
+// in A + 4 (Q-1075: built as going home from A, T = A; on the warehouse's
+// own flag the home search of A + 3 orders a walk with no step,
+// TRN-FREE-6.4c, which gives the fourth standing tick).
+// spec: TRN-FREE-6.4a (TRN-FREE T51)
+#[test]
+fn trn_free_t51_a_reinforcement_walks_out_to_the_flag_first() {
+    let mut world = quiet_game();
+    let at = (26, 20);
+    finished(&mut world, P0, GUARD, at);
+    road_between(&mut world, at, HQ);
+    let mut id = None;
+    while id.is_none() {
+        world.step();
+        assert!(world.tick() < 100, "the soldier is sent");
+        id = world
+            .settlers()
+            .find(|(_, s)| matches!(s.job, SettlerJob::ToMilitary { .. }))
+            .map(|(i, _)| i);
+    }
+    let id = id.unwrap();
+    world.submit(Command::RemoveBuilding { player: P0, at });
+    let flag = world.flag_of(HQ);
+    let s = |world: &World| world.settlers[id].clone().expect("the soldier");
+    let mut a = false;
+    for _ in 0..100 {
+        world.step();
+        let x = s(&world);
+        if x.walker.at == flag {
+            a = true;
+            break;
+        }
+        assert!(
+            matches!(x.job, SettlerJob::ToMilitary { .. }),
+            "on his walk out: {:?}",
+            x.job
+        );
+    }
+    assert!(a, "he reaches the warehouse's flag");
+    let x = s(&world);
+    assert!(
+        matches!(x.job, SettlerJob::Leaving { .. }),
+        "A: {:?} {:?}",
+        x.job,
+        x.walker
+    );
+    assert!(!x.walker.has_walk(), "A: his walk stopped there");
+    for tick in ["A + 1", "A + 2", "A + 3"] {
+        world.step();
+        let x = s(&world);
+        assert_eq!(x.walker.at, flag);
+        assert!(!x.walker.has_walk(), "he stands in {tick}");
+    }
+    world.step();
+    let x = s(&world);
+    assert!(x.walker.has_walk(), "A + 4: the walk home");
+    assert_eq!(x.walker.progress_bits, 0);
+}
+
+// AI-MIL T33 (AI-MIL-5.4, E-ai-077; Q-1076 answered, E-ai-078): the
+// computer player's def counts the soldiers on the building's list as the
+// original keeps it: one inside, one out attacking (he stays on the list)
+// and one on his step in from the flag count; one still walking to the
+// flag does not (the original lists him from his arrival there).
+// spec: AI-MIL-5.4 (AI-MIL T33)
+#[test]
+fn ai_mil_t33_def_counts_the_list_from_the_step_in() {
+    let mut world = quiet_game();
+    let at = (26, 20);
+    finished(&mut world, P0, GUARD, at);
+    road_between(&mut world, at, HQ);
+    garrison(&mut world, at, 0, 3);
+    let out = garrison(&mut world, at, 0, 3);
+    let home = world.target_of(at).unwrap();
+    world.settlers[out].as_mut().unwrap().job = SettlerJob::Attack {
+        home,
+        health: 3,
+        step: crate::AttackStep::Walking,
+    };
+    assert_eq!(world.listed_soldiers(at), 2, "inside and out attacking");
+    let flag = world.flag_of(at);
+    let coming = |world: &mut World, walker: Walker| {
+        let id = world.add_settler(Settler {
+            number: 0,
+            player: P0,
+            profession: RANK[0],
+            list: crate::SettlerList::Soldiers,
+            walker,
+            job: SettlerJob::ToMilitary {
+                target: home,
+                health: 3,
+            },
+            timer: 0,
+            carrying: None,
+        });
+        world.military.get_mut(&at).unwrap().soldiers.push(id);
+        id
+    };
+    let mut to_flag = Walker::new((24, 19));
+    to_flag.walk([(25, 19), flag, at]);
+    to_flag.next = Some((25, 19));
+    to_flag.path.pop_front();
+    coming(&mut world, to_flag);
+    assert_eq!(world.listed_soldiers(at), 2, "not yet on the list");
+    let mut stepping = Walker::new(flag);
+    stepping.walk([at]);
+    stepping.next = Some(at);
+    stepping.path.clear();
+    coming(&mut world, stepping);
+    assert_eq!(world.listed_soldiers(at), 3, "on his step in");
+}
+
 // MIL-SOL-4.7a: the soldier sent for the request stands in its creation
 // tick on the headquarters' door field (its walk not started), takes its
 // first step in the next tick, ends its road walk exactly on the guard
@@ -590,7 +875,7 @@ fn mil_t4_t5_release_choice() {
 // the one step from the building's field to its flag; only on arriving
 // there (tick T) is it sent home: it stands in T, T + 1 and T + 2, and its
 // home search runs from the flag in T + 3.
-// spec: MIL-SOL-4.5 (MIL T19), TRN-FREE-6.4a
+// spec: MIL-SOL-4.5 (MIL T19), TRN-FREE-6.4a, TRN-FREE-6.4 (TRN-FREE T52)
 #[test]
 fn t19_a_released_soldier_steps_out_to_the_flag_first() {
     let mut world = quiet_game();
@@ -634,12 +919,13 @@ fn t19_a_released_soldier_steps_out_to_the_flag_first() {
         assert!(!s.walker.has_walk(), "stands in T + {k}");
         world.step();
     }
-    // T + 3: the home search from the flag (here no road home: a failed
-    // search with the count 0, then a wander step, TRN-FREE-6.4 step 4).
+    // T + 3: the home search from the flag (here no road home: the road
+    // try fails, and tries 2 and 3 follow, TRN-FREE T52: a free walk to the
+    // headquarters' flag).
     assert!(matches!(
         soldier(&world).job,
         SettlerJob::Leaving {
-            step: crate::LeavingStep::Wander { tries: 0 },
+            step: crate::LeavingStep::ToFlag,
             ..
         }
     ));

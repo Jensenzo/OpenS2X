@@ -49,6 +49,14 @@ logic ticks of 0.1 s (`ECO-time-units.md`).
   speed the base speed times the slope factor, 0.045f = 0.0450000018 on level
   ground), is added in float32 arithmetic (Q-241; E-sim-002). The settler's movement is advanced before its job logic in the same
   tick; a walk ordered by the job logic in tick N first advances in tick N+1.
+- **TRN-MOVE-2.1a The first step is rated at the order** (added 2026-11-21 pm, E-trn-043).
+  Ordering a walk starts its first step at once: that step's progress per tick (speed and slope
+  factor, 1.2, 1.3) is fixed from the field heights **in the tick and at the moment the walk is
+  ordered**, though the settler first moves in the next tick (2.1). A height change later in
+  the same tick (a leveller's step in the levellers' list, which comes after the carriers' and
+  the constructors') or before the first advance does not change it. Every later step of the
+  walk takes its rate when it starts (2.3). Confidence: high (code reading: ordering a walk
+  builds the path and starts the first step, slope factor included; measured T14).
 - **TRN-MOVE-2.2** The step is complete in the tick in which the float32 progress
   becomes greater than 1.0 (exactly 1.0 continues). The settler is then on field B.
 - **TRN-MOVE-2.3** If the path continues, the next step starts in that same tick
@@ -120,6 +128,7 @@ logic ticks of 0.1 s (`ECO-time-units.md`).
 | T11 | flag at (10,10) | try to place a flag on each neighbour of (10,10) | refused for all six |
 | T12 | flag at (10,10), free buildable ground | place a flag at (12,10) or (11,12) | accepted (distance 2) |
 | T13 | observation E-obs-003: carrier between two flags 2 fields apart, "flat" road | time flag to flag | measured about 5.5 s both ways. The rules give 4.5 s on level ground (T2), 5.6 s when both steps climb (T9, one way only) and 5.0 to 5.1 s over a ridge or dip (T10). **Not reproduced exactly; see open questions.** |
+| T14 | 2.1a: E-trace-019 (R6, the war), player 2's carrier 16797 in the finished building (55, 24) (height 1617), its flag field (55, 23) at 1617; in counter 14571 the carrier's walk out to the flag is ordered and the leveller of player 2's site (56, 22) ends its step on (55, 23) (1617 -> 2753) | the walk out's progress per tick | 0.045 (level, the heights at the order): at the flag in counter 14594. Rating the step at the first advance (14572, after the levelling: class 2, 0.027) makes the war's settlers differ from trace tick 14580; with the rule 15170 (experiment build on 0.12.3 with the rules of 2026-11-21; every Storm Coast pair unchanged; no other first step in the war's first 15 160 ticks changes) |
 
 ## Evidence
 
@@ -136,6 +145,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-eco-004 | code reading | | flag site check: states and the scan of the field and its ring |
 | E-eco-005 | data survey | 34 release maps, steps between neighbouring `ForBuilding` fields | 53.8 % class 0, 23.1 % climbing (12.2 / 6.9 / 3.4 / 0.6 % for classes 1 to 4), 23.1 % descending: ground that looks flat is often not class 0 |
 | E-obs-003 | in-game observation | Jens's observation notes, 2026-10-13 | carrier, 2 fields, about 5.5 s, same with and without a ware |
+| E-trn-043, E-trace-019 | code reading, recording, experiment build | (session 2026-11-21 pm): R6's settlers table (carrier 16797, leveller 18926) and height windows | 2.1a the first step's rate at the order (T14) |
 
 ## Open questions
 

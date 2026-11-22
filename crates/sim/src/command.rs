@@ -93,6 +93,15 @@ pub enum Command {
     ExpeditionStop { player: PlayerId, ship: u32 },
     /// SHIP-7 (`found-harbour`): found a harbour.
     ExpeditionBuildHarbor { player: PlayerId, ship: u32 },
+    /// The computer player's founding: as `ExpeditionBuildHarbor`, and the
+    /// `records` its building-added hook makes for the harbour site take
+    /// their object numbers right after the site's own, before its flag's
+    /// (SIM-START-4.4 b, T16), as for a site it places (`PlanBuilding`).
+    PlanHarbour {
+        player: PlayerId,
+        ship: u32,
+        records: u32,
+    },
     /// SHIP-6.2 (`sail-expedition`): sail
     /// to the landing option in compass `direction` (0 to 5).
     ExpeditionGo {

@@ -49,8 +49,12 @@ pub struct TerrainParams {
     pub(crate) light_dir: Vec4,
     pub(crate) light_color: Vec4,
     pub(crate) ambient: Vec4,
-    /// GFX-WATER-2.5: x 1 while the caustics pass is drawn.
+    /// GFX-WATER-2.5: x 1 while the caustics pass is drawn. The ground
+    /// study (`ground_study`, a development switch): y its variant (0 off),
+    /// z its lightness step.
     pub(crate) caustics: Vec4,
+    /// The ground study: each layer's colour.
+    pub(crate) study: [Vec4; MAX_LAYERS],
 }
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
@@ -205,6 +209,10 @@ pub struct WaterParams {
     /// and its reach (x).
     pub(crate) foam: Vec4,
     pub(crate) foam_reach: Vec4,
+    /// The ground study (`ground_study`, a development switch): x 1 when on,
+    /// y the lightness step, z the variant; the water's shallow, middle and deep colours.
+    pub(crate) study: Vec4,
+    pub(crate) study_water: [Vec4; 3],
 }
 
 /// Hook W18: the water's foam uniforms for a project's option; none gives
@@ -344,8 +352,27 @@ mod tests {
         assert!(vertex.contains("out.light_normal = normal;"));
         let fragment = &src[src.find("fn fragment").unwrap()..];
         assert!(fragment.contains("let lambert = saturate(dot(ln, to_light));"));
-        // The shadow still looks up with the world normal.
-        assert!(fragment.contains("shadow_at(in.world_position, n, in.clip)"));
+        // The shadow still looks up with the world normal, at the pixel's
+        // own place for the original's families.
+        assert!(fragment.contains("var shadow_point = in.world_position;"));
+        assert!(fragment.contains("shadow_at(shadow_point, n, in.clip)"));
+    }
+
+    // Hook W30, W30b, W30c (the stripes on a project model's flat faces
+    // edge-on to the sun, 2026-11-21: shadow acne): only a project model's
+    // face looks up the shadow map 1.5 texels of its cascade out along its
+    // own normal; every family of the original's at its own place.
+    // spec: GFX-VIEW-2.5
+    #[test]
+    fn a_project_models_face_is_tested_off_its_plane() {
+        let src = include_str!("../shaders/object.wesl");
+        let fragment = &src[src.find("fn fragment").unwrap()..];
+        assert!(fragment.contains(
+            "if f == FACET || f == FACET_TREE || f == FACET_OBJECT {\n        shadow_point = facet_shadow_point(in.world_position, n);"
+        ));
+        let offset = &src[src.find("fn facet_shadow_point").unwrap()..];
+        assert!(offset.contains("FACET_NORMAL_OFFSET * texel * normal"));
+        assert!(src.contains("const FACET_NORMAL_OFFSET: f32 = 1.5;"));
     }
 
     // GFX-OBJ-2.6a (T37), 2.2a (6): a site's frame piece is (ambient + light
@@ -542,6 +569,8 @@ mod tests {
                 mirror: Vec4::ZERO,
                 foam: Vec4::ZERO,
                 foam_reach: Vec4::ZERO,
+                study: Vec4::ZERO,
+                study_water: [Vec4::ZERO; 3],
             },
             wave0: Handle::default(),
             wave1: Handle::default(),

@@ -176,6 +176,12 @@ pub enum ReleasedStep {
     ToFlag,
 }
 
+/// SHIP-7.2 (T22, Q-1075, E-ship-014): the timer of a builder whose road
+/// walk to his site started off the roads (the founded harbour's, made on
+/// the site's field); counted down as any timer, it marks the one standing
+/// tick on the site's flag before his walk ends there (TRN-CARRY-3.5a).
+pub(crate) const OFF_ROADS: u32 = u32::MAX;
+
 /// TRN-CARRY-7.1a: a released carrier stands in the tick its step ends
 /// (A) and in A + 1; its way home is ordered in A + 2.
 const RELEASED_STAND_TICKS: u32 = 2;
@@ -522,7 +528,7 @@ impl World {
 
     /// A new settler on `field` with nowhere to go yet: dying unless a home
     /// is planned for it.
-    fn dying_settler(
+    pub(crate) fn dying_settler(
         &self,
         player: PlayerId,
         profession: u32,
@@ -554,6 +560,71 @@ impl World {
             stand: None,
             health: carried_health(&settler.job),
         };
+    }
+
+    /// T51: a soldier sent to `target` is still on his walk out of the
+    /// warehouse: a pause of his walk lies ahead other than the one on the
+    /// target's flag (MIL-SOL-4.7a; a building's flag is its neighbour in
+    /// direction 1), the last of them the warehouse's flag (ECO-WORK-3.8c).
+    fn walking_out(&self, walker: &Walker, target: Target) -> bool {
+        let flag = self.terrain.neighbour(target.at, 1);
+        walker.pauses.iter().any(|&p| Some(p) != flag)
+    }
+
+    /// TRN-FREE-6.4 (T52, E-trn-042): the home search's three tries, all in
+    /// this tick: 1 over the roads from a flag or road on the settler's
+    /// field (on a building's field no road walk starts, 6.5 a, T28); when
+    /// it finds no warehouse, 2 (the warehouse chosen from the field
+    /// south-east) and then 3 (the nearest on the landmass), reached by a
+    /// free walk to its network flag nearest to the settler, at progress 0
+    /// (`LeavingStep::ToFlag`); only when all three fail, the wander step of
+    /// 4.
+    fn home_tries(&mut self, settler: &mut Settler, health: Option<u32>) {
+        let at = settler.walker.at;
+        let on_roads = self.flag_at(at).is_some() || self.road_at(at).is_some();
+        // TRN-FREE-6.4 step 1: a home warehouse assigned (SHIP-5.2, T23)
+        // that still stands is walked to by road walk.
+        let assigned = self
+            .home_warehouse
+            .remove(&settler.number)
+            .filter(|&t| self.target_building(t).is_some());
+        if let Some(home) = assigned {
+            if on_roads && self.home_found_in(settler, None, Some(home.at)) {
+                return;
+            }
+        }
+        if on_roads && self.home_found(settler, None) {
+            return;
+        }
+        let flag = self
+            .home_flag_south_east(settler)
+            .or_else(|| self.home_network_flag(settler));
+        match flag.and_then(|to| self.free_walk(at, to, 0)) {
+            Some(walk) => {
+                settler.walker.walk(walk);
+                settler.job = SettlerJob::Leaving {
+                    step: LeavingStep::ToFlag,
+                    at: self.tick,
+                    stand: None,
+                    health,
+                };
+            }
+            None if on_roads => self.wander(settler),
+            None => self.plan_home(settler),
+        }
+    }
+
+    /// TRN-FREE-6.4a (T51, E-trn-042; Q-1075): a reinforcement whose
+    /// building went while he walked out of the warehouse (`evict` left him
+    /// walking) finds it gone in the update his walk out ends on the
+    /// warehouse's flag (A, his last pause passed): his walk stops there
+    /// and he goes home from A (T = A). On the warehouse's own flag his
+    /// home search in A + 3 orders a walk with no step (TRN-FREE-6.4c), so
+    /// he stands in A .. A + 3 and steps in at progress 0 in A + 4.
+    fn reinforcement_out(&self, settler: &mut Settler) {
+        settler.walker.walk([]);
+        settler.walker.progress_bits = 0;
+        self.start_leaving(settler);
     }
 
     /// TRN-FREE-6.4a: a released settler of `profession` on `field` goes
@@ -701,14 +772,27 @@ impl World {
     /// TRN-FREE-6.4 step 1: points the settler home over the roads if a
     /// warehouse is in reach; false (the settler untouched) if none is.
     fn home_found(&self, settler: &mut Settler, exclude: Option<Point>) -> bool {
-        let accepting = self.warehouses.keys().any(|&w| {
-            Some(w) != exclude
-                && self.building_at(w).is_some_and(|b| {
-                    b.owner == settler.player
-                        && !b.under_construction
-                        && self.warehouse_accepts(w, settler.profession)
-                })
-        });
+        self.home_found_in(settler, exclude, None)
+    }
+
+    /// [`World::home_found`] among the warehouses, or only the one on `only`
+    /// (a home warehouse assigned, TRN-FREE-6.4 step 1: whether or not it
+    /// accepts the profession).
+    fn home_found_in(
+        &self,
+        settler: &mut Settler,
+        exclude: Option<Point>,
+        only: Option<Point>,
+    ) -> bool {
+        let accepting = only.is_none()
+            && self.warehouses.keys().any(|&w| {
+                Some(w) != exclude
+                    && self.building_at(w).is_some_and(|b| {
+                        b.owner == settler.player
+                            && !b.under_construction
+                            && self.warehouse_accepts(w, settler.profession)
+                    })
+            });
         let at = settler.walker.at;
         let mut best: Option<(u32, Target, Vec<Point>)> = None;
         let mut warehouses: Vec<&Building> = self
@@ -717,6 +801,7 @@ impl World {
             .filter_map(|&w| self.building_at(w))
             .filter(|b| b.owner == settler.player && !b.under_construction)
             .filter(|b| Some(b.at) != exclude)
+            .filter(|b| only.is_none_or(|o| o == b.at))
             .filter(|b| !accepting || self.warehouse_accepts(b.at, settler.profession))
             .collect();
         warehouses.sort_by_key(|b| b.serial);
@@ -914,7 +999,9 @@ impl World {
 
     /// A removed building's leveller, builder and workers go home. A site's
     /// builder stood on `builder_stand`, his work action with `builder_work`
-    /// ticks left (0 when he was not hammering).
+    /// ticks left (0 when he was not hammering). `lost`: the building went
+    /// with land lost, before the settlers' part (T49).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn evict(
         &mut self,
         building: &Building,
@@ -923,6 +1010,7 @@ impl World {
         builder_work: u32,
         builder_approach: Option<crate::construction::ApproachLeft>,
         builder_walk: Option<movement::LatticeWalk>,
+        lost: bool,
     ) {
         if let Some(site) = site {
             if let Some(leveller) = &site.leveller {
@@ -1025,13 +1113,32 @@ impl World {
             | SettlerJob::ToMilitary { target, .. }
             | SettlerJob::Garrison { target, .. } = settler.job
             {
-                if target.at == building.at && target.serial == building.serial {
+                // T51 (E-trn-042): a reinforcement still on his walk out of
+                // the warehouse (a pause ahead, the last its flag) is not
+                // sent home now; he finds his target gone on that flag
+                // (`World::reinforcement_out`).
+                let walking_out = matches!(settler.job, SettlerJob::ToMilitary { .. })
+                    && self.walking_out(&settler.walker, target);
+                if target.at == building.at && target.serial == building.serial && !walking_out {
                     // TRN-FREE-6.4a: home after the going-home steps, T
-                    // being the tick after the removal (T28).
+                    // being the tick after the removal (T28); for land lost
+                    // (TER-6.2, 6.3, before the settlers' part) the removal
+                    // tick itself (T49).
                     let mut settler = self.settlers[id].take().expect("a settler");
+                    // T50 (E-trn-042): a worker on a free walk (no road
+                    // walk) with a step in progress walks all of it.
+                    let free_walk = matches!(settler.job, SettlerJob::Worker { .. })
+                        && settler.walker.road_to.is_none()
+                        && settler.walker.next.is_some();
+                    let path = free_walk.then(|| settler.walker.path.clone());
                     self.start_leaving(&mut settler);
+                    if let Some(path) = path {
+                        settler.walker.path = path;
+                    }
                     if let SettlerJob::Leaving { at, .. } = &mut settler.job {
-                        *at += 1;
+                        if !lost {
+                            *at += 1;
+                        }
                     }
                     // TRN-CARRY-7.2a (Q-230 a, b): sent home, he loses the
                     // ware in his hands at once (a worker's product from its
@@ -1197,7 +1304,7 @@ impl World {
             _ => false,
         };
         if gone {
-            self.helper_goes_home(settler, target);
+            self.helper_goes_home(settler, target, order);
             return true;
         }
         let next = match step {
@@ -1309,15 +1416,17 @@ impl World {
     /// ECO-REQ-5.3g, TRN-ROAD-6.3, 6.4: a helper going home destroys the
     /// ware in his hands (its order is open again, as for a destroyed ware)
     /// and walks home as any settler whose building is gone (TRN-FREE-6).
-    fn helper_goes_home(&mut self, settler: &mut Settler, target: Option<Target>) {
+    fn helper_goes_home(
+        &mut self,
+        settler: &mut Settler,
+        target: Option<Target>,
+        order: Option<crate::Order>,
+    ) {
         self.drop_held_join(settler.number);
         if let Some(good) = settler.carrying.take() {
             self.used(good, 1);
-            if let Some(t) = target.filter(|t| !t.storage) {
-                if self.target_building(t).is_some() {
-                    self.order(t.at, good);
-                }
-            }
+            // ECO-REQ-5.3h: its order open again as it was.
+            self.reopen_order(order, target, good);
         }
         self.plan_home(settler);
     }
@@ -1375,6 +1484,15 @@ impl World {
                     return true;
                 }
                 let on_flag = settler.walker.at == self.flag_of(target.at);
+                // SHIP-5.2 (T23): an expedition's builder on the serving
+                // warehouse's flag: his walk to the harbour, no site, is
+                // refused; he is sent home in his arrival tick (6.4a), his
+                // home the harbour (TRN-FREE-6.4 step 1).
+                if alive && builder && self.harbour_at(target.at).is_some() {
+                    self.start_leaving(settler);
+                    self.home_warehouse.insert(settler.number, target);
+                    return true;
+                }
                 let Some(site) = self.sites.get_mut(&target.at).filter(|_| alive) else {
                     self.plan_home(settler);
                     return true;
@@ -1388,6 +1506,13 @@ impl World {
                     return true;
                 }
                 if builder {
+                    // SHIP-7.2 (T22, Q-1075): a road walk that started off
+                    // the roads (the founded harbour's builder, his timer
+                    // marked) stands one tick on the flag before it ends.
+                    if settler.timer > OFF_ROADS / 2 {
+                        settler.timer = 0;
+                        return true;
+                    }
                     site.builder_on_way = false;
                     if site.builder.is_none() {
                         site.builder = Some(crate::Builder::arrived(settler.number));
@@ -1465,6 +1590,21 @@ impl World {
                     return true;
                 }
                 if self.target_building(target).is_some() {
+                    // SHIP-5.2 (T23, Q-1077 reading (a)): a builder taken in
+                    // by a harbour gathering an expedition without one is set
+                    // aside at once, never counting as its stock.
+                    let gathering = self.harbours.iter_mut().find(|h| {
+                        h.at == target.at
+                            && h.expedition == crate::navy::ExpeditionState::Gathering
+                            && !h.builder_aside
+                    });
+                    if let Some(h) =
+                        gathering.filter(|_| Some(settler.profession) == self.roles.builder)
+                    {
+                        h.builder_aside = true;
+                        self.release_claims_of(settler.number);
+                        return false;
+                    }
                     if let Some(warehouse) = self.warehouses.get_mut(&target.at) {
                         warehouse.add(settler.profession, 1);
                         // TRN-ROAD-6.3 (T32): a released carrier's claims
@@ -1477,7 +1617,13 @@ impl World {
                 true
             }
             SettlerJob::ToMilitary { target, health } => {
-                if arrived {
+                // T51: one `evict` left on his walk out finds his target
+                // gone on the warehouse's flag, before any arrival there.
+                if self.target_building(target).is_none()
+                    && !self.walking_out(&settler.walker, target)
+                {
+                    self.reinforcement_out(settler);
+                } else if arrived {
                     self.soldier_arrived(settler, number, target, health);
                 }
                 true
@@ -1650,31 +1796,7 @@ impl World {
                     LeavingStep::Wander { .. } if settler.walker.is_walking() => {}
                     LeavingStep::Wander { tries } => self.after_wander(settler, tries),
                     LeavingStep::Search | LeavingStep::Retry { .. } => {
-                        // TRN-FREE-6.4: 1 from a flag or road on its field;
-                        // on a building's field no road walk starts (6.5 a,
-                        // T28), so 2 (the warehouse chosen from the field
-                        // south-east), else 3, reached by a free walk to its
-                        // network flag nearest to the settler.
-                        let at = settler.walker.at;
-                        let on_roads = self.flag_at(at).is_some() || self.road_at(at).is_some();
-                        let flag = (!on_roads)
-                            .then(|| {
-                                self.home_flag_south_east(settler)
-                                    .or_else(|| self.home_network_flag(settler))
-                            })
-                            .flatten();
-                        match flag.and_then(|to| self.free_walk(at, to, 0)) {
-                            Some(walk) => {
-                                settler.walker.walk(walk);
-                                settler.job = SettlerJob::Leaving {
-                                    step: LeavingStep::ToFlag,
-                                    at: tick,
-                                    stand: None,
-                                    health,
-                                };
-                            }
-                            None => self.plan_home(settler),
-                        }
+                        self.home_tries(settler, health);
                     }
                     LeavingStep::Out { .. } | LeavingStep::Through { .. } => {}
                     LeavingStep::ToFlag if settler.walker.is_walking() => {}
@@ -1684,7 +1806,7 @@ impl World {
                     // standing tick (T32: 6.4c (1)'s belongs to a home
                     // search started on the flag).
                     LeavingStep::ToFlag => {
-                        self.plan_home(settler);
+                        self.home_tries(settler, health);
                         if matches!(settler.job, SettlerJob::Home { .. }) {
                             settler.walker.held = false;
                             settler.timer = 0;
@@ -1704,7 +1826,7 @@ impl World {
     /// already advanced in this tick.
     fn released_carrier(&mut self, settler: &mut Settler, carrier: usize, step: ReleasedStep) {
         let next = match step {
-            ReleasedStep::Unnoticed { walking, to_road } => {
+            ReleasedStep::Unnoticed { walking, .. } => {
                 // TRN-ROAD-6.3: noticing, a ware in its hands is destroyed
                 // and one it had claimed is let go.
                 self.let_go(carrier);
@@ -1713,18 +1835,33 @@ impl World {
                 // only the step in progress, but it ends on the first field
                 // it reaches that is a flag or no longer a road field (the
                 // roads as they are now).
+                let stops = |f: Point| self.flag_at(f).is_some() || self.road_at(f).is_none();
                 let walker = &mut settler.walker;
                 walker.pauses.clear();
                 walker.held = false;
-                walker.end_at_next(|f| self.flag_at(f).is_some() || self.road_at(f).is_none());
+                // T61 (corrected 2026-11-21, E-trn-042): a step that ended
+                // in this update (its next step begun with the excess) has
+                // its field tested first; a flag or no road field ends the
+                // walk there.
+                let just_reached = walking
+                    && walker.next.is_some()
+                    && walker.progress() < f32::from_bits(walker.rate_bits);
+                if just_reached && stops(walker.at) {
+                    walker.next = None;
+                    walker.path.clear();
+                    walker.progress_bits = 0;
+                    walker.road_to = None;
+                } else {
+                    walker.end_at_next(stops);
+                }
                 if walker.next.is_some() {
                     ReleasedStep::Finishing
                 } else {
                     walker.path.clear();
-                    // Its step ended in this update (A), or it stood: then
-                    // the next tick takes A's place. T45: on its way to its
-                    // road, a step ending now counts as standing too.
-                    settler.timer = RELEASED_STAND_TICKS + u32::from(!walking) + u32::from(to_road);
+                    // Its step ended in this update (R), or it stood: it
+                    // stands in R, R + 1 and R + 2 (T45, T61: a step ending
+                    // in the notice update counts as standing).
+                    settler.timer = RELEASED_STAND_TICKS + 1;
                     ReleasedStep::Standing
                 }
             }

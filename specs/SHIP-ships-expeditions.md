@@ -67,6 +67,14 @@ which claims land at once.
   4. expedition goods aboard (a cancelled expedition, SHIP-6.5) while docked
      -> they are put into the harbour's stock;
   5. otherwise -> **search**.
+  **Correction to 4 and 5 (2026-11-21 eve, Q-1074, E-ship-017: code reading and the Hard recording;
+  high):** a ship that still has its harbour link (it lies docked at that harbour) **stays idle**: in
+  its update it only does 4 (expedition goods aboard into the harbour's stock) and nothing else; it
+  does not search. Only an idle ship **without** a harbour link turns to search, and it keeps the
+  counter it holds (SHIP-2.4). So a ship that has docked and has nothing to do lies idle at its
+  harbour until a call (3), cargo (1), an expedition (2) or a push-out (SHIP-2.4a) moves it
+  (recorded: the Hard game's ship 94738 docked at counter 45991, idle 45992 .. 48457 with counter 0;
+  ours searched again from 45993 and docked again every 104 ticks). Test T25.
 - **SHIP-2.4 Search.** A counter runs from 0 to 100 (one try every **101
   ticks**). At a try: any harbour link is dropped; the nearest **finished**
   harbour of the ship's player that is reachable by sea from the ship's field
@@ -75,8 +83,38 @@ which claims land at once.
   harbour**. If there is none and the ship stands on a LandingPosition field,
   it goes **making room** (SHIP-3.3); otherwise it stays searching. A ship
   coming back from a cancelled expedition starts with the counter at 100, so
-  it tries in its next update. Confidence: high.
-- **SHIP-2.5 To harbour.** The ship sails to the docking place's water field.
+  it tries in its next update. Confidence: high. **Corrected for the returning ship
+  (2026-11-21 day, Q-1073; E-ship-012: the Hard recording and an experiment build; high for the
+  measured case):** a returning ship that has stopped (SHIP-6.5) and turns to searching makes its
+  first try in its **second** update after the one in which it turned, not in the next: the
+  recorded counter shows 100 in the turning update, 101 in the next, and the try (with its route's
+  draws) comes in the one after. Every one of the recording's 35 tries came in the update after a
+  counter of 101. How the counter's other starts map onto this (the recording's searches from
+  idle show 90 at their start and also try one update after 101; ours' search from idle counts
+  from 0) is Q-1074. Test T21. **The counter (answered from the code 2026-11-21 pm, Q-1074,
+  E-ship-013):** in each update of a searching ship, a counter below 101 is raised by one and
+  nothing else happens; an update that finds it at 101 or more makes the try, and the try sets it
+  to 0 whatever its result (so a ship that keeps finding no harbour tries every **102** updates).
+  The counter is set to 100 only when a returning ship turns to searching, and to 0 when a ship is
+  made. **Turning to searching from idle (or docked) does not set it**: the search goes on from
+  the value it holds (0 after any try; a ship that left a search without a try keeps its count).
+  A ship still being built makes no update at all, so its counter stays 0 (the recording's new
+  ships showing 0 for thousands of ticks). Confidence: high (code). Still open (Q-1074): why the
+  recording's searches from idle show 90 at their start; the code holds no 90, so a value left
+  from an earlier state of those ships is likely, not traced.
+- **SHIP-2.4a Pushed out (2026-11-21 eve, Q-1074 answered, E-ship-017: code reading and the Hard
+  recording; high for the rule, medium for the cases it applies in).** When a ship reserves a
+  docking place at a harbour for a call (SHIP-2.3 3) or to unload, and the harbour has no free
+  docking place on its sea, the harbour looks at its docking places in their order for a ship
+  lying there that is finished, idle, empty (no cargo, no expedition goods, no expedition, no
+  target, not called) and still linked to it. The first such ship is pushed out: its counter is
+  set to **90**, its harbour link and berth are dropped. The calling ship then reserves the freed
+  place. The pushed-out ship, idle without a link, turns to search in its next update with 90 and
+  tries in its twelfth searching update (91 .. 101, then the try). This is the recorded "90 at the
+  start of a search from idle": all 19 of the Hard recording's idle-to-search turns show 90, each
+  after a stretch idle at a harbour (ship 100861: docked at 87007, idle 87011 .. 87118, searching
+  from 87119 with 90, 91, 92, ...). A harbour search of SHIP-2.4 takes only harbours with a free
+  place, so a search itself never pushes a ship out. Test T25. The ship sails to the docking place's water field.
   When it has stopped: if it still has its harbour link it is docked there
   (the harbour records it at that docking place), its last port position
   becomes the **harbour's own field** (the building's land field, not the
@@ -167,6 +205,17 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
     road route cost from the requester's flag wins; on equal cost, the first in
     the world's harbour list. With no such harbour the request stays
     unattached and is tried again at its next turn.
+    **The cost is a stored cost, asked from the representative's flag (2026-11-21 eve, E-ship-016:
+    code reading and an experiment build; medium-high).** For a ware order the route cost is the
+    stored cost of the ware network (`TRN-carriers-transport.md` TRN-CARRY-5.3a), not a fresh
+    search: an earlier ask of the pair gives its stored value, and this ask stores the cost of the
+    roads as they are then (3L for a road whose carrier holds a ware, 4L towards a full flag) for
+    every later user. It is asked from the flag of the matching's **representative order** of that
+    good and network (ECO-REQ-5.3d), not from the chosen order's own flag (the chosen order is the
+    one attached), for each harbour that passes the other tests (finished, its player's, reachable
+    over the ware roads, accepting the good, a docking place on a sea with the player's ship), once
+    per harbour, in the harbour list's order. The ask comes after the warehouse search found no
+    warehouse with the good (ECO-REQ-5.3 (b)) and the order was chosen. Test T24.
   - **Attaching** adds the requester to the harbour's need entry for that good
     (the entry is made on its first requester). The need is the number of
     requesters attached. A settler request that later finds a warehouse over
@@ -282,6 +331,24 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
   one; else, unless one is already requested, one builder is requested. When
   nothing is missing and the builder is set aside: **Getting ship**.
   Confidence: high.
+  **The requested builder's way (added 2026-11-21 pm, E-ship-015; recording, code reading and an
+  experiment build):** he leaves the warehouse that serves the request as a builder going to his
+  site: out of its door to its flag. There, in his arrival tick A, his walk to the "site" is refused
+  (the harbour is no construction site) and he goes home from that flag, **his home being the
+  harbour**: he stands in A, A + 1 and A + 2 and starts his road walk to the harbour at progress 0 in
+  A + 3 (`TRN-free-walk.md` TRN-FREE-6.4 step 1, a settler with a home warehouse assigned; not the
+  nearest warehouse, which is usually the one he just left), and goes into its stock, from where
+  the next pass sets him aside. The request is gone once it is served, so while he walks each pass
+  requests another builder (recorded: four builders for one expedition). Test T23. Confidence: high
+  for the measured walk (4 of 4 recorded cases); medium for the reason (the code's refusal of the
+  walk to a building that is not a site).
+  **When he is in (added 2026-11-21 pm, E-ship-015):** the harbour does not send that builder out
+  again for its own open builder request: in the recording 97659 is in the harbour from counter
+  53186, and the request filed at 53173 is served only at 53220, from the castle. Two readings fit
+  and are measured equal (Q-1077): (a) a builder taken in by a harbour that is gathering without one
+  is set aside at once, never counting as its stock; (b) a harbour's own request is never served
+  from that harbour. Either gives the Hard pair's settlers 53 900 (was 53 200) and its generator
+  53 726 (was 53 194); (a) keeps 30 more matching generator ticks after it. Test T23.
 - **SHIP-5.3 Getting ship.** Every 101 ticks: for each docking place of the
   harbour, in order, the nearest free ship (as in SHIP-4.4) on that docking
   place's sea; the first found is called to this harbour: **Waiting for
@@ -373,7 +440,30 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
   (SHIP-6.3: expedition mode off), and returning, as it stands still, searches **at once** (SHIP-6.5:
   the counter at 100, SHIP-2.4), so it sails for the nearest finished harbour in the update after
   that. It is never set idle (idle would start the search's counter at 0 and delay the voyage by
-  about 100 ticks). Test T20.
+  about 100 ticks). Test T20. The search's first try comes in the second update after the turn
+  (SHIP-2.4 as corrected, Q-1073), so the ship sails in the third update after the founding.
+  **The founded site is levelled (2026-11-21 day, E-ship-012: the Hard recording and an experiment
+  build; high):** the harbour site a founding makes is levelled from its creation (the recording's
+  buildings table shows it levelled in the founding tick), whatever the ground's heights: no
+  leveller is ordered and its builder's work begins by the construction rules. Test T22.
+  **The builder's first walk (2026-11-21 day, E-ship-012: recording and an experiment build;
+  medium):** the builder made on the site's field walks from it to the site's flag, a plain
+  one-field walk at progress 0 in the founding tick (23 ticks on that ground), as a builder coming
+  to his site (`ECO-warehouse-construction.md` ECO-HQ-4.6b) whose walk ends on the flag; there he
+  stands in his arrival tick A and in A + 1 and starts his first work step at progress 0 in A + 2.
+  Making him walk so (and numbering the founding as SIM-START-4.4 (b) T16) gives the recorded walk
+  and arrival; ours' arrival rules then start his first step in A + 1, one tick early (Q-1075).
+  Test T22. **Why A + 2 (answered 2026-11-21 pm, Q-1075, E-ship-014; code reading and an experiment
+  build):** his walk is the builder's ordinary walk to his site, a road walk to the site's flag,
+  ordered here from the site's own field, which is off the roads. As every road walk that starts off
+  the roads (`TRN-carriers-transport.md` TRN-CARRY-3.5a, `TRN-free-walk.md` TRN-FREE-6.4a), he
+  reaches the flag in A and **stands there one tick** (A + 1) before the road part, here empty, ends
+  the walk; only then does he start on the site as any builder arriving (ECO-HQ-4.5), so his first
+  work step begins in A + 2. With it the Hard pair's settlers first differ at trace tick 52 600
+  (was 50 700) and its buildings at 52 600 (was 50 800), **measured with `ECO-food-mining.md`
+  ECO-FOOD-4.5's remembered fish field (T63) in** (2026-11-21 eve: without that rule the settlers
+  first differ at 51 600, a fisherman's retry that follows the generator's difference of 51 418,
+  buildings 52 600; experiment build and implementation alike).
   Confidence: high for the steps; medium for the builder's walk.
   **The builder and the load, in order (2026-11-16 day, Q-157; E-ship-008, code reading, high).**
   1. The site is made on the spot (with its claim and exploring, as above).
@@ -443,6 +533,11 @@ tick. Within the 101-tick pass the order is SHIP-4.2, 4.3, 4.4.
 | T19 | SHIP-4.1 (Q-063): player 1 has island A (headquarters, harbour H1, a finished ship on the sea) and island B (harbour H2, a site needing 2 planks, no warehouse with planks on B), both harbours finished and accepting planks | the site's plank orders' turn | each order finds no warehouse with planks over B's roads and is attached to H2 (reachable from the site's flag, a ship on its sea); H2's plank need is 2; SHIP-4.2 then asks H1. With the ship removed (none on the sea) no order is attached and H2 has no plank need |
 | T19a | SHIP-4.1 (Q-063 end): T19 after a ship has unloaded one plank into H2 | the next ware order pass; then the site torn down | the first plank order takes H2's plank and is detached in that step (H2's plank requesters 2 -> 1 before the plank leaves H2); the site's removal cancels and detaches the second (1 -> 0). With H2 torn down instead, both orders are detached at once |
 | T20 | SHIP-7.2 (the ship after the founding): E-trace-013 (R3, the Hard game), player 1's expedition ship 94738 founds the harbour on (147, 136) in counter 50 658 (AI-misc T9) | its states (the recording's ships table, counters) | waiting with the cargo out in 50 658, returning (state 8) in 50 659, searching with the counter at 100 in 50 660 (101 in 50 661), sailing home (to harbour, its route) from 50 662; at home (146, 50) docked in 51 179, idle in 51 180. Setting it idle at the founding starts the search at 0: the voyage home and its route's draws about 100 ticks late; with the rule: not yet measured (no experiment build on 2026-11-19 night) |
+| T21 | SHIP-2.4 (corrected), SHIP-7.2: E-trace-013 (R3, the Hard game), ship 94738 after the founding of counter 50 658 (T20); all 35 search ends of the recording | when the search tries | turning to search in 50 660 (counter 100), 101 in 50 661, sailing (the route's 13 draws) from 50 662. Building T20 with the try in the next update puts the Hard 150 000 generator apart at trace tick 50 662 (0.12.3: 50 663); T20 with the try in the second update: 50 765 (matching 50 887; experiment build on 0.12.3; every other pair unchanged; the war's switches on). Running every search's counter one further instead (a try after 101 also when counting from 0) puts the Hard generator apart before 49 000 |
+| T22 | SHIP-7.2, the founded site: E-trace-013, the harbour site 97262 on (147, 136), founded in counter 50 658; its builder 97268 | the site's levelling, the builder | the site levelled in 50 658 (frame left 1, main left 1), its frame starting at 50 764; builder: on (147, 136) walking to (147, 135) from 50 658 (progress 0), standing there 50 681, at work 50 682, his first lattice step at progress 0 in 50 683. Levelling the site (0.12.3: levelling at trace tick 50 700, the original a frame): with the levelled site (on T20, T21) Hard 150 000 buildings 50 700 -> 50 800, generator 50 765 -> 51 418 (matching 51 673), settlers stay 50 700 (experiment build). With the builder's walk to the flag and the founding's numbers (T16) his walk, arrival and number are the recorded ones; the settlers stay at 50 700, his first work step one tick early (Q-1075) |
+| T23 | 5.2 the builder's way: E-trace-013 (R3, the Hard game), player 1's harbour 90366 on (144, 47) gathering an expedition; its builder requests served from the castle (door field (139, 52)) at counters 52886, 52986, 53086, 53220 (builders 97659, 97682, 97695, 97725) | each builder's walk | out of the door from the serving tick (progress 0.045 in it), on the flag (140, 50) 45 ticks later (A = 52931 for 97659), the going-home state in A, standing to A + 2, the walk at progress 0 in A + 3 (52934) over (139, 49), (139, 48), (138, 47) to the harbour, in it at 53186; the next builder request at the pass 101 ticks after the previous one. Walking him into the harbour from the start (no turn, no standing) puts the Hard 150 000 settlers apart from trace tick 53000 (3 ticks ahead); with the rule 53200 (experiment build on 0.12.3 with the rules of 2026-11-21; every other pair unchanged) |
+| T24 | SHIP-4.1, the stored cost of the harbour choice: E-trace-018 (R5, the Weak game), player 1's sawmill (144, 37), flag (145, 36), with an open wood order and no warehouse holding wood; its harbour (144, 47), flag (145, 46), with a ship on its sea; the ware roads (145, 36) .. (145, 46) of lengths 4, 6, 4, 4, 8, 7, 4 (37 in all); the carrier of the last road, (143, 45) - (145, 46), holds a ware from about counter 54680 to 54709; the ware renumbering of 54678 has emptied the store | the store's entry (145, 36) -> (145, 46), and the storage run of counter 55740 for the plank lying at (145, 36) | the harbour choice of the matching of counter 54692 stores 45 (that road at 3L; the original's heap dump of 55000 holds 45 under (145, 36)); at 55740 the plank goes to the warehouse (133, 39) (cost 44) rather than the harbour (45). With a fresh search there, the storage run of 54725 asks the pair first and stores 37 (every road free): the plank of 55740 goes to the harbour and the Weak pair's generator first differs at trace tick 56470; with the rule 56729. Asking from the chosen order's flag instead of the representative's moves the Hard pair's settlers from 54400 to 50300 (experiment build on 0.12.3 with every rule of 2026-11-21; with the rule every other pair unchanged) |
+| T25 | SHIP-2.3 5 (stays idle) and SHIP-2.4a (pushed out): E-trace-013 (the Hard game), player 1's ships | the ships table | (a) ship 94738 docks at the harbour (144, 47) at counter 45991 and lies idle with counter 0 from 45992 to its expedition (state 4 from 48458), no search in between; after its return it docks at 51179 and lies idle 51180 .. 54506. (b) every turn from idle to search shows the counter 90 in its first searching row and the try after 101: 19 of 19 (first: ship 100861, idle 87011 .. 87118, searching from 87119). With (a) an experiment build's ship lies idle from 45992 (it searched and docked again every 104 ticks before), its counter 0 through the expedition as recorded (74 before); the compared first differences of every pair are unchanged (the ships' rows are not compared; experiment build on 0.12.3 with every rule of 2026-11-21) |
 
 ## Evidence
 
@@ -466,6 +561,12 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ship-007 | code reading | (2026-11-16 day) | SHIP-4.1 retry and detach: the attach inside the 11-tick ware order pass; an attached order re-checked each pass (harbour accepts the good and is road-reachable, else detached) |
 | E-ship-010 | code reading | (2026-11-17 night) | SHIP-4.1 the order's end: detached when it takes its ware, when cancelled, at the pass re-check, or when its harbour is torn down; T19a |
 | E-ship-011, E-trace-013 | code reading, recording | (2026-11-19 night): the founding clears only the expedition's mode, target and options; R3's ships table from counter 50 658 | SHIP-7.2 the ship after the founding (T20) |
+| E-ship-012, E-trace-013 | recording, experiment build | (2026-11-21 day): R3's ships table (every search run), buildings and settlers tables from counter 50 658 | SHIP-2.4 the returning ship's first try (T21, Q-1073), SHIP-7.2 the founded site levelled and its builder's walk (T22) |
+| E-ship-013 | code reading | (session 2026-11-21 pm): the ship's update, its search state | SHIP-2.4 the search counter (Q-1074) |
+| E-ship-014, E-trace-013 | code reading, recording, experiment build | (session 2026-11-21 pm): the builder's walk to his site (a road walk to the site's flag); R3's settlers table for builder 97268 | SHIP-7.2 the founded builder's stand on the flag (T22, Q-1075) |
+| E-ship-015, E-trace-013 | recording, code reading, experiment build | (session 2026-11-21 pm): R3's settlers and objects tables (the builder requests of harbour 90366 from 52870) | SHIP-5.2 the requested builder's way (T23) |
+| E-ship-016, E-trace-018, E-trace-013 | code reading, memory reads of the running game, recording, experiment build | (session 2026-11-21 eve): the harbour choice for a ship transport and the matching's call of it; the route store in R5's heap dumps of 54500 and 55000; the streets, wares and settlers tables of R5, counters 54670 .. 54726 | SHIP-4.1 the stored cost of the harbour choice (T24) |
+| E-ship-017, E-trace-013 | code reading, recording, experiment build | (session 2026-11-21 eve): the ship's idle update, the docking reservation and the harbour's push-out of an idle ship; the Hard recording's ships table | SHIP-2.3 5, SHIP-2.4a (T25), Q-1074 |
 | E-ship-008 | code reading | (2026-11-16 day) | SHIP-7.2: the order of the harbour founding: site, builder made on its field, the load into its store, its orders cancelled (Q-157) |
 | E-ship-005 | code reading and map data | `tutorial04.s2m` continents and state layer (2026-11-16) | SHIP-2.5, 2.7, 6.4, 7.1, T16 to T18 |
 | data | script | `ship.lua`, `buildings.lua` (harbor, shipYard), `dialogs.txt` dialog3_3 / dialog32_0, `tutorial.txt` T04_* | values and the player's view |

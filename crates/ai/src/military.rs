@@ -1006,7 +1006,9 @@ impl AiPlayer {
                 let defenders = if warehouse {
                     WAREHOUSE_DEFENDERS
                 } else {
-                    world.present_soldiers(b.at) as u32
+                    // T33 (Q-1076): the building's list, not only those
+                    // inside.
+                    world.listed_soldiers(b.at) as u32
                 };
                 let want = soldiers_wanted(ratio, defenders, defend_outside);
                 (b.at, want, world.attack_available(self.id, b.at))

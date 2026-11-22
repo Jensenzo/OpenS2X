@@ -7,22 +7,24 @@ map with the same set-up: every settler's place, every building and the
 game's random number generator, tick by tick (a tick is a tenth of a second
 of game time). The recordings belong to the investigation and are not in the
 public repository, so the numbers can be measured only in the working
-repository; this page keeps them. Measured on 0.12.2, on MP_2P_Storm_Coast:
+repository; this page keeps them. Measured on main for 0.13.0 (2026-11-21 evening), on MP_2P_Storm_Coast:
 
 | Game | Equal up to tick | Game time |
 |---|---|---|
 | Two players, the computer player Weak: settlers and buildings | every compared tick to 40,000 | 67 minutes |
-| The same game: the random number generator | 52,419 | 87 minutes |
+| The same game: the random number generator | 56,469 | 94 minutes |
 | The same game recorded densely, each settler's animation compared too | every compared tick to 20,000 | 33 minutes |
 | You alone, no computer player: settlers and buildings | every compared tick to 30,000 | 50 minutes |
-| Two players, the computer player Strong: the generator; settlers and buildings | 50,662; 50,699 | 84 minutes |
+| Two players, the computer player Strong: the generator; settlers; buildings | 53,725; 53,899; 53,999 | 89 minutes |
 | The Strong game recorded densely, with the animations | 18,416 | 31 minutes |
 
 Not a pair of this page, measured by hand on 0.12.2 (`s2-app trace` against the
 recording E-trace-019, every tenth tick): four players at war on `MP_4P_Fight`,
 three Strong computer players: the generator equal up to tick 13,452, the
 settlers 13,249 and the buildings 14,319 (22 minutes; 0.12.1: 12,949, 12,689
-and 13,449). The recorder of the dense recordings shows a settler's new
+and 13,449); after 0.12.3, 2026-11-21: the generator 14,798, the settlers
+14,109 and the buildings 14,859 (24 minutes); that evening: the generator 16,715, the settlers 16,699
+and the buildings 16,849 (28 minutes). The recorder of the dense recordings shows a settler's new
 animation a tick late now and then, and the one-player recording's last
 ticks have no view; since 0.12.2 the comparison counts those
 (`TOOL-trace.md` TRACE-4.4, T16) instead of stopping at them.
@@ -179,8 +181,8 @@ ours.
 first-differing-tick = none
 settlers-first-differing-tick = none
 buildings-first-differing-tick = none
-generator-first-differing-tick = 52420
-generator-matching-ticks = 52463
+generator-first-differing-tick = 56470
+generator-matching-ticks = 56586
 generator-compared-ticks = 149987
 one-player-first-differing-tick = none
 one-player-generator-first-differing-tick = none
@@ -210,11 +212,11 @@ hard-20000-buildings-first-differing-tick = none
 hard-20000-generator-first-differing-tick = none
 hard-20000-generator-matching-ticks = 14950
 hard-20000-generator-compared-ticks = 14950
-hard-150000-first-differing-tick = 50700
-hard-150000-settlers-first-differing-tick = 50700
-hard-150000-buildings-first-differing-tick = 50700
-hard-150000-generator-first-differing-tick = 50663
-hard-150000-generator-matching-ticks = 50728
+hard-150000-first-differing-tick = 53900
+hard-150000-settlers-first-differing-tick = 53900
+hard-150000-buildings-first-differing-tick = 54000
+hard-150000-generator-first-differing-tick = 53726
+hard-150000-generator-matching-ticks = 53809
 hard-150000-generator-compared-ticks = 149993
 ```
 
@@ -515,3 +517,9 @@ and the words of the time. R3 and R4 in it are the recordings E-trace-013
 | 2026-11-17 | the street cursor steps on from where it is | none | none | none | 52420 | 52 462 of 149 987 | AI-CON-8.1f (AI-CON T106, E-ai-074): passing on to the next flag (no T, no building, the give-ups used up, a road built) raises the street construction's cursor by one from its current value (was: the handled flag's place plus one); after the T97 move it ends two places past the old place. R5: cursor 88 -> 90 at 51423; ours ran one place behind from then on, so the road "114,35 .. 117,34" was never built and the castle made no builder at 51721. The Weak 150 000 generator 51724 -> 52420 (51 753 -> 52 462 matching); every other pair unchanged. |
 | 2026-11-19 | the expedition run founds by the founding test | none | none | none | 52420 | 52 463 of 149 987 | AI-MISC-1.3 as corrected (AI-MISC T9, E-ai-076): the computer player's expedition run founds the harbour when the ship window's founding test holds (SHIP-7.1: the ship still, the nearest harbour spot of its last port position's continent free and closer than 5), no draw; it no longer reads the ship's target, which the arrival cleared. R3: ship 94738 founds on (147, 136) at 50 658 instead of sailing on. The Hard 150 000 pair: generator 50659 -> 50663 (50 811 -> 50 728 matching), settlers and buildings 50700 (the new harbour site levelling in ours, a frame in the original); the Weak generator's matching ticks 52 462 -> 52 463; every first difference of the other pairs unchanged. |
 | 2026-11-19 | fidelity counts the recorder's view lag | none | none | none | 52420 | 52 463 of 149 987 | TOOL-trace TRACE-4.4 (T16, E-trace-011, E-trace-012): s2-app fidelity (trace-diff --view-lag) counts a settler row that differs only in its animation, the recording's clip being ours of the tick before, as the recorder's view lag, not a difference; an unread view (the one-player recording's raced end, TRACE-2.7) is not compared, nor a generator row the recording missed (one-player 27 673). The one-player pair: 27673 -> none; dense-20000: 17533 -> none; Hard 20000: 7054 -> 18417 (worker 90664's walk back: the original shows Walk from the tick it is ordered, ours from its first movement, positions equal). No behaviour changed. |
+| 2026-11-21 | the war after the first capture: the attacker's steps, the released, the evicted and the reinforcement | none | none | none | 52420 | 52 463 of 149 987 | MIL-ATK-6.1a (T37, T36), TRN-CARRY-7.1a (T61), TRN-FREE-6.4a (T49, T50, T51), TRN-FREE-6.4 (T52), AI-MIL-5.4 (T33, Q-1076; cf211a50 .. 24bc9099): the attacker's field during the step back is that of the sample it started from, and the step back's end does nothing more; a released carrier whose step ends in the notice update stops on a flag or off-road field; a worker of land lost goes home from the removal tick; a worker on a free walk completes it; a reinforcement still walking out of the warehouse walks on to its flag first; going home tries all three ways also on a flag or road; the computer player's def counts the building's soldier list. The four-player war R6 (E-trace-019, not a pair of this page): settlers 13250 -> 14110, buildings 14320 -> 14860, generator 13453 -> 14799, as the investigation's experiment build; every pair of this page unchanged |
+| 2026-11-21 | an outdoor worker's fine walks take each step's rate when it starts | none | none | none | 56470 | 56 511 of 149 987 | TRN-FREE-5.3 (T48, E-trn-041; 343c6113): the fine approach and the walk back keep their lattice walk, each step's rate from the heights in the tick it starts (was: the length fixed at the order). Snapshot format 92. The Weak 150 000 generator 52420 -> 56470; every other pair unchanged |
+| 2026-11-21 | the founded ship, site and builder | none | none | none | 56470 | 56 589 of 149 987 | SHIP-7.2 (T20, T22), SHIP-2.4 (T21, Q-1073), SIM-START-4.4 b (T16; 7720e0e6, d2118141, 89e1443c): the founded ship keeps waiting and, returning, makes its first try in the second update after the turn; the founded site is levelled from its creation; its builder walks from the site's field to its flag and stands one tick there (Q-1075, answered: a road walk ordered off the roads), his first work step in A + 2; the computer player's founding numbers its records right after the site (Command::PlanHarbour; snapshot format 93). Hard 150 000: generator 50663 -> 51418 (matching 50 728 -> 51 606), buildings 50700 -> 52600, settlers 50700 -> 51600 (a fisherman's retry after the generator's difference); the Weak generator's matching ticks 56 511 -> 56 589; every other pair unchanged |
+| 2026-11-21 | the war's destroyed ware, first step and pairs' rounds | none | none | none | 56470 | 56 589 of 149 987 | ECO-REQ-5.3h (T43; 2a06823e): a destroyed ware's order is open again as it was, with its stamp; TRN-MOVE-2.1a (T14; 5c4b8a7c): a walk's first step is rated from the heights at its order; MIL-ATK-6.3b (T38; ba784c6a): fighting pairs run their rounds in the order the pairs were made. Not a pair of this page: the war (E-trace-019) settlers 14110 -> 14580 -> 15170 -> 16700, buildings 14860 -> 15650 -> 16850, generator 14799 -> 15181 -> 16716; every pair here unchanged. |
+| 2026-11-21 | the fisher's remembered field, the needs order's site | none | none | none | 56470 | 56 589 of 149 987 | ECO-FOOD-4.5 corrected (T63, E-eco-051; e08f62d7): a remembered fish field emptied by another hut gives nothing and is forgotten; AI-CON-2.5b (T108, E-ai-079; d3327928): a site placed by a needs order goes to the first need in its cell's list. The Hard 150 000 pair: generator 51418 -> 52437 -> 53194 (51 606 -> 53 227 matching), settlers 51600 -> 52600 -> 53000, buildings 52600 -> 54000; every other pair unchanged. |
+| 2026-11-21 | the expedition's builder | none | none | none | 56470 | 56 586 of 149 987 | SHIP-5.2 (T23, E-ship-015; 620a788d, 23184779): a harbour's builder walks out to the serving warehouse's flag, is sent home there with the harbour as his home, and is set aside as he is taken in (Q-1077, reading (a)). The Hard 150 000 pair: settlers 53000 -> 53200 -> 53900, generator 53194 -> 53726 (53 809 matching); the Weak generator's matching ticks 56 589 -> 56 586. |

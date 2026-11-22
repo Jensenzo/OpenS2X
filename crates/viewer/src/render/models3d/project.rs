@@ -89,6 +89,8 @@ pub fn facet_look(facet: &Facet, look: &Look) -> Look {
         FacetKind::Ground => Family::FacetGround,
         // Hook W30b: a project's tree keeps the tree family of its look.
         _ if look.family == Family::FacetTree => Family::FacetTree,
+        // Hook W30c: a project's map object keeps its family too.
+        _ if look.family == Family::FacetObject => Family::FacetObject,
         FacetKind::Solid | FacetKind::Team => Family::Facet,
     };
     out.base = None;
@@ -866,6 +868,118 @@ mod tests {
             decal_colours: Vec::new(),
         };
         assert_eq!(facet_look(&ground, &look).family, Family::FacetGround);
+    }
+
+    // spec: none (hook W30c: a map object's file: one solid part at its place, flat faces, on a square palette; its look keeps the object family)
+    #[test]
+    fn a_map_objects_file() {
+        for name in [
+            "stones_1",
+            "stones_2",
+            "stones_3",
+            "grain_tuft",
+            "sign_post",
+        ] {
+            let glb = tree_fixture(name);
+            let (skeleton, bone_of) = skeleton(&glb);
+            let parts = parts(&glb, &skeleton, &bone_of);
+            assert_eq!(parts.len(), 1, "{name}");
+            assert_eq!(parts[0].kind, FacetKind::Solid);
+            for t in parts[0].indices.as_chunks::<3>().0.iter() {
+                let n: Vec<[f32; 3]> = t.iter().map(|&i| parts[0].normals[i as usize]).collect();
+                assert!(n[0] == n[1] && n[1] == n[2], "{name}");
+            }
+            assert!(skeleton.find("anchor_origin").is_some());
+            let (w, h, _) = decode_png(&glb.images[0].bytes).expect("png");
+            assert_eq!((w, h), (16, 16), "{name}: a square palette");
+        }
+        let look = Look::family(Family::FacetObject, [0.0; 3]);
+        let solid = Facet {
+            kind: FacetKind::Solid,
+            decal_colours: Vec::new(),
+        };
+        assert_eq!(facet_look(&solid, &look).family, Family::FacetObject);
+    }
+
+    /// An RGB PNG of `width` x `height`: its upper half red, its lower half
+    /// blue (two swatches).
+    fn two_swatch_png(width: u32, height: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut encoder = png::Encoder::new(&mut out, width, height);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("header");
+        let data: Vec<u8> = (0..height)
+            .flat_map(|y| {
+                let px = if y < height / 2 {
+                    [200, 0, 0]
+                } else {
+                    [0, 0, 200]
+                };
+                (0..width).flat_map(move |_| px)
+            })
+            .collect();
+        writer.write_image_data(&data).expect("data");
+        writer.finish().expect("finish");
+        out
+    }
+
+    // spec: none (hook W30c: the palette image 512 x 512 as the map objects' and 512 x 320 as the trees': a swatch keeps its place by uv)
+    #[test]
+    fn a_palette_of_either_size() {
+        for (w, h) in [(512, 512), (512, 320)] {
+            let (width, height, _) = decode_png(&two_swatch_png(w, h)).expect("png");
+            assert_eq!((width, height), (w, h));
+            // The image is drawn at power-of-two sides (512 x 320 stretched
+            // to 512 x 512): a uv finds the same swatch.
+            let image = image(&two_swatch_png(w, h)).expect("an image");
+            let size = image.size();
+            assert_eq!(size, bevy::math::UVec2::new(512, 512));
+            let data = image.data.as_ref().expect("pixels");
+            let at = |u: f32, v: f32| {
+                let (x, y) = ((u * size.x as f32) as usize, (v * size.y as f32) as usize);
+                let i = (y * size.x as usize + x) * 4;
+                [data[i], data[i + 1], data[i + 2]]
+            };
+            assert_eq!(at(0.5, 0.2), [200, 0, 0], "{w} x {h}");
+            assert_eq!(at(0.5, 0.8), [0, 0, 200], "{w} x {h}");
+        }
+    }
+
+    // spec: none (hook W30c: a look's file that cannot be drawn is an error starting with its name)
+    #[test]
+    fn a_missing_object_model_is_an_error() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let folders = [root.join("tests/models")];
+        let ok = crate::extend::unusable_model(&folders, &root, ["stones_1.glb", "sign_post.glb"]);
+        assert_eq!(ok, Ok(()));
+        let missing =
+            crate::extend::unusable_model(&folders, &root, ["stones_1.glb", "data/no/such.glb"])
+                .expect_err("missing");
+        assert!(missing.starts_with("data/no/such.glb: "), "{missing}");
+        let not_a_model = crate::extend::unusable_model(&folders, &root, ["Cargo.toml"])
+            .expect_err("not a model");
+        assert!(not_a_model.starts_with("Cargo.toml: "), "{not_a_model}");
+        assert_eq!(crate::extend::unusable_model(&folders, &root, []), Ok(()));
+    }
+
+    // spec: none (hook W30c: --object-model)
+    #[test]
+    fn the_object_model_option() {
+        use crate::app::options::object_look;
+        assert_eq!(
+            object_look("Coal (few)=data/signs/coal_s.glb").expect("parses"),
+            crate::extend::ObjectLook::new("Coal (few)", "data/signs/coal_s.glb")
+        );
+        assert_eq!(
+            object_look("StoneResourceA01=s.glb")
+                .expect("parses")
+                .object,
+            "StoneResourceA01"
+        );
+        assert!(object_look("Field01").is_err());
+        assert!(object_look("=f.glb").is_err());
+        assert!(object_look("Field01=").is_err());
     }
 
     // spec: none (hook W30b: --tree-model)

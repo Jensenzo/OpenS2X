@@ -111,10 +111,18 @@ health point off the other.
   finished, not warehouse-type, on the same land region as the target, with
   `e = dist(D, target) < 24`, and (unless D is the target itself, `e = 0`) a
   free path from the target to D shorter than `2 x e`, provides
-  `j = trunc((m - 1) x defendOutside)` interceptors, `m` = D's present soldiers,
-  `defendOutside` = the owner's "Intercepting Defenders" setting. D sends
+  `j = trunc((m - 1) x defendOutside x f(e))` interceptors, `m` = D's present soldiers,
+  `defendOutside` = the owner's "Intercepting Defenders" setting, `f(e) = min(36 - e, 24) / 24`
+  the same distance factor as the attackers' count (MIL-ATK-1.1 item 7). D sends
   `j - (its interceptors already out)` new ones. The target itself takes part.
   Confidence: high.
+  **The distance factor (corrected 2026-11-21 eve, E-mil-032: code reading and an experiment
+  build; high):** the count was given without it. D sends nothing unless
+  `(m - 1) x defendOutside > 0`; then `min(36 - e, 24)` times the float32 constant 1/24, times
+  that product, truncated. As in 1.1, every factor is a hair above the exact fraction, so
+  truncating the exact rational `min(36 - e, 24) x (m - 1) x defendOutside / 24` gives the same
+  `j`. So a building up to 12 fields from the target sends as before, a farther one fewer: with 6
+  soldiers present and the setting 0.5, `j` is 2 up to `e = 16` and 1 from `e = 17` (T39).
 - **MIL-ATK-3.2 Pairing.** Each new interceptor is paired with the first
   attacker record (record order) for this target whose soldier still stands on
   its home building's door field and has no meeting field yet. If there is
@@ -334,6 +342,11 @@ health point off the other.
     point** (12 ticks on level ground); only when that step has ended does he choose again: a new
     opponent (a new wait job: walk, draw, step), the door of a target that can be taken, or home
     when the target is gone. He never starts for the door or for home from the offset point.
+    **The step back's end (2026-11-21 day, E-mil-030: the war recording and an experiment build;
+    high).** In the update in which the step back ends he only becomes a waiting attacker again,
+    standing on the field's point, and does nothing more in that update; the choice of (b)
+    (an opponent, the door, home) is made in his next update. So a door walk after a step back
+    starts at progress 0 in the update after the step's end and moves from the one after. Test T36.
     Confidence: high (the wait job's start and update and the soldier's waiting state, code),
     and for the tick of the draw after a pairing while standing (measured T26, 2026-11-17 day).
 
@@ -342,7 +355,11 @@ health point off the other.
   be the neighbour of the waiting field for the attacker (**when** (2026-11-17 day, E-mil-025, the war
   recording; high): during the step his field stays the waiting field; in the update the step ends
   his field becomes the truncating field of the sample he stands on, and stays so while he stands
-  there; T29): in the original's two fight saves the
+  there; T29; **the step back (2026-11-21 day, E-mil-030; high):** during the step back to the
+  field's point his field is likewise the field of the sample he steps from, the truncating field of
+  the offset sample, and it becomes the waiting field in the update that step ends; in short, during
+  either step his field is the truncating field of the sample the step started from, after it the
+  truncating field of the sample he stands on; T37): in the original's two fight saves the
   three attackers stood one lattice step off their waiting fields' points (offsets (x, y) of
   (-1, +1), (-1, +1) and (0, +1); the third attacker, re-paired, (+1, 0) in the later save), their
   stored fields the waiting field or its west neighbour, and every defender on the point. **For an interceptor** the
@@ -372,6 +389,12 @@ health point off the other.
      (step 1);
   5. the counter rises by 1.
   Confidence: high.
+- **MIL-ATK-6.3b The list order (added 2026-11-21 pm, E-mil-031; recording and an experiment
+  build).** The "list order" of 6.3 is the order in which the pairs were **made** (an attacker given
+  his defender or interceptor), the oldest pair first; not the order the attackers were sent in. It
+  decides which pair gets which draws when several pairs fight a round in one tick. Test T38.
+  Confidence: medium-high (one measured tick with two rounds whose hit results the order swaps; the
+  original's own list is not read in the code).
 - **MIL-ATK-6.4 Round length.** A fight animation counts down by 1 per tick in
   the soldier's own update and ends when it reaches 0 or below; 16.7 takes 17
   updates. Since the settlers' updates run before the military update, a round
@@ -447,7 +470,7 @@ health point off the other.
 | Name | Value | Unit | Confidence | Evidence ref |
 |---|---|---|---|---|
 | attack / interception reach | d < 24 | fields | high | E-mil-003 |
-| distance factor of k | min(36 - d, 24) / 24 (float32, 1/24 = 0.0416666679) | | high | E-mil-020 |
+| distance factor of k and j | min(36 - d, 24) / 24 (float32, 1/24 = 0.0416666679) | | high | E-mil-020, E-mil-032 |
 | path limit | < 2 x d | steps | high | E-mil-003 |
 | target ring | range + 1 | fields | high | E-mil-003 |
 | count fractions | 0.25, 0.5, 0.75, 1.0 | | high | E-mil-003 |
@@ -500,6 +523,10 @@ health point off the other.
 | T33a | 4.4 (home at a castle): E-trace-019 (R6, the war), player 2's castle on (52, 24), flag (52, 23), door field (51, 25); soldier 14311 walking home after a duel | his rows (counters) | on the step (52, 23) -> (52, 24) from counter 30769 at progress 0; the walk (52, 24) -> (51, 25) at progress 0 in counter 30797 (no standing tick between); on (51, 25) and idle (state 12) in counter 30820, the update that walk ends |
 | T34 | 5.3 (the held defender): E-trace-019 (R6, the war), the guard on (31, 21), flag (32, 20). (a) Defender 16378, idle again from counter 12973 (T33), is paired in counter 12973 by attacker 16592 waiting on (33, 20); 16592's offset step starts in 12974 (walk at progress 0 at trace tick 12975) and ends in counter 12986 (standing at (131 000, 79 000) from trace tick 12987); 16592 is updated after 16378 in each tick. (b) The same defender paired at counter 12619 by attacker 16579 on the flag field (32, 20). (c) Defender 16667 paired at counter 12659 by attacker 16592 on the flag field, 16592 updated first; the building's release cooldown set by 16378's leave in counter 12621 | each defender's turn to wait-for-leave and his leave | (a) idle through counter 12986 (recorded state 12 to trace tick 12987), wait-for-leave in 12987 (trace tick 12988), the step out to (32, 20) at progress 0 in 12988 (trace tick 12989). (b) wait-for-leave in 12620, out in 12621 (trace ticks 12621, 12622). (c) wait-for-leave in 12659, held by the cooldown in 12660, out in 12661 (trace ticks 12660 .. 12662). Leaving at the pairing in (a) sends him out at counter 12975: his duel's first draws come at trace tick 13023 instead of the original's later round, the war's generator apart from 13023; with the rule: not yet measured (no experiment build on 2026-11-19 night) |
 | T35 | 5.1 (a reinforcement becomes a candidate): E-trace-019 (R6, the war), soldier 18545 of player 3 sent from a warehouse to the guard on (31, 21) (state 4, walking in), attacker 16600 waiting on (32, 19) (a lower number: updated before 18545 in each tick) | 18545's state and 16600's pairing (counters) | the step (32, 20) -> (31, 21) from counter 13098 ends in 13121 (standing on (31, 21), still walking in); idle from 13122; 16600 paired with him in 13123 (state 18), his offset step from 13124 to 13136; 18545 turns to wait-for-leave in 13136 (T34, updated after 16600) and steps out in 13137. Idle in the update his step ends, he would be paired in 13122; with the rule: not yet measured (no experiment build on 2026-11-19 night) |
+| T36 | 6.1a (b), the step back's end: E-trace-019 (R6, the war), player 2's attacker 17868 stepping back from his offset sample (127, 76) to the point (126, 76) of his waiting field (31, 19) (counters 13420 .. 13431), the target then takeable | his state and walk | the step ends in counter 13431 (standing on (126, 76), waiting attacker); his door walk (31, 19) -> (32, 20) at progress 0 in counter 13432, +0.027 per tick from 13433 (trace tick 13440: progress 0.189). Choosing in the step's end update starts the walk a tick early: war settlers first differ at trace tick 13440; with the rule 13450 (experiment build on 0.12.3 with T37; buildings 14320 and generator 13453 unchanged; every Storm Coast pair unchanged). Whole recording: 43 of 43 step-back ends choose in a later update (11 door walks and 32 new pairings exactly one update after) |
+| T37 | 6.1a, the field during the step back: E-trace-019, attacker 16592 stepping back from (131, 79) to the point (132, 80) of his waiting field (33, 20), counters 13240 .. 13252 | his field | (32, 19) (the truncating field of (131, 79)) through counter 13251, progress 0.99; (33, 20) from 13252, the update the step ends. Showing the waiting field during the step: war settlers first differ at trace tick 13250; with the rule 13440 (experiment build on 0.12.3; buildings and generator unchanged; Storm Coast pairs unchanged). Whole recording: 2309 of 2309 rows of an attacker in a lattice step show the truncating field of the step's start sample |
+| T38 | 6.3b: E-trace-019 (R6, the war), the two duels at the flag of player 3's guard house (21, 20): player 2's attacker 18218 against the defender 18874, fighting from counter 14790; player 2's 16600 against 18867 (whose earlier duel began at 14771), paired later and fighting from 15096; both run a round in counter 15147 (4 draws in that tick) | the hit results of 15147 | 18218 strikes and hits 18874 (the hit animation; 18874 dying from 15165), 16600 strikes 18867 and misses (16600 hit only at 15164). Running the pairs in their sending order (16600's first) swaps the two results: 18218 dies at 15182, the war's settlers first differ at trace tick 15170, buildings 15650, generator 15181; with the rule settlers 16700, buildings 16850, generator 16716 (experiment build on 0.12.3 with the rules of 2026-11-21; every Storm Coast pair unchanged) |
+| T39 | 3.1 (the distance factor): E-trace-019 (R6, the war), player 3's attack order of counter 16650 on player 2's building (31, 21) with 3 attackers (19304, 19481 of (21, 20), 18814 of (21, 30)); player 2's defend-outside setting 0.5; (47, 19) at `e = 17` with 6 soldiers present, (42, 23) at `e = 12` with 3, (51, 17) at `e = 22` with 1, the target with 1 | the interceptors sent | 2: one from (47, 19) (16608, paired with 19304) and one from (42, 23) (18285, paired with 19481; 18814 has none); without the factor (47, 19) sends 2 (16608 and 16639) and 3 go out. Without the factor the war's settlers first differ at trace tick 16700, buildings 16850, generator 16716; with the rule all three from 17030 (settlers and buildings) and 17032 (generator) (experiment build on 0.12.3 with the rules of 2026-11-21; every Storm Coast pair unchanged) |
 
 ## Evidence
 
@@ -533,6 +560,9 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-027, E-trace-019 | code reading, recording | (session 2026-11-19 night): the settlers' shared pre-update in the dying state (the doodad at 14 of 28 ticks, on the lattice point or the field's point, unless one stands there); R6's objects and counter tables (doodad0 of type dacb0a13 at each duel's death) | 6.6 / TRN-CARRY-7.1 the skeleton doodad (T31a) |
 | E-mil-029, E-trace-019 | recording | (session 2026-11-19 night): R6's 181 reinforcement arrivals, each standing one update on its building's field before turning idle | 5.1 a reinforcement a candidate one update after his step (T35) |
 | E-mil-026, E-trace-019 | code reading, recording | (session 2026-11-19 night): the idle soldier's tests before wait-for-leave (his opponent on his building's flag field, or the opponent's arrival mark in their pair record); R6's defenders 16378 and 16667 of the guard on (31, 21) | 5.3 the held defender (T34) |
+| E-mil-030, E-trace-019 | recording, experiment build | (session 2026-11-21 day): the war's settlers table around the first capture (counters 13240 .. 13600) and over the whole recording | 6.1a the field during the step back (T37), the step back's end (T36) |
+| E-mil-031, E-trace-019 | recording, experiment build | (session 2026-11-21 pm): R6's settlers table (the four soldiers' states and clips at counters 14773 .. 15182) and generator | 6.3b the order of the pairs' rounds (T38) |
+| E-mil-032, E-trace-019 | code reading, recording, experiment build | (session 2026-11-21 eve): the interceptor count's machine code (its distance factor) and R6's settlers table at counter 16650 | 3.1 the distance factor of the interceptors' count (T39) |
 | data | script | `military.lua`, `ai.lua` | fighting time, AI profile values |
 
 ## Open questions

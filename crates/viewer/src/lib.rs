@@ -50,6 +50,7 @@ pub mod paths {
 pub use bevy;
 pub use extend::{
     BuildingLook, ButtonPicture, ButtonPictures, CameraFollow, Captions, EffectRule, Extensions,
-    MapHit, MapThing, MapThings, MusicSlot, ProjectEvent, RenderOptions, SettingsOptions,
-    ShadowFilter, ShoreFoam, StreetLook, TreeGrowth, TreeLook, MAX_SHADOW_MAP, TREE_FAR_BELOW,
+    MapHit, MapThing, MapThings, MusicSlot, ObjectLook, ProjectEvent, RenderOptions,
+    SettingsOptions, ShadowFilter, ShoreFoam, StreetLook, TreeGrowth, TreeLook, MAX_SHADOW_MAP,
+    TREE_FAR_BELOW,
 };

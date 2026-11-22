@@ -33,6 +33,12 @@ project-model | --compare MP_2P_Storm_Coast --scene pair:WoodcutterHut:Spring --
 # the far versions along the view's top (TREE_FAR_BELOW), the full models
 # below, the broad-leaf trees the original's.
 project-trees | --compare MP_2P_Storm_Coast --zoom 3 --assets tests/models --tree-model BirchA=tree_round.glb,far=tree_round_far.glb --tree-model BirchB=tree_round.glb,far=tree_round_far.glb --tree-model BirchC=tree_round.glb,far=tree_round_far.glb --tree-model FirA=tree_cone.glb,far=tree_cone_far.glb --tree-model FirB=tree_cone.glb,far=tree_cone_far.glb
+# Hook W30c: a project's own map objects (tests/models, made by
+# scripts/make-test-objects.py) by the Storm Coast headquarters: the stone
+# piles by their states (one, two, three or more stones), the bushes as
+# grain tufts, the small stones as signs; the other decorations the
+# original's.
+project-objects | --compare MP_2P_Storm_Coast --no-fog --focus 25,52,1 --zoom 2 --assets tests/models --object-model StoneResourceA01=stones_1.glb --object-model StoneResourceA02=stones_2.glb --object-model StoneRessourceA03=stones_3.glb --object-model StoneRessourceA04=stones_3.glb --object-model StoneRessourceA05=stones_3.glb --object-model StoneRessourceA06=stones_3.glb --object-model bush01=grain_tuft.glb --object-model stone01=sign_post.glb --object-model stone02=sign_post.glb --object-model stone03=sign_post.glb --object-model stone04=sign_post.glb
 # The menus (UI-MENU): the title, the main menu, the free play page and the
 # other pages. Their save folder is tests/golden/images/saves (one stand-in
 # autosave), not the player's: CONTINUE and the save list stay the same.

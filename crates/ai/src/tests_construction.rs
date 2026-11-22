@@ -206,6 +206,45 @@ fn t86_the_stock_check_divides_by_the_needs_in_cells() {
     assert_eq!(count(&mut ai, &world, STONE), stones_before + 1);
 }
 
+// AI-CON T108: a needs order for the stone need `later` (given the cell
+// second) places its site; another stone need `first` was given the cell
+// before it: the site's production goes to `first`, `later` stays waiting.
+// With no other waiting need it goes to the order's own need (T4, T88).
+// spec: AI-CON-2.5b (T108), AI-CON-4.3, AI-CON-7.1
+#[test]
+fn t108_a_needs_order_site_goes_to_the_cells_first_need() {
+    let world = world(&[0]);
+    let mut config = config();
+    config.producer.insert(STONE, STONE_PIT);
+    let mut ai = start_with(&world, config, 2);
+    let cell = cell_of(ai.player_mut(P0).home);
+    let (first, later) = {
+        let p = ai.player_mut(P0);
+        let later = p.plan.add_need(STONE, Some((1, 1)), 0.0);
+        let first = p.plan.add_need(STONE, Some((1, 1)), 0.0);
+        p.plan.give_cell(first, cell);
+        p.plan.give_cell(later, cell);
+        (first, later)
+    };
+    let order = Order {
+        slot: Slot::Needs,
+        area: Area::Cell(cell),
+        building: STONE_PIT,
+        weight: 10,
+        time: 0.0,
+        tag: Tag::Need { need: later },
+    };
+    let at = (9, 9);
+    ai.with_ctx(&world, P0, |p, ctx| {
+        p.needs_order_done(order, Outcome::Placed(at), ctx)
+    });
+    let p = ai.player_mut(P0);
+    let prod = p.plan.need(first).unwrap().production.expect("tied");
+    assert_eq!(p.plan.production(prod).unwrap().need, Some(first));
+    assert_eq!(p.plan.production(prod).unwrap().building, Some(at));
+    assert_eq!(p.plan.need(later).unwrap().production, None);
+}
+
 // T4: needs: bread D = 2, A = 0, priority 70, stock 0; coal D = 1, A = 1,
 // priority 100, stock 3: bread scores 693, coal 0; bread is chosen. T88:
 // the order makes no production; the placed site does.

@@ -15,10 +15,15 @@ pub const ONE: u32 = 1_000_000;
 
 /// TRN-MOVE-1.3: slope factor in percent for a step from `a` to `b`.
 pub fn slope_factor_percent(terrain: &Terrain, a: Point, b: Point) -> u32 {
+    slope_factor_heights(terrain, a, b, terrain.height_at(a), terrain.height_at(b))
+}
+
+/// [`slope_factor_percent`] with the two fields' heights given.
+fn slope_factor_heights(terrain: &Terrain, a: Point, b: Point, ha: i32, hb: i32) -> u32 {
     if terrain.has(a, state::WATER) || terrain.has(b, state::WATER) {
         return 100;
     }
-    let rise = i64::from(terrain.height_at(b)) - i64::from(terrain.height_at(a));
+    let rise = i64::from(hb) - i64::from(ha);
     match grid::height_class(rise) {
         i8::MIN..=0 => 100,
         1 => 80,
@@ -37,6 +42,22 @@ pub fn step_rate(terrain: &Terrain, base_speed: u32, a: Point, b: Point, slopes:
     if slopes {
         speed *= slope_factor_percent(terrain, a, b) as f32 / 100.0;
     }
+    1.0 / (distance / speed)
+}
+
+/// TRN-MOVE-2.1a: [`step_rate`] for a settler with the heights of `a` and
+/// `b` given (those at the walk's order).
+fn step_rate_heights(
+    terrain: &Terrain,
+    base_speed: u32,
+    a: Point,
+    b: Point,
+    ha: i32,
+    hb: i32,
+) -> f32 {
+    let distance = grid::distance(a, b).max(1) as f32;
+    let speed =
+        base_speed as f32 / ONE as f32 * slope_factor_heights(terrain, a, b, ha, hb) as f32 / 100.0;
     1.0 / (distance / speed)
 }
 
@@ -69,6 +90,10 @@ pub struct Walker {
     /// reached before it the route there is searched again. Still set when
     /// the walk has ended before it (6.5 e).
     pub road_to: Option<Point>,
+    /// TRN-MOVE-2.1a: the heights of the field it stands on and of its first
+    /// field as they were when the walk was ordered, kept when a height
+    /// changes before the first step starts (the step is rated from them).
+    pub first_heights: Option<(i32, i32)>,
 }
 
 impl Walker {
@@ -82,7 +107,17 @@ impl Walker {
             held: false,
             pauses: Vec::new(),
             road_to: None,
+            first_heights: None,
         }
+    }
+
+    /// TRN-MOVE-2.1a: a walk ordered and not yet stepping (its first step
+    /// still to start) whose first step is between `at` and the field ahead.
+    pub fn first_step(&self) -> Option<(Point, Point)> {
+        if self.next.is_some() || self.held {
+            return None;
+        }
+        self.path.front().map(|&f| (self.at, f))
     }
 
     /// The step's progress, 0 to 1.
@@ -127,6 +162,7 @@ impl Walker {
         self.held = false;
         self.pauses.clear();
         self.road_to = None;
+        self.first_heights = None;
         self.path = fields.into_iter().collect();
     }
 
@@ -278,7 +314,15 @@ impl Walker {
                 self.path.pop_front();
                 self.held = false;
                 self.next = Some(field);
-                self.rate_bits = step_rate(terrain, base_speed, self.at, field, slopes).to_bits();
+                // TRN-MOVE-2.1a: the walk's first step is rated from the
+                // heights at the order.
+                let rate = match self.first_heights.take() {
+                    Some((ha, hb)) if slopes => {
+                        step_rate_heights(terrain, base_speed, self.at, field, ha, hb)
+                    }
+                    _ => step_rate(terrain, base_speed, self.at, field, slopes),
+                };
+                self.rate_bits = rate.to_bits();
                 true
             }
             _ => false,
@@ -843,6 +887,41 @@ impl LatticeWalk {
     /// One tick of the walk.
     pub fn advance(&mut self, terrain: &Terrain, base_speed: u32) {
         let steps = self.steps(terrain);
+        self.advance_along(terrain, base_speed, &steps);
+    }
+
+    /// The sample last reached, the next one and the float32 progress
+    /// toward it (as [`lattice_walk_at`]).
+    pub fn position(&self, terrain: &Terrain) -> (Point, Option<Point>, f32) {
+        self.position_along(&self.steps(terrain))
+    }
+
+    /// The ticks left, if the heights stay as they are.
+    pub fn ticks_left(&self, terrain: &Terrain, base_speed: u32) -> u32 {
+        self.ticks_left_along(terrain, base_speed, &self.steps(terrain))
+    }
+
+    /// TRN-FREE-5.3 (T48): a walk from `from` along the given samples (an
+    /// outdoor worker's fine approach stopping short of its object, or his
+    /// fine walk back), ordered now: the first step's rate from the heights
+    /// now. Driven by the `_along` methods with the same samples.
+    pub fn along(terrain: &Terrain, base_speed: u32, from: Point, steps: &[Point]) -> Self {
+        let mut walk = Self {
+            from,
+            to: steps.last().copied().unwrap_or(from),
+            done: 0,
+            progress_bits: 0,
+            rate_bits: 0,
+        };
+        if let Some(&next) = steps.first() {
+            walk.rate_bits = lattice_rate(terrain, base_speed, from, next).to_bits();
+        }
+        walk
+    }
+
+    /// One tick of the walk along `steps`: a step's rate is set from the
+    /// heights in the tick it starts, the excess carried.
+    pub fn advance_along(&mut self, terrain: &Terrain, base_speed: u32, steps: &[Point]) {
         let Some(&next) = steps.get(self.done as usize) else {
             return;
         };
@@ -860,15 +939,13 @@ impl LatticeWalk {
         self.progress_bits = progress.to_bits();
     }
 
-    /// The sample last reached, the next one and the float32 progress
-    /// toward it (as [`lattice_walk_at`]).
-    pub fn position(&self, terrain: &Terrain) -> (Point, Option<Point>, f32) {
-        let steps = self.steps(terrain);
+    /// [`LatticeWalk::position`] along `steps`.
+    pub fn position_along(&self, steps: &[Point]) -> (Point, Option<Point>, f32) {
         let done = self.done as usize;
         let at = if done == 0 {
             self.from
         } else {
-            steps[done - 1]
+            steps[(done - 1).min(steps.len().saturating_sub(1))]
         };
         match steps.get(done) {
             Some(&next) => (at, Some(next), f32::from_bits(self.progress_bits)),
@@ -876,12 +953,13 @@ impl LatticeWalk {
         }
     }
 
-    /// The ticks left, if the heights stay as they are.
-    pub fn ticks_left(&self, terrain: &Terrain, base_speed: u32) -> u32 {
+    /// [`LatticeWalk::ticks_left`] along `steps`: the step under way at its
+    /// own rate, the later ones at the heights now.
+    pub fn ticks_left_along(&self, terrain: &Terrain, base_speed: u32, steps: &[Point]) -> u32 {
         let mut walk = *self;
         let mut ticks = 0;
-        while !walk.is_done(terrain) {
-            walk.advance(terrain, base_speed);
+        while (walk.done as usize) < steps.len() {
+            walk.advance_along(terrain, base_speed, steps);
             ticks += 1;
         }
         ticks

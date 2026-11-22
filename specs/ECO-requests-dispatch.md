@@ -314,6 +314,13 @@ and handed into the building.
     measured T31 .. T33, Q-373). If there is no H, or the route cost from Wf's flag to
     D's flag is not higher than H's, Wf gets destination D. Otherwise H sends G
     as in (b).
+    **No H: no cost is asked (2026-11-21 eve, E-eco-052: code reading and an experiment build;
+    high).** When D's network has no warehouse with G in stock, Wf gets destination D at once and
+    neither stored cost of (a) is asked, so nothing is stored for the pair (D's flag, Wf's flag)
+    then. The two stored costs are asked only when an H exists. A later first ask of that pair (by
+    this matching with an H, by the economy's other searches or by the computer player's route
+    optimizer, `AI-construction.md` AI-CON-8.3 c) stores the cost of the roads as they are at that
+    later tick (T44).
   - **(b)** Otherwise H sends one G if: H's send cooldown is 0, H can provide a
     helper to carry it out, and H's flag holds fewer wares than the flag limit
     (`cfg_setFlagPackageLimit`, 6). Then, as for sending a settler (3.6), a
@@ -369,6 +376,17 @@ and handed into the building.
   Confidence: high (added 2026-10-27 night, E-eco-023: the order of the
   delivered ware filed again, appended; the building's first open order of the good in the
   transport's list of all orders, the made-first order, dropped; measured T20).
+- **ECO-REQ-5.3h A destroyed ware's order comes back as it was** (added 2026-11-21 pm,
+  E-eco-050). When a ware that serves an order is destroyed (in a released carrier's or a
+  going-home helper's hands, or lying on a removed flag, `TRN-roads-flags.md` TRN-ROAD-6.3, 6.4;
+  5.3g), the order filed with it is open again **as it was**: it joins the end of its good's
+  open orders with the stamp it got when it was chosen (ECO-DIST-3.3b) and its place in the
+  order the building's orders were made, exactly as the served order at a delivery (5.3f), but
+  **no** order of the building is dropped (nothing was delivered). It is **not** a new order:
+  a new order would have the stamp 0 and so be chosen before every order chosen before
+  (ECO-DIST-3.3b). A carrier's claim on the ware is dropped with it. Confidence: high (code
+  reading: the destruction looks up the served order that holds the ware and files that same
+  record open again; measured T43).
 - **ECO-REQ-5.3e A redirected free ware's next flag and claim.** When (a)
   gives a free ware a new destination (an order's building in place of
   storage or another order), its next flag (`TRN-carriers-transport.md`
@@ -627,6 +645,8 @@ and handed into the building.
 | T40 | 0.1 (one building pass in creation order): E-trace-019 (R6, MP_4P_Fight), counter 4378: player 3's finished building 15576 (25, 27) files its worker request 15932 (a helper) and player 1's new site 15928 (54, 57) its leveller request 15933, in this order (object numbers; positions 2 and 3, recorded) | the queue's order and the requests served from 4416 to 4444 | 15933 is served at 4416 from position 1; with 4 open requests the cursor then stands on position 3 at the start of 4444, so player 2's carrier request 15959 (road 15958, filed at 4430, position 3) is served at 4444 before 15955 (road 15951, filed at 4414, position 2; served at 4534). Updating player by player (player 1's site before player 3's building) puts 15933 first: served at 4416 from position 0, the cursor's phase one place earlier, 15955 served at 4444, the site 15861 (49, 25) on that road in a ware network a run early and a plank sent to it at 4444: the Fight game against R6 differs from settlers 4452. With the rule (experiment build, with T39 and the later Fight rules): settlers 4452 -> 4871, generator 4698 -> 4873; every pair of the fidelity set unchanged |
 | T41 | 5.7 (c) (the new choice in the next run; Q-384): E-trace-013 (R3, the Hard game), player 1's plank 96452, put down at the harbour 90366's flag 90367 (145, 46) at counter 45686 after the harbour stopped taking planks (`TRN-carriers-transport.md` T59); the storehouse 94359 takes planks throughout | the plank and the carriers of the road (145, 46) - (143, 45) | destination dropped at the storage run of 45690, 94359 chosen at 45695 (next flag (143, 45)); the donkey 95957 stands in 45691 and walks to its idle field empty from 45692; the carrier 90406, after his put-down at (143, 45), claims the plank in 45699 and fetches it (recorded). Choosing in the same run (45690) makes the plank ready for the donkey's look in 45692: he takes it back, and the Hard game against R3 differs from settlers 45693; keeping the next flag "none" through the 3-tick re-check is needed as well (else the plank keeps the harbour and the carrier stays idle: 45723). With the rule (experiment build, with T59 and AI-CON T100): settlers 46075 (the Hard 150 000 pair at its 100th-tick rows: settlers 45800 -> 46100; every other pair unchanged) |
 | T42 | 5.5 (a ware whose building is removed): E-trace-019 (R6, the war), player 1's hunter's hut site on (43, 60) torn down by the computer player in counter 12704 (AI-CON-9.2); plank 18331, bound for it, lies at the flag (50, 61) (next flag (47, 61)) with a carrier's claim; the site on (49, 60) has an open plank order; 12705 is a matching tick and a storage tick | 18331's destination | none from counter 12704 (recorded: the wares table's row of 12704); in counter 12705 the matching gives it to the site on (49, 60) and its carrier fetches it (recorded: the carrier of the road at (50, 60) walks from trace tick 12708), while the site's own plank, put on its flag (43, 59) by the tear-down (no order left for it), gets the headquarters in the storage run of 12705. Keeping the destination until the storage run sends 18331 to a warehouse and the war's buildings differ from trace tick 12943 (the site on (49, 60) waits for its plank); with the rule (experiment build, the tick-exact branch's head) from 13450, every Storm Coast pair unchanged |
+| T43 | 5.3h: E-trace-019 (R6, the war), player 3's plank 18665, matched at counter 13398 from the flag (29, 18) to the site on (18, 34) (its order chosen then), destroyed in its carrier's hands at the take-over of 13448; player 3's site on (24, 24) has an open plank order last chosen in 12551; the matching of 13519 finds the free plank 18803 at the flag (23, 32) | which order gets the plank of 13519, and when (18, 34) is served again | (24, 24)'s order (its stamp 12551 is lower than the reopened order's 13398): the plank goes to (24, 24); (18, 34) gets its plank only at 14388 (from the flag (25, 21)). Filing a new order (stamp 0) for (18, 34) instead sends the plank of 13519 there, and the carrier of the road (24, 26)-(26, 26) takes it as an exchange ware at (26, 26) in 14101 where the original walks back empty: the war's settlers first differ at trace tick 14110, buildings 14860, generator 14799; with the rule settlers 14580, buildings 15650, generator 15181 (experiment build on 0.12.3 with the rules of 2026-11-21; every Storm Coast pair unchanged) |
+| T44 | 5.3 (a), no H: E-trace-013 (the Hard game), player 1's free ware 97738 (good 7068dcd3, lying at flag (121, 55)) matched in counter 53416 to the order of the building on (122, 60) (flag (122, 59)); no warehouse of the network holds that good; the flags joined by the roads (121, 55) - (121, 58) (length 6) and (121, 58) - (122, 59) (length 4) | the store's entry for the pair (121, 55) / (122, 59) | not filled at 53416 (the ware gets the order without a cost asked). The computer player's route optimizer run of counter 53496 on building 93606 (flag (121, 55), partner with flag (122, 59), d = 4, k = 2) asks it first, from (121, 55): 22 stored (the heap dump of 53500; absent from the dump of 53000), above 4 x 4, so the direct variant (w 1, X ending (121, 55)); that variant's road (122, 59) - (121, 55) is begun and cancelled (no path) at 53570, its stub taking an object number. Asking and storing the cost at the matching (10, roads free then) takes the route variant at 53496: no stub, every later object number one lower, the Hard pair's generator first differs at trace tick 53726 (settlers 53900, buildings 54000); with the rule generator 54206, settlers 54400, buildings 55700 (experiment build on 0.12.3 with every rule of 2026-11-21; every other pair unchanged) |
 
 ## Evidence
 
@@ -665,6 +685,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-eco-027 | code reading | | ECO-REQ-5.3e (Q-285) |
 | E-eco-030, E-trace-013 | code reading and recording | the tick parts of the logic tick (E-ai-007); settlers and wares tables of E-trace-013 | ECO-REQ-4.2 when (T25) |
 | E-eco-033, E-trace-011, E-trace-013 | code reading and recordings | wares and flags tables of E-trace-011 (8200 .. 8275) and E-trace-013 (10700 .. 11120) | ECO-REQ-5.3 (a) (T28) |
+| E-eco-052, E-trace-013 | code reading, memory reads of the running game, recording, experiment build | (session 2026-11-21 eve): the order matching's case (a); the route store in the heap dumps of 53000 and 53500; the computer player's route task and road builder tables, counters 53311 .. 53570 | ECO-REQ-5.3 (a) without H (T44) |
 | E-eco-037, E-trace-014, E-trace-011 | code reading, a memory read of the running game, recordings | heap dump 25500 of E-trace-014 (the player's order list); `wares.csv` of E-trace-014 (25770 .. 25860) and E-trace-011 (16458 .. 18528) | ECO-REQ-5.4a (T31 .. T33) |
 | E-eco-043, E-trace-013 | code reading and recording | E-trace-013 `wares.csv.gz` (counters 45640 .. 45700) | ECO-REQ-5.7 (c), T41 |
 | E-eco-044 | code reading | (session 2026-11-11 eve): the warehouse door's sending of a settler by profession, the six per-class list appends of the settlers' system, the burning warehouse's evacuation loop, `Jobs.lua` (the profession ids, the boat carrier's type) | 0.2a (Q-287) |
@@ -672,6 +693,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-eco-039, E-trace-013 | code reading and recording | E-trace-013 `objects.csv.gz` (request 92909), `settlers.csv.gz` (93002, 93008, 93011, 93013 out of (144, 47)) | ECO-REQ-3.4, T37 |
 | E-eco-035, E-trace-014 | code reading and recording | E-trace-014 `wares.csv`, `stocks.csv` counters 25002 .. 25773 | ECO-REQ-4.2 (T30), `ECO-distribution.md` ECO-DIST-3.1a |
 | E-eco-049, E-trace-019 | recording and experiment build | (session 2026-11-17 day): R6's wares table for the planks 18331 and 18515 at counters 12704 .. 12707 | 5.5 the moment a removed building's ware is free (T42) |
+| E-eco-050, E-trace-019 | code reading, recording, experiment build | (session 2026-11-21 pm): R6's wares table for the planks 18665, 18803 and 18994 at counters 13398 .. 14388 | 5.3h a destroyed ware's order (T43) |
 
 ## Open questions
 

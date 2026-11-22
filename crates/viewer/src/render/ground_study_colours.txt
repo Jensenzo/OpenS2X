@@ -1,0 +1,13 @@
+# The ground study's own colours (round 2, 2026-11-21). Each line: a swatch name, its colour, why.
+# Put over the project palette's swatches of the same name for the study's ground only (the palette
+# file is not changed); a name the palette lacks is added. The day's light on every family is the
+# same: sun (0.94, 0.90, 0.78) times N.L, plus the ambient (0.60, 0.50, 0.60), no tone curve.
+rock        #8C8573  the rock kinds: a warm grey (the neutral stone #9A9890 took the ambient's lilac)
+rock_dark   #645C4F  the dark rock kinds
+rock_light  #ADA48E  the pale rock kinds (stone ground, the harbour)
+snow        #9AA8B4  snow: lit planes stay below white (sun-facing 0.93 0.92 0.98; flat 0.79 0.79 0.85), the shade side blue-grey (0.36 0.33 0.43)
+turf        #5E6B3F  meadow: a step darker and less yellow than #72803F, below the crowns' leaf_light #6F9A48
+turf_dry    #7A7445  dry meadow: the same step from #948C4C
+leaf_light  #587A40  bright meadow: the same step from #6F9A48 (the crowns keep theirs)
+leaf        #44653A  dark meadow: the same step from #4F7A3A
+seabed      #A89870  the ground under water (a kind of its own: sand in the water's shade)

@@ -1,4 +1,4 @@
-save format 2, world format 90
+save format 2, world format 95
 s2_ai::AiSystem
     counter: u64
     players: seq<Option<s2_ai::player::AiPlayer>>
@@ -363,6 +363,7 @@ s2_sim::World
     decorations_cleared: seq<(u32, u32)>
     doodads_removed @71: map<(u32, u32), u8>
     linked_home @73: map<u32, s2_sim::requests::Target>
+    home_warehouse @95: map<u32, s2_sim::requests::Target>
     field_marks: map<(u32, u32), u32>
     mark_movers: map<u32, ((u32, u32), bool)>
     inputs: map<(u32, u32), seq<(u32, u32)>>
@@ -424,6 +425,7 @@ s2_sim::combat::AttackStep
     4 Meeting
     5 Arrived
     6 In
+    7 Capturing
 s2_sim::combat::DefendStep
     0 Leaving
     1 Out
@@ -494,6 +496,7 @@ s2_sim::command::Command
     55 ChooseRecipe { player: s2_sim::PlayerId, at: (u32, u32), index: u32 }
     56 DeepenMine { player: s2_sim::PlayerId, at: (u32, u32) }
     57 PaveRoad { player: s2_sim::PlayerId, at: (u32, u32) }
+    58 PlanHarbour { player: s2_sim::PlayerId, ship: u32, records: u32 }
 s2_sim::command::CommandResult
     command: s2_sim::command::Command
     outcome: Result<(), s2_sim::command::Rejection>
@@ -726,6 +729,7 @@ s2_sim::movement::Walker
     held: bool
     pauses: seq<(u32, u32)>
     road_to: Option<(u32, u32)>
+    first_heights @94: Option<(i32, i32)>
 s2_sim::navy::Cargo
     destination: (u32, u32)
     goods: seq<(u32, u32)>
@@ -870,11 +874,11 @@ s2_sim::production::Work
     11 OutNext { spot: (u32, u32) }
     12 Out { spot: Option<(u32, u32)> }
     13 ToSpot { spot: (u32, u32) }
-    14 Approach { spot: (u32, u32) }
+    14 Approach { spot: (u32, u32), walk @92: Option<s2_sim::movement::LatticeWalk> }
     15 AtSpot { spot: (u32, u32) }
     16 TakeWare { second: bool, stand: Option<(u32, u32)> }
     17 StandBack { stand: Option<(u32, u32)>, score: i64 }
-    18 Return { stand: (u32, u32), score: i64 }
+    18 Return { stand: (u32, u32), score: i64, walk @92: Option<s2_sim::movement::LatticeWalk> }
     19 WaitBack { score: i64 }
     20 Back { score: i64 }
     21 AtFlag

@@ -55,6 +55,7 @@ fn waiting_attacker(world: &mut World, home: Point, field: Point) -> usize {
         opponent: None,
         hit: false,
         offset: None,
+        paired: 0,
     });
     id
 }

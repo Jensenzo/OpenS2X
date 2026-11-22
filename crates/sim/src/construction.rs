@@ -697,7 +697,32 @@ impl World {
     /// ring order, using values already changed. Water, Coast and ElevationBlocked are not
     /// recomputed. Returns the fields whose placement is recomputed: those
     /// within 3 of `field` (through [`World::changed`]'s radius 2).
+    /// TRN-MOVE-2.1a (T14): a height near `field` is about to change: every
+    /// settler's and carrier's walk ordered and not yet stepping keeps the
+    /// heights of its first step as they are now (those at its order: none
+    /// changed since, or they were kept then).
+    fn keep_first_step_heights(&mut self, field: Point) {
+        let terrain = &self.terrain;
+        let keep = |w: &mut crate::movement::Walker| {
+            if w.first_heights.is_some() {
+                return;
+            }
+            if let Some((a, b)) = w.first_step() {
+                if grid::distance(a, field) <= 2 || grid::distance(b, field) <= 2 {
+                    w.first_heights = Some((terrain.height_at(a), terrain.height_at(b)));
+                }
+            }
+        };
+        for s in self.settlers.iter_mut().flatten() {
+            keep(&mut s.walker);
+        }
+        for c in &mut self.carriers {
+            keep(&mut c.walker);
+        }
+    }
+
     pub(crate) fn set_field_height(&mut self, field: Point, height: i32) -> Vec<Point> {
+        self.keep_first_step_heights(field);
         let center = grid::field_sample(field);
         let (columns, rows) = self.terrain.sample_size();
         for sample in grid::area(center, LEVELLED_SAMPLES, columns, rows) {
@@ -2287,6 +2312,40 @@ mod tests {
         assert_eq!(world.terrain().height_at(n), 300);
         assert!(world.terrain().has(n, crate::map::state::ELEVATION_BLOCKED));
         assert_eq!(touched.len(), 7);
+    }
+
+    // TRN-MOVE T14: a walk is ordered from (5, 8) to (5, 7), then the
+    // field ahead is levelled up in the same tick (a class-2 climb now):
+    // the first step is still rated level (0.045, the heights at the
+    // order); the walk's next step and a walk ordered after the change see
+    // the new heights.
+    // spec: TRN-MOVE-2.1a (T14), TRN-MOVE-1.3
+    #[test]
+    fn t14_the_first_step_is_rated_at_the_order() {
+        let mut world = site_world(flat(16, 16));
+        let (from, ahead) = ((5, 8), (5, 7));
+        let settler = world.dying_settler(P0, 0, from, 7);
+        let id = world.add_settler(settler);
+        world.settlers[id].as_mut().unwrap().walker.walk([ahead]);
+        world.set_field_height(ahead, 1136);
+        let rated = |w: &crate::movement::Walker| w.speed_millionths();
+        let terrain = world.terrain.clone();
+        let speed = world.settings.settler_speed;
+        let walker = &mut world.settlers[id].as_mut().unwrap().walker;
+        assert_eq!(walker.first_heights, Some((0, 0)));
+        walker.advance(&terrain, speed, |_| true);
+        assert_eq!(walker.next, Some(ahead));
+        assert_eq!(rated(walker), 45_000);
+        assert_eq!(walker.first_heights, None);
+        // Ordered after the change: rated from the heights now.
+        let mut later = crate::movement::Walker::new(from);
+        later.walk([ahead]);
+        later.advance(&terrain, speed, |_| true);
+        assert!(rated(&later) < 45_000, "{}", rated(&later));
+        // A new walk drops what was kept.
+        walker.first_heights = Some((0, 0));
+        walker.walk([from]);
+        assert_eq!(walker.first_heights, None);
     }
 
     // spec: none (the debug command that supplies a site, not a game rule)

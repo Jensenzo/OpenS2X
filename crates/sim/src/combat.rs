@@ -100,6 +100,10 @@ pub struct AttackRecord {
     pub hit: bool,
     /// MIL-ATK-6.1a: his step off the waiting field's lattice point.
     pub offset: Option<OffsetStep>,
+    /// MIL-ATK-6.3b (T38): when the pair was made, in the order pairs are
+    /// made (larger is newer; 0 before any pairing): the order of the
+    /// pairs' rounds.
+    pub paired: u64,
 }
 
 /// MIL-ATK-6.1a: an attacker's step from his waiting field's lattice point
@@ -431,6 +435,7 @@ impl World {
                 opponent: None,
                 hit: false,
                 offset: None,
+                paired: 0,
             });
         }
         chosen.len() as u32
@@ -585,10 +590,16 @@ impl World {
         None
     }
 
+    /// MIL-ATK-6.3b: the mark of a pair made now, newer than every pair
+    /// there is.
+    fn next_pairing(&self) -> u64 {
+        self.attackers.iter().map(|r| r.paired).max().unwrap_or(0) + 1
+    }
+
     /// Pair the attacker `record` with the soldier `defender`, who leaves
     /// the building `home` to meet it on `field` (or on the attacker's field
     /// when none is given).
-    fn pair(
+    pub(crate) fn pair(
         &mut self,
         record: usize,
         defender: usize,
@@ -602,6 +613,7 @@ impl World {
             self.attackers[record].field = field;
         }
         self.attackers[record].opponent = Some(defender);
+        self.attackers[record].paired = self.next_pairing();
         let settler = self.settlers[defender].as_mut().expect("a defender");
         let health = health_of(settler).expect("a soldier");
         // MIL-ATK-5.3 (T34): the target's own soldier has his opponent from
@@ -651,6 +663,7 @@ impl World {
     fn pair_waiting_interceptor(&mut self, record: usize, id: usize) {
         let attacker = self.attackers[record].soldier;
         self.attackers[record].opponent = Some(id);
+        self.attackers[record].paired = self.next_pairing();
         if self.attackers[record].field.is_none() {
             return;
         }
@@ -1075,10 +1088,13 @@ impl World {
                     let leaving = self.attackers[record].opponent.is_none()
                         || self.target_building(target).is_none();
                     if o.back {
-                        if !self.offset_advance(record) {
-                            return true;
+                        // T36 (E-mil-030): the update the step back ends
+                        // only makes him a waiting attacker on the point;
+                        // he chooses in his next update.
+                        if self.offset_advance(record) {
+                            self.attackers[record].offset = None;
                         }
-                        self.attackers[record].offset = None;
+                        return true;
                     } else if leaving && self.offset_back(record, f) {
                         return true;
                     }
@@ -1518,6 +1534,12 @@ impl World {
             opponent: paired_with,
             hit: fight.hit,
             offset,
+            // MIL-ATK-6.3b: a loaded pair in the save's order.
+            paired: if paired_with.is_some() {
+                self.next_pairing()
+            } else {
+                0
+            },
         });
         true
     }
@@ -1553,9 +1575,12 @@ impl World {
     // ---- The duel (MIL-ATK-6) ----
 
     /// MIL-ATK-6.3: one round for every pair that stands on its field and
-    /// is not in a fight animation, in record order.
+    /// is not in a fight animation; 6.3b (T38): in the order the pairs were
+    /// made, the oldest first (records of equal mark in record order).
     pub(crate) fn fight_rounds(&mut self) {
-        for i in 0..self.attackers.len() {
+        let mut order: Vec<usize> = (0..self.attackers.len()).collect();
+        order.sort_by_key(|&i| self.attackers[i].paired);
+        for i in order {
             let record = self.attackers[i].clone();
             let (Some(defender), Some(field)) = (record.opponent, record.field) else {
                 continue;

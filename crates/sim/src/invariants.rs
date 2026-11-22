@@ -306,7 +306,10 @@ fn one_job(world: &World, fail: &mut impl FnMut(&'static str, String)) {
             Some(&SettlerJob::Worker { target, .. }) | Some(&SettlerJob::ToBuilding { target }) => {
                 workers.entry(target).or_default().push(id)
             }
-            Some(&SettlerJob::ToSite { target, builder }) => {
+            // SHIP-5.2: an expedition's builder walking out goes to no site.
+            Some(&SettlerJob::ToSite { target, builder })
+                if world.sites.contains_key(&target.at) =>
+            {
                 builders.entry((target, builder)).or_default().push(id)
             }
             _ => {}

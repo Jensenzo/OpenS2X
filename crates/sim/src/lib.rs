@@ -369,6 +369,10 @@ pub struct World {
     /// going home after a short walk, still linked to the military
     /// building or site that sent for them until their object goes.
     linked_home: BTreeMap<u32, requests::Target>,
+    /// TRN-FREE-6.4 step 1, SHIP-5.2 (T23): the settlers (by number) going
+    /// home with a home warehouse assigned: an expedition's builder, his
+    /// home the harbour that asked for him.
+    home_warehouse: BTreeMap<u32, requests::Target>,
     /// AI-CON-8.1e (T95): each field's settler mark, the number of the
     /// settler or carrier that came to stand on it; any settler leaving the
     /// field clears it.
@@ -565,6 +569,7 @@ impl std::fmt::Debug for World {
             decorations_cleared,
             doodads_removed,
             linked_home,
+            home_warehouse,
             field_marks,
             mark_movers,
             inputs,
@@ -680,6 +685,7 @@ impl std::fmt::Debug for World {
             .field("decorations_cleared", decorations_cleared)
             .field("doodads_removed", doodads_removed)
             .field("linked_home", linked_home)
+            .field("home_warehouse", home_warehouse)
             .field("field_marks", field_marks)
             .field("mark_movers", mark_movers)
             .field("inputs", inputs)
@@ -874,6 +880,7 @@ impl World {
             decorations_cleared: BTreeSet::new(),
             doodads_removed: BTreeMap::new(),
             linked_home: BTreeMap::new(),
+            home_warehouse: BTreeMap::new(),
             field_marks: BTreeMap::new(),
             mark_movers: BTreeMap::new(),
             inputs: BTreeMap::new(),
@@ -1351,8 +1358,13 @@ impl World {
             Command::ExpeditionStart { player, at } => self.expedition_start(player, at),
             Command::ExpeditionStop { player, ship } => self.expedition_stop(player, ship),
             Command::ExpeditionBuildHarbor { player, ship } => {
-                self.expedition_build_harbour(player, ship)
+                self.expedition_build_harbour(player, ship, 0)
             }
+            Command::PlanHarbour {
+                player,
+                ship,
+                records,
+            } => self.expedition_build_harbour(player, ship, records),
             Command::ExpeditionGo {
                 player,
                 ship,

@@ -2465,10 +2465,30 @@ impl World {
                 self.wares[ware] = None;
             }
         }
-        if let Some(target) = w.target.filter(|t| !t.storage) {
-            if self.target_building(target).is_some() {
-                self.order(target.at, w.good);
-            }
+        self.reopen_order(w.order, w.target, w.good);
+    }
+
+    /// ECO-REQ-5.3h (T43): the order a destroyed ware served is open again
+    /// as it was: last among the open orders, with its stamp and its place
+    /// in the order the orders were made (as 5.3f), no order dropped. Not a
+    /// new order (its stamp 0 would put it before every order chosen
+    /// before). A ware with no order filed (none of ours) files one anew.
+    pub(crate) fn reopen_order(
+        &mut self,
+        order: Option<crate::Order>,
+        target: Option<crate::Target>,
+        good: u32,
+    ) {
+        let Some(target) = target.filter(|t| !t.storage) else {
+            return;
+        };
+        if self.target_building(target).is_none() {
+            return;
+        }
+        match order.filter(|o| o.target.at == target.at) {
+            // SHIP-4.1: open again, attached to no harbour.
+            Some(o) => self.orders.push(crate::Order { harbour: None, ..o }),
+            None => self.order(target.at, good),
         }
     }
 

@@ -526,7 +526,9 @@ impl World {
                 .flag_at(field)
                 .is_some_and(|owner| !self.is_inner_land(owner, field));
             if lost {
-                self.remove_flag(field);
+                // TRN-FREE-6.4a (T49): the building behind it goes before
+                // the settlers' part; its workers go home from this tick.
+                self.remove_flag_as(field, true);
             } else {
                 i += 1;
             }
@@ -539,6 +541,12 @@ impl World {
     /// building's remains (MIL-CON-4.4) among them: made on this flag, each
     /// with its number, and destroyed with it.
     pub(crate) fn remove_flag(&mut self, field: Point) {
+        self.remove_flag_as(field, false);
+    }
+
+    /// [`World::remove_flag`]; `lost`: for land lost (TER-6.3), before the
+    /// settlers' part of the tick (TRN-FREE-6.4a, T49).
+    pub(crate) fn remove_flag_as(&mut self, field: Point, lost: bool) {
         let ends: Vec<usize> = self
             .roads
             .iter()
@@ -558,7 +566,7 @@ impl World {
             .flatten()
             .find(|&n| self.building_at(n).is_some() && self.flag_of(n) == field);
         if let Some(at) = building {
-            self.remove_with_remains(at);
+            self.remove_with_remains_as(at, lost);
         }
         for ware in self.wares_at(field).to_vec() {
             self.destroy_ware(ware);

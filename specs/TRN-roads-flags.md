@@ -317,8 +317,9 @@ TER-6.3) and by conquest (`MIL-conquest.md` MIL-CON-2.2).
 - **TRN-ROAD-6.4 A destroyed ware** is taken off its flag and off the player's
   ware list. If it was on its way to fill a request (it had a destination),
   that assignment is dropped first, so the requesting building is again
-  missing that ware and orders it anew by its normal rules
-  (`ECO-requests-dispatch.md`). Confidence: high (E-trace-006: the plank destroyed in
+  missing that ware: the order the ware served is open again as it was, with
+  its stamp, not a new order (`ECO-requests-dispatch.md` ECO-REQ-5.3h, corrected
+  2026-11-21 pm, E-eco-050). Confidence: high (E-trace-006: the plank destroyed in
   the released carrier's hands at counter 387 was ordered again and sent at 484 or 517,
   6.6).
 - **TRN-ROAD-6.5** A building is never removed by removing a road; only by

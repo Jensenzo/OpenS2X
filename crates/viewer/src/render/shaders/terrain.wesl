@@ -35,8 +35,12 @@ struct TerrainParams {
     light_dir: vec4<f32>,
     light_color: vec4<f32>,
     ambient: vec4<f32>,
-    // GFX-WATER-2.5: x 1 while the caustics pass is drawn.
+    // GFX-WATER-2.5: x 1 while the caustics pass is drawn. The ground study
+    // (a development switch, `ground_study.rs`): y its variant (0 off), z
+    // its lightness step.
     caustics: vec4<f32>,
+    // The ground study: each layer's colour.
+    study: array<vec4<f32>, 64>,
 };
 
 @group(3) @binding(0) var<uniform> params: TerrainParams;
@@ -293,6 +297,207 @@ fn shade(layer_in: u32, g: vec3<f32>, n: vec3<f32>, t: vec3<f32>, b: vec3<f32>,
     return lit;
 }
 
+// The ground study (a development switch, `ground_study.rs`; no rule of the
+// original's): the sample lattice's triangle that holds the plane point p
+// (as `containing`, at the sample step: the terrain mesh's own triangles,
+// MAP-GRID-4.5), as its first corner and which of the two (k).
+const SAMPLE_STEP: f32 = 1.5;
+const SAMPLE_ROW_STEP: f32 = 1.2990375;
+
+fn sample_position(f: vec2<i32>) -> vec2<f32> {
+    let shift = select(0.0, SAMPLE_STEP / 2.0, (f.y & 1) == 1);
+    return vec2<f32>(f32(f.x) * SAMPLE_STEP + shift, f32(f.y) * SAMPLE_ROW_STEP);
+}
+
+struct Facet {
+    corner: vec2<i32>,
+    k: i32,
+    middle: vec2<f32>,
+};
+
+fn sample_facet(p: vec2<f32>) -> Facet {
+    let rows = 4 * i32(params.lattice.w);
+    let y = clamp(i32(floor(p.y / SAMPLE_ROW_STEP)), 0, max(rows - 1, 0));
+    let base = select(0.0, SAMPLE_STEP / 2.0, (y & 1) == 1);
+    let first = i32(floor((p.x - base) / SAMPLE_STEP));
+    var best: Facet;
+    var best_score = -1e9;
+    for (var x = first - 1; x <= first + 1; x++) {
+        let a = vec2<i32>(x, y);
+        let b = vec2<i32>(x + 1, y);
+        let c = vec2<i32>(x, y + 1);
+        let d = vec2<i32>(x + 1, y + 1);
+        for (var k = 0; k < 2; k++) {
+            var t0: vec2<i32>;
+            var t1: vec2<i32>;
+            var t2: vec2<i32>;
+            if (y & 1) == 0 {
+                if k == 0 { t0 = a; t1 = b; t2 = c; } else { t0 = b; t1 = d; t2 = c; }
+            } else {
+                if k == 0 { t0 = a; t1 = d; t2 = c; } else { t0 = a; t1 = b; t2 = d; }
+            }
+            let pa = sample_position(t0);
+            let pb = sample_position(t1);
+            let pc = sample_position(t2);
+            let w = barycentric(p, pa, pb, pc);
+            let score = min(w.x, min(w.y, w.z));
+            if score > best_score {
+                best_score = score;
+                best.corner = a;
+                best.k = k;
+                best.middle = (pa + pb + pc) / 3.0;
+            }
+        }
+    }
+    return best;
+}
+
+// The study: a hash of a lattice place and a salt, the same every time.
+fn study_hash(c: vec2<i32>, salt: u32) -> u32 {
+    var h = (u32(c.x + 4096) * 73856093u) ^ (u32(c.y + 4096) * 19349663u) ^ (salt * 83492791u);
+    h = (h ^ (h >> 13u)) * 1274126177u;
+    return h ^ (h >> 16u);
+}
+
+// The study: a number 0, 1 or 2 from a facet's place, the same every time.
+fn facet_step(f: Facet) -> f32 {
+    return f32(study_hash(f.corner, u32(f.k + 1)) % 3u) - 1.0;
+}
+
+// The study, round 2: the step of the patch a facet's middle lies in. The
+// patches are the cells of jittered points 2.6 m apart (each the points'
+// nearest), so three to eight neighbouring facets share one step and the
+// patches' outlines are irregular, the same every run.
+const PATCH: f32 = 2.6;
+
+fn patch_step(middle: vec2<f32>) -> f32 {
+    let cell = vec2<i32>(floor(middle / PATCH));
+    var best = cell;
+    var best_d = 1e9;
+    for (var dy = -1; dy <= 1; dy++) {
+        for (var dx = -1; dx <= 1; dx++) {
+            let c = cell + vec2<i32>(dx, dy);
+            let h = study_hash(c, 7u);
+            let jitter = vec2<f32>(f32(h & 1023u), f32((h >> 10u) & 1023u)) / 1023.0;
+            let point = (vec2<f32>(c) + 0.1 + 0.8 * jitter) * PATCH;
+            let d = dot(point - middle, point - middle);
+            if d < best_d {
+                best_d = d;
+                best = c;
+            }
+        }
+    }
+    return f32(study_hash(best, 11u) % 3u) - 1.0;
+}
+
+// The study's pixel. Variants (params.caustics.y): 1 hard, 3 clear (the
+// kind of the field nearest the facet's middle); 2 blend (the field
+// triangle's kinds mixed at the facet's middle); 4 ragged, 5 ragged without
+// a step (one kind per facet, drawn among the field triangle's three by
+// their weights at the middle, sharpened, and a hash of the facet's place:
+// two kinds meet in an irregular line of whole facets); 6 calm (the kinds
+// mixed at the pixel, the smooth normal, no facets, no step); round 3: 7
+// hybrid (the colour as calm, the light per facet), 8 hybrid-crisp (as 7,
+// but where the field triangle's kinds belong to different families, the
+// layer colour's w, one family per facet drawn as ragged draws a kind, and
+// the kinds of that family mixed at the pixel). 1 to 3 step per facet, 4 per
+// patch.
+fn study_pixel(p: vec2<f32>, world_position: vec3<f32>, smooth_normal: vec3<f32>,
+        frag: vec4<f32>) -> vec3<f32> {
+    let variant = u32(params.caustics.y + 0.5);
+    var colour: vec3<f32>;
+    var n: vec3<f32>;
+    if variant >= 6u {
+        let tri = containing(p);
+        let s0 = params.study[min(layer_of(tri.a), MAX_LAYERS - 1u)];
+        let s1 = params.study[min(layer_of(tri.b), MAX_LAYERS - 1u)];
+        let s2 = params.study[min(layer_of(tri.c), MAX_LAYERS - 1u)];
+        colour = s0.rgb * tri.w.x + s1.rgb * tri.w.y + s2.rgb * tri.w.z;
+        if variant == 8u && !(s0.w == s1.w && s1.w == s2.w) {
+            // One family per facet: a corner of the field triangle at the
+            // facet's middle drawn by its cubed weight and the facet's hash.
+            let f = sample_facet(p);
+            let tm = containing(f.middle);
+            let w = tm.w * tm.w * tm.w;
+            let r = f32(study_hash(f.corner, u32(f.k + 5)) & 65535u) / 65536.0
+                * (w.x + w.y + w.z);
+            var drawn = params.study[min(layer_of(tm.a), MAX_LAYERS - 1u)];
+            if r >= w.x + w.y {
+                drawn = params.study[min(layer_of(tm.c), MAX_LAYERS - 1u)];
+            } else if r >= w.x {
+                drawn = params.study[min(layer_of(tm.b), MAX_LAYERS - 1u)];
+            }
+            // The kinds of that family mixed at the pixel.
+            let m = vec3<f32>(
+                select(0.0, 1.0, s0.w == drawn.w),
+                select(0.0, 1.0, s1.w == drawn.w),
+                select(0.0, 1.0, s2.w == drawn.w)
+            ) * tri.w;
+            let total = m.x + m.y + m.z;
+            colour = drawn.rgb;
+            if total > 1e-4 {
+                colour = (s0.rgb * m.x + s1.rgb * m.y + s2.rgb * m.z) / total;
+            }
+        }
+        if variant == 6u {
+            n = normalize(smooth_normal);
+        } else {
+            n = normalize(cross(dpdx(world_position), dpdy(world_position)));
+            if n.y < 0.0 {
+                n = -n;
+            }
+        }
+    } else {
+        let f = sample_facet(p);
+        let tri = containing(f.middle);
+        let c0 = params.study[min(layer_of(tri.a), MAX_LAYERS - 1u)].rgb;
+        let c1 = params.study[min(layer_of(tri.b), MAX_LAYERS - 1u)].rgb;
+        let c2 = params.study[min(layer_of(tri.c), MAX_LAYERS - 1u)].rgb;
+        colour = c0;
+        if variant == 2u {
+            colour = c0 * tri.w.x + c1 * tri.w.y + c2 * tri.w.z;
+        } else if variant == 4u || variant == 5u {
+            let w = tri.w * tri.w * tri.w;
+            let r = f32(study_hash(f.corner, u32(f.k + 5)) & 65535u) / 65536.0
+                * (w.x + w.y + w.z);
+            if r >= w.x + w.y {
+                colour = c2;
+            } else if r >= w.x {
+                colour = c1;
+            }
+        } else if tri.w.y > tri.w.x && tri.w.y >= tri.w.z {
+            colour = c1;
+        } else if tri.w.z > tri.w.x && tri.w.z > tri.w.y {
+            colour = c2;
+        }
+        if variant == 4u {
+            colour *= 1.0 + params.caustics.z * patch_step(f.middle);
+        } else if variant != 5u {
+            colour *= 1.0 + params.caustics.z * facet_step(f);
+        }
+        n = normalize(cross(dpdx(world_position), dpdy(world_position)));
+        if n.y < 0.0 {
+            n = -n;
+        }
+    }
+    // Round 3 (the hybrids): a thin pale edge where the water's surface
+    // (height -0.1, GFX-WATER-3.3) meets the land: the ground within about
+    // two pixels below the surface, whatever the slope.
+    let height_step = fwidth(world_position.y);
+    if variant >= 7u {
+        let below = -0.1 - world_position.y;
+        let edge = 1.0 - smoothstep(height_step * 1.0, height_step * 2.5, below);
+        if below >= 0.0 {
+            colour = mix(colour, vec3<f32>(0.90, 0.91, 0.87), edge * 0.9);
+        }
+    }
+    let shadow = shadow_at(world_position, n, frag);
+    let occlusion = ambient_occlusion(frag);
+    let d = params.light_color.rgb * saturate(dot(n, -params.light_dir.xyz)) * shadow
+        + params.ambient.rgb * occlusion;
+    return d * colour;
+}
+
 // Hook W17b: a project's screen-space ambient occlusion at the pixel `frag`
 // (its value in Bevy's occlusion texture, 1 unoccluded); 1 on every
 // camera without it (the original's look, the water's mirror).
@@ -332,6 +537,14 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
     // The game frame: z is Bevy's z negated.
     let g = vec3<f32>(in.world_position.x, in.world_position.y, -in.world_position.z);
     let p = vec2<f32>(g.x, g.z) - params.lattice.xy;
+    if params.caustics.y > 0.5 {
+        // The ground study (a development switch): flat facets.
+        let rect = params.world_rect;
+        let uv = (vec2<f32>(g.x, g.z) - rect.xy) / (rect.zw - rect.xy);
+        let visible = textureSampleLevel(world, world_sampler, uv, 0.0).r;
+        let colour = study_pixel(p, in.world_position, in.normal, in.clip) * visible;
+        return vec4<f32>(saturate(colour), 1.0);
+    }
     let tri = containing(p);
     let layers = array<u32, 3>(layer_of(tri.a), layer_of(tri.b), layer_of(tri.c));
 

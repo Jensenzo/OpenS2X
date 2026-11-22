@@ -151,9 +151,11 @@ impl AiPlayer {
                 |n| ctx.rng.draw() % n.max(1),
             );
             match decision {
-                Some(Sail::Build) => ctx.out.push(Command::ExpeditionBuildHarbor {
+                // SIM-START-4.4 b (T16): numbered as its sites are.
+                Some(Sail::Build) => ctx.out.push(Command::PlanHarbour {
                     player: self.id,
                     ship: index as u32,
+                    records: 0,
                 }),
                 Some(Sail::Go(direction)) => ctx.out.push(Command::ExpeditionGo {
                     player: self.id,

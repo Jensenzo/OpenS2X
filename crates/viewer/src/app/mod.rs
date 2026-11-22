@@ -131,6 +131,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         button_pictures,
         mut building_looks,
         mut tree_looks,
+        mut object_looks,
     } = extensions;
     crate::extend::messages::install(project_messages);
     crate::extend::install_buttons(button_pictures);
@@ -234,12 +235,25 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
     // `--tree-model` to its trees' (a later one of a kind wins).
     building_looks.extend(options.building_looks.iter().cloned());
     tree_looks.extend(options.tree_looks.iter().cloned());
+    // Hook W30c: `--object-model` to its map objects'. A file that cannot
+    // be drawn stops the start with its name, not a hole in the map.
+    object_looks.extend(options.object_looks.iter().cloned());
+    if let Some(dir) = &game_dir {
+        let models = object_looks.iter().map(|l| l.model.as_str());
+        if let Err(e) = crate::extend::unusable_model(&asset_folders, dir.root(), models) {
+            eprintln!("{e}");
+            return std::process::ExitCode::FAILURE;
+        }
+    }
+    // A development switch: the ground study (none by default).
+    crate::render::ground_study::install(options.ground_study.clone());
     crate::extend::install(
         asset_folders,
         render,
         music_external,
         building_looks,
         tree_looks,
+        object_looks,
     );
     let mut maps = game_dir
         .as_ref()

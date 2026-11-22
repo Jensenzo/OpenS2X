@@ -494,7 +494,9 @@ impl World {
             // TER-6.2: right after its own update a building not on its
             // owner's inner land is removed.
             if self.building_at(at).is_some() && !self.is_inner_land(owner, at) {
-                self.remove_with_remains(at);
+                // TRN-FREE-6.4a (T49): before the settlers' part, so its
+                // workers go home from this tick.
+                self.remove_with_remains_as(at, true);
             }
         }
     }
@@ -966,6 +968,26 @@ impl World {
             }
             Requester::Military(_) => unreachable!("served by serve_soldier"),
             Requester::Unlinked => unreachable!("deleted on its turn (ECO-REQ-2.3a)"),
+            Requester::Harbour(target) if Some(request.profession) == self.roles.builder => {
+                // SHIP-5.2 (T23): the expedition's builder leaves as a
+                // builder going to his site, out of the door to the serving
+                // warehouse's flag only; there his walk to the harbour (no
+                // site) is refused and he goes home, his home the harbour.
+                let walker = self.walker_leaving(from, vec![out]);
+                self.add_settler(Settler {
+                    number,
+                    player,
+                    profession: request.profession,
+                    list: crate::SettlerList::Constructors,
+                    walker,
+                    job: SettlerJob::ToSite {
+                        target,
+                        builder: true,
+                    },
+                    timer: 0,
+                    carrying: None,
+                });
+            }
             Requester::Harbour(target) => {
                 // It walks into the harbour and joins its stock.
                 walk.push(target.at);

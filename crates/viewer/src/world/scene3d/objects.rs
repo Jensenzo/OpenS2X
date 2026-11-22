@@ -25,6 +25,11 @@ pub struct Lookup {
     /// Hook W30b: the deposit types drawn with a project's tree model, by
     /// type id (a look names its kind by the rules name, `dp_setName`).
     pub tree_looks: HashMap<u32, crate::extend::TreeLook>,
+    /// Hook W30c: the deposit types (not trees) and doodad types drawn with
+    /// a project's model, by type id (a look names its kind by the rules
+    /// name, `dp_setName` or `dd_setName`).
+    pub object_deposits: HashMap<u32, crate::extend::ObjectLook>,
+    pub object_doodads: HashMap<u32, crate::extend::ObjectLook>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -113,8 +118,35 @@ impl Lookup {
                 rules.deposits.iter().map(|d| (d.id, d.name.as_deref())),
                 crate::extend::tree_looks(),
             ),
+            object_deposits: object_looks_by_kind(
+                rules.deposits.iter().map(|d| (d.id, d.name.as_deref())),
+                crate::extend::object_looks(),
+            ),
+            object_doodads: object_looks_by_kind(
+                rules.doodads.iter().map(|d| (d.id, d.name.as_deref())),
+                crate::extend::object_looks(),
+            ),
         }
     }
+}
+
+/// Hook W30c: the object looks by type: a type named as a look's `object`
+/// (the last look of a name wins; every type of that name takes it).
+pub fn object_looks_by_kind<'a>(
+    kinds: impl IntoIterator<Item = (u32, Option<&'a str>)>,
+    looks: &[crate::extend::ObjectLook],
+) -> HashMap<u32, crate::extend::ObjectLook> {
+    if looks.is_empty() {
+        return HashMap::new();
+    }
+    kinds
+        .into_iter()
+        .filter_map(|(id, name)| {
+            let name = name?;
+            let look = looks.iter().rev().find(|l| l.object == name)?;
+            Some((id, look.clone()))
+        })
+        .collect()
 }
 
 /// Hook W30b: the tree looks by deposit type: a type named as a look's
@@ -860,6 +892,16 @@ pub fn objects(
         if let Some(tree) = tree_look {
             file = tree.model.clone();
             family = models3d::Family::FacetTree;
+        } else if let Some(object) = lookup
+            .object_deposits
+            .get(&deposit.kind)
+            .filter(|_| family != models3d::Family::Tree)
+        {
+            // Hook W30c: a stone pile's state or a grain field with a
+            // project's look: its model, with the element's place, turn,
+            // sizes and growing (a tree kind only by its tree look).
+            file = object.model.clone();
+            family = models3d::Family::FacetObject;
         }
         // GFX-ANIM-3.8b: size 0 (being planted) draws at scale 0.
         let size = deposit_size(world, deposit.kind, deposit.state, look);
@@ -920,15 +962,9 @@ pub fn objects(
         let [x, z] = frame.sample_xz(i64::from(sample.0), i64::from(sample.1));
         let (x, z) = (x + e.offset[0], z + e.offset[1]);
         let at = [x, element_height(world, e, x, z), z];
-        out.push(plain(
-            key,
-            e.mesh.clone(),
-            at,
-            yaw,
-            scale,
-            models3d::Family::of_shader(&e.shader),
-            [0.0; 3],
-        ));
+        // Hook W30c: a sign kind with a project's look.
+        let (file, family) = object_look(lookup, sign.doodad, e);
+        out.push(plain(key, file, at, yaw, scale, family, [0.0; 3]));
     }
     out
 }
@@ -971,9 +1007,11 @@ fn doodad(
     let [x, z] = frame.sample_xz(i64::from(sample.0), i64::from(sample.1));
     let (x, z) = (x + e.offset[0], z + e.offset[1]);
     let at = [x, element_height(world, e, x, z), z];
+    // Hook W30c: a doodad type with a project's look.
+    let (file, family) = object_look(lookup, type_id, e);
     Some(Placed {
         key,
-        file: e.mesh.clone(),
+        file,
         units_per_metre: models3d::DEFAULT_SCALE,
         at,
         heading: yaw,
@@ -981,7 +1019,7 @@ fn doodad(
         tilt: 0.0,
         tilt_axis: 0.0,
         tint: WHITE,
-        family: models3d::Family::of_shader(&e.shader),
+        family,
         player: [0.0; 3],
         extra: [0.0; 4],
         shadow: e.shadow_cast,
@@ -990,6 +1028,19 @@ fn doodad(
         parts: Parts::All,
         sink: None,
     })
+}
+
+/// A doodad's model and family: its element's, or (hook W30c) its type's
+/// project look in the project object family.
+pub(crate) fn object_look(
+    lookup: &Lookup,
+    type_id: u32,
+    e: &s2_assets::landscape::LandscapeElement,
+) -> (String, models3d::Family) {
+    match lookup.object_doodads.get(&type_id) {
+        Some(look) => (look.model.clone(), models3d::Family::FacetObject),
+        None => (e.mesh.clone(), models3d::Family::of_shader(&e.shader)),
+    }
 }
 
 /// F55: the doodads numbered in `which` placed as [`objects`] places them, for

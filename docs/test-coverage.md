@@ -70,7 +70,9 @@ woodcutter's hut site at 25, 50, 75 and 100 % of its work, a project's own
 building model (the repository's `tests/models/facets.glb`, hook W30) as the
 well beside a woodcutter's hut, a project's own trees (`tests/models/tree_*.glb`
 for the birches and firs at the default zoom, near and far versions, hook
-W30b), the title, the
+W30b), a project's own map objects (`tests/models/stones_*.glb` for the stone
+piles by their states, the bushes and small stones as other test models,
+hook W30c), the title, the
 main menu, the free play page and the other menu pages (the six settings
 pages among them), every in-game dialog that can be opened from the command
 line (tools, military, distribution, transport, the six statistics pages,

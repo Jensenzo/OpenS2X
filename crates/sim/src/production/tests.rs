@@ -536,6 +536,67 @@ fn hut_with(trees: &[Point]) -> (World, usize) {
     (world, id)
 }
 
+// TRN-FREE T48 (TRN-FREE-5.3, E-trn-041): the fine approach's steps each
+// take their rate from the heights when they start: the ground ahead rising
+// while the woodcutter walks (a site levelled nearby) slows the steps not
+// yet begun, so he reaches the tree later than the heights at the order
+// gave; the step under way keeps its rate.
+// spec: TRN-FREE-5.3 (TRN-FREE T48)
+#[test]
+fn t48_the_approachs_steps_take_their_rates_when_they_start() {
+    let trees = [(13, 8)];
+    let (mut world, id) = hut_with(&trees);
+    let mut ordered = None;
+    for _ in 0..1200 {
+        world.step();
+        if matches!(work_of(&world, id), Work::Approach { .. }) {
+            ordered = Some((world.tick(), world.settlers[id].as_ref().unwrap().timer));
+            break;
+        }
+    }
+    let (w, at_order) = ordered.expect("the approach");
+    let field = world.settlers[id].as_ref().unwrap().walker.at;
+    let steps = world
+        .approach_steps(field, trees[0], false)
+        .expect("a tree");
+    assert!(steps.len() >= 2, "{steps:?}");
+    // The first step under way; the ground ahead of it rises (class 2 a
+    // field).
+    world.step();
+    let first = world.fine_position(world.settlers[id].as_ref().unwrap());
+    let rate_before = first.expect("on the lattice").progress_bits;
+    // A sample grid of the field heights (flat), then the samples after the
+    // first step raised by a class 2 rise each.
+    let (columns, rows) = world.terrain.sample_size();
+    let base = world.terrain.sample_height(steps[0]);
+    world.terrain.samples = vec![base; (columns * rows) as usize];
+    for (k, &sample) in steps.iter().enumerate().skip(1) {
+        world
+            .terrain
+            .set_sample_height(sample, base + 700 * k as i32);
+    }
+    world.step();
+    let second = world.fine_position(world.settlers[id].as_ref().unwrap());
+    assert_ne!(
+        second.expect("on the lattice").progress_bits,
+        rate_before,
+        "the step under way goes on"
+    );
+    let mut reached = None;
+    for _ in 0..400 {
+        world.step();
+        if matches!(work_of(&world, id), Work::AtSpot { .. }) {
+            reached = Some(world.tick());
+            break;
+        }
+    }
+    let took = reached.expect("he works") - w;
+    assert!(
+        took > u64::from(at_order),
+        "the later steps slower: {took} ticks, {at_order} at the order's heights"
+    );
+}
+
 // TRN-FREE-5: the woodcutter walks the lattice to the tree, works and
 // takes the log one lattice step (the tree's elevation size) from the
 // tree's own sample, facing it; on his other steps he has no lattice

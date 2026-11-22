@@ -329,13 +329,13 @@ impl World {
         if let (true, Some(f)) = (on_lattice, &view.fine) {
             view.walk = Step::standing(grid::sample_field_truncating(f.step.at));
         }
-        // MIL-ATK-6.1a (T29, E-mil-025): an attacker's field stays his
-        // waiting field during his step off its point; from the update the
-        // step ends it is the field his sample truncates to.
+        // MIL-ATK-6.1a (T29, E-mil-025; T37, E-mil-030): during either
+        // step (off the waiting field's point, or back to it) an attacker's
+        // field is the field the sample the step started from truncates to
+        // (the waiting field for the step off); from the update the step
+        // ends, the field of the sample he stands on.
         if let (SettlerJob::Attack { .. }, Some(f)) = (&s.job, &view.fine) {
-            if f.step.next.is_none() {
-                view.walk = Step::standing(grid::sample_field_truncating(f.step.at));
-            }
+            view.walk = Step::standing(grid::sample_field_truncating(f.step.at));
         }
         let standing_on = |at: Point| s.walker.at == at && s.walker.next.is_none();
         view.activity = match &s.job {

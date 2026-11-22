@@ -572,7 +572,8 @@ fn ship_t08_t09_go_and_found() {
         Ok(())
     );
     let site = w.site(b).expect("a harbour site");
-    assert!(site.builder.is_some());
+    // T22: the builder walks from the site's field to its flag first.
+    assert!(site.builder_on_way);
     assert_eq!(site.delivered, [(PLANK, 4), (STONE, 6)]);
     assert_eq!(w.building_at(b).unwrap().owner, P0);
     // Range 4 claimed, radius 6 explored at once.
@@ -590,6 +591,102 @@ fn ship_t08_t09_go_and_found() {
         .iter()
         .all(|o| o.target.at != b || (o.good != PLANK && o.good != STONE)));
     assert!(w.site(b).is_some());
+}
+
+// SHIP T20, T21 (SHIP-7.2, SHIP-2.4 corrected; E-ship-011, E-ship-012;
+// Q-1073): the ship of a founding keeps waiting in the founding's update
+// (F, never set idle); in F + 1 it turns to returning, in F + 2, standing
+// still, to searching; the search's first try comes in its second update
+// after that (F + 4), and it sails for the nearest finished harbour.
+// spec: SHIP-7.2 (SHIP T20, SHIP T22), SHIP-2.4 (SHIP T21), SHIP-6.5, SIM-START-4.4 (T16)
+#[test]
+fn ship_t20_t21_the_founded_ship_searches_from_returning() {
+    let (mut w, s) = voyage_world();
+    harbour(&mut w, P0, WEST_HARBOUR);
+    for x in 26..40 {
+        for y in 0..30 {
+            let i = w.terrain().index((x, y));
+            w.owners[i] = None;
+            w.explored[i] = 0;
+        }
+    }
+    let b = (28, 12);
+    // Rough ground around the spot (T22: levelled at the founding anyway).
+    for (k, n) in w.terrain().neighbours(b).into_iter().flatten().enumerate() {
+        crate::test_support::set_height(&mut w.terrain, n, 1500 * (k as i32 % 2));
+    }
+    assert!(w.needs_levelling(b, crate::BuildingSize::Harbor));
+    w.ships[s].vessel.options = w.landing_options(s);
+    let d = direction(&w, s, b);
+    let go = Command::ExpeditionGo {
+        player: P0,
+        ship: s as u32,
+        direction: d as u8,
+    };
+    assert_eq!(apply(&mut w, go), Ok(()));
+    step_until(&mut w, 100, |w| state_of(w, s) == ShipState::Sailing);
+    step_until(&mut w, 2000, |w| state_of(w, s) == ShipState::Waiting);
+    // Founded in the late part of tick F, as the computer player does
+    // (AI-2.1a; a command at a tick's start meets the ship's update after
+    // it in the same tick), with one record of its (T16).
+    let before = w.next_object();
+    w.step_then(move |_, _, _, _| {
+        vec![Command::PlanHarbour {
+            player: P0,
+            ship: s as u32,
+            records: 1,
+        }]
+    });
+    assert!(w.late_results().iter().all(|r| r.outcome.is_ok()));
+    assert!(w.site(b).is_some(), "founded");
+    // SIM-START-4.4 b (T16): the site, its record, its flag and the flag's
+    // three ids, then the builder.
+    assert_eq!(w.building_at(b).unwrap().serial, before);
+    let (id, builder) = w
+        .settlers()
+        .find(|(_, x)| matches!(x.job, crate::SettlerJob::ToSite { .. }))
+        .map(|(i, x)| (i, x.clone()))
+        .expect("the builder walks to the flag");
+    assert_eq!(builder.number, before + 6);
+    assert_eq!(w.next_object(), before + 7);
+    assert_eq!(builder.walker.at, b);
+    assert_eq!(builder.walker.destination(), w.flag_of(b));
+    assert_eq!(state_of(&w, s), ShipState::Waiting, "F: still waiting");
+    // T22: the site levelled from its creation, though its ground is not
+    // level.
+    let site = w.site(b).unwrap();
+    assert!(
+        site.levelled() && !site.levelling_needed,
+        "levelled at once"
+    );
+    assert!(site.leveller.is_none());
+    let expected = [
+        ShipState::Returning,
+        ShipState::Search,
+        ShipState::Search,
+        ShipState::ToHarbour,
+    ];
+    for (k, state) in expected.into_iter().enumerate() {
+        w.step();
+        assert_eq!(state_of(&w, s), state, "F + {}", k + 1);
+    }
+    // T22, Q-1075 (E-ship-014): on the flag in A he stands one tick; the
+    // site has him as its builder from A + 1 (his first work step in A + 2).
+    let flag = w.flag_of(b);
+    for _ in 0..200 {
+        let x = w.settlers[id].as_ref().expect("still walking");
+        if x.walker.at == flag && !x.walker.is_walking() {
+            break;
+        }
+        w.step();
+    }
+    assert!(
+        w.site(b).unwrap().builder.is_none(),
+        "A: standing on the flag"
+    );
+    w.step();
+    assert!(w.settlers[id].is_none(), "A + 1: on the site");
+    assert!(w.site(b).unwrap().builder.is_some());
 }
 
 // T17: a ship docked at a harbour, then loaded for an expedition: its
@@ -1040,4 +1137,77 @@ fn the_continent_layer_is_the_setups_as_loaded() {
     assert_eq!(w.continent_of(east), Some(7));
     w.set_continents(vec![1; 10]);
     assert_eq!(w.continent_of(sea), Some(3));
+}
+
+// SHIP T23 (SHIP-5.2, the requested builder's way): the expedition's builder
+// leaves the serving warehouse as a builder going to his site, out of the
+// door to its flag only. There, in his arrival tick A, he is sent home
+// (TRN-FREE-6.4a), his home the harbour (TRN-FREE-6.4 step 1, not the
+// warehouse he just left): he stands in A + 1 and A + 2 and starts his road
+// walk at progress 0 in A + 3, and goes into the harbour, where he is set
+// aside at once (Q-1077, reading (a)).
+// spec: SHIP-5.2 (SHIP T23, Q-1077), TRN-FREE-6.4, TRN-FREE-6.4a
+#[test]
+fn ship_t23_the_expedition_builders_way() {
+    let (mut w, _) = gather_world();
+    let store = (4, 10);
+    warehouse(&mut w, store);
+    road_between(&mut w, store, WEST_HARBOUR);
+    stock(&mut w, WEST_HARBOUR, PLANK, 4);
+    stock(&mut w, WEST_HARBOUR, STONE, 6);
+    stock(&mut w, store, BUILDER, 3);
+    w.submit(Command::ExpeditionStart {
+        player: P0,
+        at: WEST_HARBOUR,
+    });
+    let builder = |w: &World| {
+        w.settlers
+            .iter()
+            .flatten()
+            .find(|s| s.profession == BUILDER)
+            .cloned()
+    };
+    step_until(&mut w, 400, |w| builder(w).is_some());
+    let b = builder(&w).unwrap();
+    assert!(
+        matches!(b.job, crate::SettlerJob::ToSite { target, builder: true } if target.at == WEST_HARBOUR),
+        "{:?}",
+        b.job
+    );
+    assert_eq!(
+        b.walker.destination(),
+        w.flag_of(store),
+        "out to its flag only"
+    );
+    let flag = w.flag_of(store);
+    step_until(&mut w, 200, |w| {
+        builder(w).is_some_and(|b| matches!(b.job, crate::SettlerJob::Leaving { .. }))
+    });
+    let b = builder(&w).unwrap();
+    assert_eq!(b.walker.at, flag, "A: sent home on the warehouse's flag");
+    for tick in ["A + 1", "A + 2"] {
+        w.step();
+        let b = builder(&w).unwrap();
+        assert_eq!(b.walker.at, flag);
+        assert!(!b.walker.has_walk(), "he stands in {tick}");
+    }
+    w.step();
+    let b = builder(&w).unwrap();
+    assert!(b.walker.has_walk(), "A + 3: the walk home");
+    assert_eq!(b.walker.progress_bits, 0);
+    assert!(
+        matches!(b.job, crate::SettlerJob::Home { target } if target.at == WEST_HARBOUR),
+        "home: the harbour, {:?}",
+        b.job
+    );
+    let number = b.number;
+    step_until(&mut w, 400, |w| {
+        w.settlers.iter().flatten().all(|s| s.number != number)
+    });
+    // Q-1077, reading (a): taken in by the harbour gathering without a
+    // builder, he is set aside at once, never its stock (so no later pass
+    // sends him out again for its own request).
+    let h = w.harbour_at(WEST_HARBOUR).unwrap();
+    assert!(h.builder_aside, "set aside as he is taken in");
+    assert_eq!(count(&w, WEST_HARBOUR, BUILDER), 0);
 }

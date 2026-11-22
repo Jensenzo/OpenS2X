@@ -274,6 +274,12 @@ impl World {
     /// ruin (a headquarters never does); a finished warehouse sends the
     /// settlers in its stock out.
     pub(crate) fn remove_with_remains(&mut self, at: Point) {
+        self.remove_with_remains_as(at, false);
+    }
+
+    /// [`World::remove_with_remains`]; `lost`: for land lost (TER-6.2,
+    /// 6.3), before the settlers' part of the tick (TRN-FREE-6.4a, T49).
+    pub(crate) fn remove_with_remains_as(&mut self, at: Point, lost: bool) {
         let building = *self.building_at(at).expect("a building");
         let kind = &self.building_types[&building.building_type];
         let headquarters = self.headquarters == Some(building.building_type);
@@ -298,7 +304,7 @@ impl World {
         if !headquarters {
             self.put_remains(at);
         }
-        self.delete_building(at);
+        self.delete_building_as(at, lost);
         if !headquarters && !under_construction {
             // SIM-START-4.2: the building's remains take a number.
             self.new_number();

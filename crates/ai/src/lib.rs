@@ -394,6 +394,18 @@ impl AiSystem {
                     *records = ai.site_records(world, &self.config, *building, *at);
                     ai.prenumbered.insert(*at, *records);
                 }
+                // T16: the harbour site a founding makes, likewise.
+                if let Command::PlanHarbour { ship, records, .. } = command {
+                    let harbour = world
+                        .building_types()
+                        .find(|t| t.size == s2_sim::BuildingSize::Harbor)
+                        .map(|t| t.id);
+                    let spot = world.founding_spot_of(*ship as usize);
+                    if let (Some(harbour), Some(spot)) = (harbour, spot) {
+                        *records = ai.site_records(world, &self.config, harbour, spot);
+                        ai.prenumbered.insert(spot, *records);
+                    }
+                }
             }
             // SIM-START-4.4 c: each road the computer player plans takes its
             // stub's number when its `PlanRoad` is applied.

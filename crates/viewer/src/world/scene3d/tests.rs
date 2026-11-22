@@ -2481,3 +2481,343 @@ fn tree_looks_find_their_kinds() {
     assert_eq!(looks.len(), 1);
     assert_eq!(looks[&1].model, "b.glb");
 }
+
+/// The world, lookup, elements and map doodads of [`lying_things`].
+type LyingThings = (
+    World,
+    Lookup,
+    Vec<s2_assets::landscape::LandscapeElement>,
+    Vec<(u32, (u32, u32))>,
+);
+
+/// An element of the landscape table for the hook W30c tests.
+fn element_of(
+    name: &str,
+    shader: &str,
+    kind: s2_assets::landscape::ElementType,
+    rot: [f32; 2],
+    scale: [f32; 2],
+    shadow_cast: bool,
+) -> s2_assets::landscape::LandscapeElement {
+    s2_assets::landscape::LandscapeElement {
+        name: name.into(),
+        mesh: format!("data/x/{name}.gr2"),
+        shader: shader.into(),
+        rot,
+        scale_x: scale,
+        scale_y: scale,
+        scale_z: scale,
+        offset: [0.0, 0.0],
+        kind,
+        blend_mode: 0,
+        align_on_water: false,
+        shadow_cast,
+    }
+}
+
+/// A world of 8 x 8 flat fields for hook W30c: a stone pile of three
+/// stones (kind 20, `StoneRessourceA04`) on (2, 2) and one of two (kind 21,
+/// `StoneRessourceA05`, the state after it) on (5, 5), a young grain field
+/// (kind 30, `Field01`) on (3, 5), a tree (kind 7, `BirchA`) on (6, 2); the
+/// map's doodads: two bushes (type 40, `bush01`) and a rock (type 41,
+/// `rock 1`).
+fn lying_things() -> LyingThings {
+    use s2_assets::landscape::ElementType;
+    let n = 64;
+    let terrain = Terrain {
+        width: 8,
+        height: 8,
+        heights: vec![0; n],
+        height_floor: -100,
+        states: vec![0; n],
+        samples: Vec::new(),
+    };
+    let kind = |id, next, grow_ticks, blocking| s2_sim::DepositKind {
+        id,
+        good: None,
+        next,
+        elevation: 1,
+        grow_ticks,
+        blocking,
+        life_time: None,
+        needs_plantable: false,
+        random_offset: false,
+    };
+    let rules = s2_sim::Rules {
+        deposit_kinds: vec![
+            kind(7, None, 1001, false),
+            kind(20, Some(21), 0, true),
+            kind(21, None, 0, true),
+            kind(30, None, 1067, true),
+        ],
+        ..s2_sim::Rules::empty()
+    };
+    let deposit = |field: (u32, u32), kind, ripe_in| s2_sim::MapDeposit {
+        field,
+        kind,
+        position: s2_sim::grid::field_sample(field),
+        ripe_in,
+    };
+    let setup = s2_sim::GameSetup {
+        deposits: vec![
+            deposit((2, 2), 20, 0),
+            deposit((5, 5), 21, 0),
+            deposit((3, 5), 30, 700),
+            deposit((6, 2), 7, 0),
+        ],
+        ..Default::default()
+    };
+    let world = World::new_game(1, terrain, rules, &setup);
+    let mut lookup = Lookup::default();
+    for (id, gfx, start, speed) in [
+        (7, "tree_01", 0.1, 0.0009),
+        (20, "stoneressource_03", 0.1, 0.0009),
+        (21, "stoneressource_02", 0.1, 0.0009),
+        (30, "Wheatfield", 0.2, 0.00075),
+    ] {
+        lookup.deposits.insert(
+            id,
+            DepositLook {
+                gfx_name: gfx.into(),
+                start_size: Some(start),
+                speed: Some(speed),
+            },
+        );
+    }
+    lookup.doodads.insert(40, ("Bush01".into(), true));
+    lookup.doodads.insert(41, ("rock1".into(), true));
+    let elements = vec![
+        element_of(
+            "tree_01",
+            "tree_shader.fx",
+            ElementType::Tree,
+            [0.0, 360.0],
+            [0.8, 1.0],
+            true,
+        ),
+        element_of(
+            "stoneressource_03",
+            "stone_shader.fx",
+            ElementType::Stone,
+            [0.0, 0.0],
+            [1.0, 1.0],
+            true,
+        ),
+        element_of(
+            "stoneressource_02",
+            "stone_shader.fx",
+            ElementType::Stone,
+            [0.0, 0.0],
+            [1.0, 1.0],
+            true,
+        ),
+        element_of(
+            "Wheatfield",
+            "weed_shader.fx",
+            ElementType::WheatField,
+            [0.0, 360.0],
+            [1.0, 1.0],
+            false,
+        ),
+        element_of(
+            "Bush01",
+            "doodads_shader.fx",
+            ElementType::Doodad,
+            [0.0, 360.0],
+            [0.8, 1.2],
+            true,
+        ),
+        element_of(
+            "rock1",
+            "rock_shader.fx",
+            ElementType::Doodad,
+            [0.0, 360.0],
+            [0.8, 1.2],
+            true,
+        ),
+    ];
+    let doodads = vec![
+        (40, s2_sim::grid::field_sample((1, 6))),
+        (40, s2_sim::grid::field_sample((6, 6))),
+        (41, s2_sim::grid::field_sample((1, 1))),
+    ];
+    (world, lookup, elements, doodads)
+}
+
+/// Hook W30c: a stone pile's state, a grain field and a decoration with a
+/// project's look are drawn with its model in the project object family,
+/// at the same place, with the same turn, sizes and shadow as the
+/// original's (the element's draws, in the same order), a growing field
+/// grown as the original's; each state of a pile its own model, the
+/// instance's key holding its kind, so a pile that loses a stone is a new
+/// instance with the next state's model. A look naming a tree kind leaves
+/// the tree as it is; a kind without a look is drawn as before.
+// spec: GFX-OBJ-1.3, GFX-OBJ-1.4, GFX-ANIM-3.8b, ECO-OUT-3.4
+#[test]
+fn a_project_object_takes_the_originals_place() {
+    use crate::extend::ObjectLook;
+    let (world, mut lookup, elements, doodads) = lying_things();
+    let frame = Frame::new(8, 8);
+    let scenery = Scenery {
+        elements: &elements,
+        doodads: &doodads,
+        ..Scenery::default()
+    };
+    let place = |lookup: &Lookup| {
+        let mut poses = Poses::with_rng(s2_sim::rng::Rng::new(VIEW_SEED));
+        let mut out = objects(
+            &world,
+            lookup,
+            &ModelTables::default(),
+            &scenery,
+            &frame,
+            false,
+            &mut poses,
+        );
+        out.retain(|p| matches!(p.key.0, Kind::Deposit | Kind::Doodad));
+        out.sort_by_key(|p| p.key);
+        out
+    };
+    let original = place(&lookup);
+    assert_eq!(original.len(), 7);
+    // No looks, or looks of other names: the same.
+    let deposit_names = [
+        (7, Some("BirchA")),
+        (20, Some("StoneRessourceA04")),
+        (21, Some("StoneRessourceA05")),
+        (30, Some("Field01")),
+    ];
+    let doodad_names = [(40, Some("bush01")), (41, Some("rock 1"))];
+    assert!(object_looks_by_kind(deposit_names, &[]).is_empty());
+    let others = [ObjectLook::new("shell", "s.glb")];
+    lookup.object_deposits = object_looks_by_kind(deposit_names, &others);
+    lookup.object_doodads = object_looks_by_kind(doodad_names, &others);
+    assert!(lookup.object_deposits.is_empty() && lookup.object_doodads.is_empty());
+    assert_eq!(place(&lookup), original);
+    // The looks.
+    let looks = [
+        ObjectLook::new("StoneRessourceA04", "data/objects/stones_3.glb"),
+        ObjectLook::new("StoneRessourceA05", "data/objects/stones_2.glb"),
+        ObjectLook::new("Field01", "data/objects/grain.glb"),
+        ObjectLook::new("bush01", "data/objects/bush.glb"),
+        ObjectLook::new("BirchA", "data/objects/not_a_tree.glb"),
+    ];
+    lookup.object_deposits = object_looks_by_kind(deposit_names, &looks);
+    lookup.object_doodads = object_looks_by_kind(doodad_names, &looks);
+    let project = place(&lookup);
+    assert_eq!(project.len(), original.len());
+    let want = |key: InstanceKey| match key {
+        (Kind::Deposit, _, 20) => Some("data/objects/stones_3.glb"),
+        (Kind::Deposit, _, 21) => Some("data/objects/stones_2.glb"),
+        (Kind::Deposit, _, 30) => Some("data/objects/grain.glb"),
+        (Kind::Doodad, _, 0 | 1) => Some("data/objects/bush.glb"),
+        _ => None,
+    };
+    for (p, o) in project.iter().zip(&original) {
+        assert_eq!(
+            (p.key, p.at, p.heading, p.scale, p.shadow, p.tilt),
+            (o.key, o.at, o.heading, o.scale, o.shadow, o.tilt)
+        );
+        match want(p.key) {
+            Some(file) => {
+                assert_eq!(p.file, file, "{:?}", p.key);
+                assert_eq!(p.family, models3d::Family::FacetObject, "{:?}", p.key);
+            }
+            None => assert_eq!((&p.file, p.family), (&o.file, o.family), "{:?}", p.key),
+        }
+    }
+    // The tree stays the original's tree; the rock its own.
+    let tree = project.iter().find(|p| p.key.2 == 7).expect("the tree");
+    assert_eq!(tree.family, models3d::Family::Tree);
+    // The bushes keep their own random turns and sizes (not one pose for
+    // the kind), the field is young and grows as the original's.
+    let bushes: Vec<&Placed> = project
+        .iter()
+        .filter(|p| p.key.0 == Kind::Doodad && p.key.2 < 2)
+        .collect();
+    assert_ne!(bushes[0].heading, bushes[1].heading);
+    let field = project.iter().find(|p| p.key.2 == 30).expect("the field");
+    let s = deposit_size(
+        &world,
+        30,
+        world.deposit((3, 5)).expect("the field").state,
+        &lookup.deposits[&30],
+    );
+    assert!(s > 0.0 && s < 1.0, "{s}");
+    for k in 0..3 {
+        assert!(
+            (field.scale[k] - growth_scale(s)[k]).abs() < 1e-5,
+            "{:?}",
+            field.scale
+        );
+    }
+    // Each state of a pile its model; the key holds the kind.
+    let pile = |kind| {
+        project
+            .iter()
+            .find(|p| p.key.0 == Kind::Deposit && p.key.2 == kind)
+    };
+    let (three, two) = (pile(20).expect("3"), pile(21).expect("2"));
+    assert_ne!(three.key, two.key);
+    assert_ne!(three.file, two.file);
+}
+
+/// Hook W30c: a sign or a decoration takes its type's project look; a type
+/// without one keeps its element's model and family.
+// spec: none (hook W30c: a doodad type's look by its type)
+#[test]
+fn a_sign_takes_its_types_look() {
+    use s2_assets::landscape::ElementType;
+    let sign = element_of(
+        "Sign_Coal_S",
+        "signs_shader.fx",
+        ElementType::Doodad,
+        [0.0, 360.0],
+        [1.0, 1.0],
+        true,
+    );
+    let mut lookup = Lookup::default();
+    assert_eq!(
+        object_look(&lookup, 7, &sign),
+        (sign.mesh.clone(), models3d::Family::Haze)
+    );
+    lookup.object_doodads = object_looks_by_kind(
+        [(7, Some("Coal (few)")), (8, Some("Coal (much)"))],
+        &[crate::extend::ObjectLook::new(
+            "Coal (few)",
+            "sign_coal_s.glb",
+        )],
+    );
+    assert_eq!(
+        object_look(&lookup, 7, &sign),
+        ("sign_coal_s.glb".to_owned(), models3d::Family::FacetObject)
+    );
+    assert_eq!(object_look(&lookup, 8, &sign).1, models3d::Family::Haze);
+}
+
+/// Hook W30c: looks find their types by the rules name; a later look of a
+/// name wins; two types of one name (the rules have two `Gate01`) both take
+/// it; none: no entry.
+// spec: none (hook W30c: a look names its kind by the rules name)
+#[test]
+fn object_looks_find_their_kinds() {
+    use crate::extend::ObjectLook;
+    let kinds = [
+        (1, Some("Gate01")),
+        (2, Some("Gate01")),
+        (3, Some("bush01")),
+        (4, None),
+    ];
+    assert!(object_looks_by_kind(kinds, &[]).is_empty());
+    let looks = object_looks_by_kind(
+        kinds,
+        &[
+            ObjectLook::new("Gate01", "a.glb"),
+            ObjectLook::new("Gate01", "b.glb"),
+            ObjectLook::new("Bush01", "graphics name, not a rules name.glb"),
+        ],
+    );
+    assert_eq!(looks.len(), 2);
+    assert_eq!(looks[&1].model, "b.glb");
+    assert_eq!(looks[&2].model, "b.glb");
+}

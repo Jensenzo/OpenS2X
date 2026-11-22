@@ -33,6 +33,8 @@ const FACET: u32 = 15u;
 const FACET_GROUND: u32 = 16u;
 // Hook W30b: a project's tree.
 const FACET_TREE: u32 = 17u;
+// Hook W30c: a project's map object (a project's tree without the sway).
+const FACET_OBJECT: u32 = 18u;
 // Hook W30b: a project's building at night is darkened as the original's
 // houses are by their light map (`project::NIGHT_LIGHT_MAP`), by how much
 // of the night it is: the light's and ambient's luminances added, 1.4377
@@ -219,6 +221,30 @@ fn shadow_at(world_position: vec3<f32>, normal: vec3<f32>, frag: vec4<f32>) -> f
 }
 
 
+// Hook W30, W30b, W30c: a project model's flat face, nearly edge-on to the
+// sun, tested against the shadow map at its own depth (the constant bias
+// only, no normal offset, GFX-VIEW-2.5 c) shades itself in stripes one map
+// texel wide (shadow acne). A face of a project's model is tested 1.5 map
+// texels of its cascade out along its own normal instead (the light's
+// normal offset that the original's houses go without).
+const FACET_NORMAL_OFFSET: f32 = 1.5;
+
+fn facet_shadow_point(world_position: vec3<f32>, normal: vec3<f32>) -> vec3<f32> {
+    if lights.n_directional_lights == 0u {
+        return world_position;
+    }
+    let p = vec4<f32>(world_position, 1.0);
+    let view_z = dot(vec4<f32>(view.view_from_world[0].z, view.view_from_world[1].z,
+        view.view_from_world[2].z, view.view_from_world[3].z), p);
+    let index = shadows::get_cascade_index(0u, view_z);
+    let light = &lights.directional_lights[0];
+    if index >= (*light).num_cascades {
+        return world_position;
+    }
+    let texel = (*light).cascades[index].texel_size;
+    return world_position + FACET_NORMAL_OFFSET * texel * normal;
+}
+
 // GFX-OBJ-3.3: a settler's pixel. The colour-index map gives the
 // material row (red, the index as a byte), the luminance (green), the
 // specular mask (blue) and where the player colour shows (alpha 0). The
@@ -291,9 +317,10 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
         raw_n = -raw_n;
         ln = -ln;
     }
-    if f == FACET_TREE {
+    if f == FACET_TREE || f == FACET_OBJECT {
         // Hook W30b: the moved face's own normal, turned to the eye (both
-        // sides drawn, as the file's normals are).
+        // sides drawn, as the file's normals are); W30c: a map object's
+        // the same (it does not move).
         let to_eye = view.world_position - in.world_position;
         n = normalize(face_normal);
         if dot(n, to_eye) < 0.0 {
@@ -304,7 +331,11 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
     }
     // GFX-VIEW-2.5 b, GFX-OBJ-2.3a d (Run D): every object receives
     // shadows, the ground decal too.
-    let shadow = shadow_at(in.world_position, n, in.clip);
+    var shadow_point = in.world_position;
+    if f == FACET || f == FACET_TREE || f == FACET_OBJECT {
+        shadow_point = facet_shadow_point(in.world_position, n);
+    }
+    let shadow = shadow_at(shadow_point, n, in.clip);
     // Hook W17b: the ambient light times the screen-space ambient occlusion
     // at the pixel (1 without the hook: the ambient as it is).
     let occlusion = ambient_occlusion(in.clip);
@@ -377,11 +408,12 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
             let result = d * tex.rgb * colour_map;
             rgb = mix(result, result * light_map, saturate(vec3<f32>(1.5) - d));
         }
-    } else if f == FACET || f == FACET_TREE {
+    } else if f == FACET || f == FACET_TREE || f == FACET_OBJECT {
         // Hook W30: a project's model. Cut by the rising plane as a house
         // (GFX-OBJ-2.6b, 8.4). Colour: palette x vertex colour (the face's
         // occlusion), times the owner's colour on the team part (mode.z).
-        // W30b: a project's tree the same, never cut.
+        // W30b: a project's tree the same, never cut; W30c: a map object
+        // as a tree.
         if f == FACET && params.extra.z > 1.5 {
             if in.world_position.y < params.extra.y {
                 discard;

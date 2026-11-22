@@ -195,7 +195,14 @@ in `ECO-production-chains.md` (ECO-PROD); building data in
   its good and the hut its fish field). If it has none (another hut or
   trip emptied it meanwhile), the first field holding fish within the
   fishing distance of the field the fisherman stands on loses one unit, if
-  any. Confidence: high.
+  any. Confidence: high. **"Has a fish field" (corrected 2026-11-21 pm, E-eco-051):** the
+  hut has one when it still remembers a field (chosen at the spot search, 4.3, or kept from its
+  last catch), **whether or not that field still holds fish**. A remembered field that another
+  hut has emptied meanwhile gives nothing: the catch takes **no unit at all**, the hut forgets
+  the field, and the fish is still made (4.6). Only a hut that remembers no field takes from the
+  first field around the fisherman. Confidence: high (code reading: the catch asks only whether
+  a field is remembered, and the take from it, failing, clears it without a second search;
+  measured T63, and both heap dumps' fish layers equal with the rule).
 - **ECO-FOOD-4.6 Product.** The fisherman then takes a fish and carries it
   home exactly as ECO-OUT-3.7 to 3.10 (take, walk back to the flag, put
   down, walk in, rest: 1111, so 1112 ticks). As there, the next trip
@@ -735,6 +742,7 @@ Level ground, room at the flags, switched on, unless stated.
 | T60 | 7.4b (the ship finished partway through the last trip), `SHIP-ships-expeditions.md` SHIP-2.1, 2.4: E-trace-013 (R3, the Hard game), player 1's ship 94738 on (146, 46) (`ships.csv`, the main work in column build_a) | the ship's work and its search | main work 0.0954554 (42/440) from counter 45800 to 45824; one decrement of 1/440 per tick from 45825 (0.0931827 ...); 8.75e-07 at 45866, 0 at 45867; the search counter starts at 45867 (1 at 45867, 101 at 45967), so the first search try is in counter 45968: it reserves a docking place of the harbour 90366 and sails, its route's read-out drawing from the generator (12 draws in 45968 against 9 without it), and docks on (146, 50) at 45991 (recorded). Starting the ship at the end of the shipwright's step (counter 45881, the trips counted whole) puts the first try at 45983: the Hard game against R3 differs from generator 45969 (experiment build with T59, T100, ECO-REQ T41). With the rule and the ship's route of `SHIP-ships-expeditions.md` SHIP-3.1 (T13; experiment build): the Hard 150 000 pair's generator 45969 -> 46754, settlers 46100 -> 46600; the Weak 150 000 pair's generator 50113 -> 50934 (the same case with ship 94308, its work 0 at counter 50011); every other pair unchanged |
 | T61 | 7.3b (a launched ship frees its water field): E-trace-018 (R5, the Weak game), player 1's shipyard 92849 (144, 41); its first ship 94308 was built on (145, 46) with the water field (146, 46), launched at counter 50011 and docked on (146, 50) since 50112 | the next ship | ship 96085 started at counter 50667 on (145, 46), water field (146, 46) again (`ships.csv`); the shipwright 93488 walks to (145, 46) by (144, 46) and stands there from trace 50869 (recorded). Keeping the launched ship's water field reserved starts the second ship on another field: he walks by (144, 45) to (145, 45), and the Weak game against R5 differs from settlers 50825; with the rule (experiment build, with T60 and SHIP T13) from 50882 (with `ECO-distribution.md` T23 the Weak 150 000 generator 50934 -> 51472; every other pair unchanged) |
 | T62 | 5.7 (released while standing): a deer reserved by a hunter's hut on its walk, standing at the walk's end; the hut is removed in tick R | the deer's state per tick | R: waiting, wait 0 (in the removal's tick); R + 1: choosing, ticket -1; R + 2: ticket 0 (rule 4 with top 0, or rule 1); from R + 3 at the earliest: it chooses and walks (one draw for N and the walk's draws); with no other animal choosing, R + 3 exactly (R6: R = 6631, walk to (57, 18) at 6634) |
+| T63 | 4.5: E-trace-013 (R3, the Hard game), player 1's three fishers' huts on (144, 38), (147, 41) and (146, 40) fishing the same water; in counter 43653 the fisher of (146, 40) takes the last unit of (146, 48), the field the hut on (147, 41) remembers from its spot search; that hut's catch ends in 43751 (its fisher standing on (145, 47); (146, 47) holds 7) | the fish layer; the fish | the catch takes nothing: (146, 47) holds 7 in the heap dumps of 44000 and 45500, 1 unit is left there at 51000 (the original's layer equals the rule's in all 1079 fish fields at 51000 and all 1082 at 30000); the hut still makes a fish (out at 43755). Taking from the first field around the fisherman instead empties (146, 47) at 50273, so the fisher of (146, 40) finds no fishing spot in 51417 and waits for its retry where the original picks a spot (its draw) and fishes there (a fish at 52001): the Hard 150 000 generator first differs at trace tick 51418; with the rule 52437 (experiment build on 0.12.3 with the rules of 2026-11-21; every other pair unchanged) |
 
 ## Evidence
 
@@ -774,6 +782,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-eco-045, E-trace-019 | recording, experiment build | E-trace-019 `animals.csv` deer 13740 (states 4, 0, 1, 1, 2 at counters 6630 .. 6634) and `buildings.csv` hunter's hut 14615 gone at 6631; an experiment build with the release setting the wait at once: the fight game's generator equal to 6714 (was 6635), Weak, one-player and Hard games' first differences unchanged | 5.7 released while standing, T62 |
 | E-sim-012 | code reading and replay | a check over E-trace-007's heap dump of counter 1023 (heights) and s2-reborn's field states; E-trace-008 `animals.csv.gz` (rabbit 90092) | 5.11a (a), T43, T44 |
 | E-trace-005 | live read of the running game | `animals.csv.gz`: every animal's state, ticket / wait counter, field, step end, goal, registered field and walk-start clock in every trace tick 0 .. 6000 | ECO-FOOD-5.8, 5.9 (T42), 5.10a; Q-334, Q-337 |
+| E-eco-051, E-trace-013 | code reading, memory reads of the running game, experiment build | (session 2026-11-21 pm): R3's heap dumps 30000 .. 51000 (the fish layer), wares table (the fishers' fish) | 4.5 a remembered emptied field gives nothing (T63) |
 
 ## Open questions
 

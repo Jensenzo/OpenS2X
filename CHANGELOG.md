@@ -8,6 +8,84 @@ the working name s2-reborn. The public repository starts with its first
 public release; the sections before it describe releases made in the
 maintainer's working repository, which have no tag or download there.
 
+## OpenS2X 0.13.0 (2026-11-22)
+
+A map's own objects can be drawn with a project's models, the long
+two-player game plays on tick for tick alike with the original for 94 minutes
+(87 in 0.12.3), and the four-player war for its first 27 minutes (22). The
+game's rules change only where the original's own play showed a difference.
+
+### What is new
+
+- **A map object's own model** (for projects built on OpenS2X): the
+  stonemason's stone piles, the grain fields, the map's decorations (the small
+  ones and the large rocks) and the geologists' signs can be drawn with binary
+  glTF models (`.glb`) in place of the original's, each kind by its name in the
+  rules. Each one stands where and as the original's would, turned and sized
+  as the game does it; a stone pile shows a model of its own for each number
+  of stones left and changes as the stonemason takes them, a field grows from
+  sowing to harvest, and all of them cast and catch shadows and take the day's
+  and the night's light. A look changes only the picture: a rock still blocks
+  its field, a decoration under a new road still goes. A model file the
+  game cannot read stops it at the start with the file's name. What the files
+  must hold: docs/extending.md, "A map object's own model". The viewer's
+  `--object-model` shows them without a project.
+- **For developers:** the viewer's `--ground-study` draws the ground cut into
+  flat facets in the colours of a project's palette file, for pictures that
+  help decide whether a ground hook is wanted. It is not a hook and changes
+  nothing when it is not given. Its second round adds `ragged` (the terrain
+  kinds meet in an irregular line of whole facets), `ragged-flat` and `calm`
+  (no facets on the ground, for comparison), colours of its own for rock,
+  snow and meadow, and see-through water over the ground. Its third round
+  adds `hybrid` (the soft colours of `calm` with each facet lit on its own)
+  and `hybrid-crisp` (as `hybrid`, but meadow, sand, rock, snow, earth and
+  lava meet in a line of whole facets), with deeper, greener water and a thin
+  pale line where it meets the land.
+- **The war after the first capture follows the original further:** the
+  four-player war recorded in the original now plays tick for tick alike for
+  its first 27 minutes of game time (22 in 0.12.3). Workers and soldiers of
+  land that is lost go home as the original's do (a worker on his way back
+  from a tree walks on to his flag first, a soldier still walking out of the
+  storehouse walks on to its flag first), a carrier whose road goes stops on
+  the field he has just reached, settlers on a flag with no road home walk
+  over open ground to the nearest storehouse's roads instead of wandering,
+  and the computer player counts a building's soldiers who are out or just
+  stepping in when it decides on an attack. A ware lost on the way keeps its
+  place in the line of orders instead of going to the front, a settler's first
+  step is as quick as the ground was when he set off, and two duels fought at
+  the same moment take their turns in the order they began.
+- **Woodcutters, stonemasons, foresters and hunters** reach their tree, stone
+  or animal as the ground is when each step begins: a building site levelled
+  next to them while they walk changes their pace as it does in the original.
+  The long two-player game's random numbers stay equal to the original's for
+  94 minutes (87).
+- **A founded harbour:** the ship that founded it sails home three ticks after
+  the founding (not about ten seconds later), the new harbour's site needs no
+  levelling, and its builder walks from the site to its flag before he
+  starts. A builder sent for an expedition walks out to the storehouse's
+  flag and from there to the harbour, where he is kept for the expedition at
+  once. A fisherman whose fishing ground another fisherman has emptied catches
+  his fish without taking one from the water next to him, and the computer
+  player gives a new quarry or mine to its oldest waiting need. The Strong
+  computer player's long game stays equal to the original's for 89 minutes.
+- **Project models:** the faces of a project's buildings, trees and map
+  objects that the sun only grazes no longer show fine shadow stripes.
+
+### For projects built on OpenS2X: breaking changes
+
+- `s2_viewer::Extensions` has a new field `object_looks` (hook W30c); a struct
+  literal without `..Default::default()` needs it (`Vec::new()`: as before).
+  Without a look every map object is drawn as before: the golden pictures and
+  state hashes are unchanged.
+- `s2_sim::Command` has a new variant `PlanHarbour { player, ship, records }`
+  (the computer player's founding), and `s2_sim::Work::Approach` and
+  `Work::Return` a new field `walk`: an exhaustive match or a struct literal
+  needs them. `s2_sim::AttackRecord` has a new field `paired` and
+  `s2_sim::movement::Walker` a new field `first_heights`: a struct literal needs them
+  (`0`, `None`). The world snapshot is format 96 (92: a worker's fine walk,
+  93: the new command, 94: a walk's first step, 95: an expedition builder's
+  home, 96: the order of the duels); every older save of ours loads.
+
 ## OpenS2X 0.12.3 (2026-11-20)
 
 0.12.2 with one fix, and trees for projects. 0.12.2 was made but not

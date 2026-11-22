@@ -2935,6 +2935,61 @@ fn t49_a_released_carriers_walk_ends_where_the_road_is_gone() {
     }
 }
 
+// TRN-CARRY T61 (TRN-CARRY-7.1a, corrected 2026-11-21, E-trn-042): a
+// released carrier whose step in progress ends in the update in which it
+// notices the release (R) tests the field that step reached first: no
+// longer a road field (or a flag), its walk ends there although it had more
+// steps; it stands in R, R + 1 and R + 2 and orders its walk home at
+// progress 0 in R + 3, as a carrier standing when it notices.
+// spec: TRN-CARRY-7.1a (TRN-CARRY T61)
+#[test]
+fn t61_a_step_ending_in_the_notice_update_stops_there() {
+    use crate::requests::tests::{HQ_FLAG, PLANK};
+    let (mut world, far, mid, carrier) = road_from_headquarters();
+    let number = world.carriers()[carrier].number;
+    drop(&mut world, PLANK, far, HQ_FLAG);
+    // Removed in tick T (the step to (13, 9) goes on in T), noticed in R =
+    // T + 1, whose movement ends that step.
+    for _ in 0..400 {
+        let w = &world.carriers()[carrier].walker;
+        let rate = f32::from_bits(w.rate_bits);
+        if world.carriers()[carrier].ware.is_some()
+            && w.next == Some((13, 9))
+            && w.progress() + rate <= 1.0
+            && w.progress() + 2.0 * rate > 1.0
+        {
+            break;
+        }
+        world.step();
+    }
+    assert_eq!(world.carriers()[carrier].walker.path.len(), 3, "more steps");
+    world.step_then(move |_, _, _, _| {
+        vec![Command::RemoveRoad {
+            player: P0,
+            at: mid,
+        }]
+    });
+    assert!(world.late_results().iter().all(|r| r.outcome.is_ok()));
+    assert!(world.road_at((13, 9)).is_none());
+    for tick in ["R", "R + 1", "R + 2"] {
+        world.step();
+        let s = released(&world, number);
+        assert_eq!(
+            s.walker.at,
+            (13, 9),
+            "{tick}: on the field the step reached"
+        );
+        assert!(!s.walker.has_walk(), "it stands in {tick}");
+    }
+    world.step();
+    let s = released(&world, number);
+    assert!(
+        s.walker.has_walk() && s.walker.next.is_none(),
+        "R + 3: the walk home is ordered"
+    );
+    assert_eq!(s.walker.progress_bits, 0);
+}
+
 // TRN-CARRY-7.1a, the standing case: a carrier standing on its idle field
 // when it notices the removal (tick R) stands through R + 2 and orders its
 // walk home at progress 0 in R + 3.

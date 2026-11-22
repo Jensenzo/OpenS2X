@@ -145,6 +145,14 @@ pub(crate) fn game_models(
             models.push(plain(far));
         }
     }
+    // Hook W30c: the map objects' own models.
+    for object in lookup
+        .object_deposits
+        .values()
+        .chain(lookup.object_doodads.values())
+    {
+        models.push(plain(&object.model));
+    }
     for (gfx, _) in lookup.doodads.values() {
         if let Some(mesh) = elements(gfx) {
             models.push(plain(&mesh));

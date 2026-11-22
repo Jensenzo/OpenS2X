@@ -31,6 +31,16 @@ pub(crate) const USAGE: &str =
                           (default 0.25); growth=root: a young tree's width
                           by the square root of its size (hook W30b;
                           repeatable; docs/extending.md)
+  --object-model <name>=<file>
+                          draw the map object kind <name> (a stone pile's
+                          state, the grain field, a decoration or a sign by
+                          its rules name, e.g. StoneResourceA01, Field01,
+                          bush01, Coal (few)) with a project's .glb model
+                          (hook W30c; repeatable; docs/extending.md)
+  --ground-study <hard|blend|clear|ragged|ragged-flat|calm>=<palette.json>
+                          development: a study of the ground cut into flat
+                          facets in a project palette's colours (not a
+                          hook; render/ground_study.rs)
   --rules-overlay <file>  a Lua file run after the property scripts
                           (repeatable; docs/extending.md)
   --screenshot-dir <dir>  where F12 saves screenshots (default: screens)
@@ -218,6 +228,10 @@ pub(crate) struct Options {
     pub(crate) building_looks: Vec<crate::extend::BuildingLook>,
     /// Hook W30b: `--tree-model`.
     pub(crate) tree_looks: Vec<crate::extend::TreeLook>,
+    /// Hook W30c: `--object-model`.
+    pub(crate) object_looks: Vec<crate::extend::ObjectLook>,
+    /// `--ground-study` (a development switch).
+    pub(crate) ground_study: Option<crate::render::ground_study::Study>,
     pub(crate) screenshot_dir: PathBuf,
     pub(crate) shot: Option<PathBuf>,
     /// `--shot-after`: frames on screen before the shot.
@@ -366,6 +380,8 @@ pub(crate) fn parse_from(
         rules_overlays: Vec::new(),
         building_looks: Vec::new(),
         tree_looks: Vec::new(),
+        object_looks: Vec::new(),
+        ground_study: None,
         screenshot_dir: PathBuf::from("screens"),
         shot: None,
         shot_after: SHOT_SETTLE_FRAMES,
@@ -462,6 +478,10 @@ pub(crate) fn parse_from(
             "--rules-overlay" => options.rules_overlays.push(value()?.into()),
             "--building-model" => options.building_looks.push(building_look(&value()?)?),
             "--tree-model" => options.tree_looks.push(tree_look(&value()?)?),
+            "--object-model" => options.object_looks.push(object_look(&value()?)?),
+            "--ground-study" => {
+                options.ground_study = Some(crate::render::ground_study::from_option(&value()?)?)
+            }
             "--screenshot-dir" => options.screenshot_dir = value()?.into(),
             "--save-dir" => options.save_dir = Some(value()?.into()),
             "--profile-dir" => options.profile_dir = Some(value()?.into()),
@@ -756,6 +776,17 @@ pub(crate) fn tree_look(text: &str) -> Result<crate::extend::TreeLook, String> {
         }
     }
     Ok(look)
+}
+
+/// `--object-model <name>=<file>` (hook W30c). The name may hold spaces
+/// and brackets (`Coal (few)`), not `=`.
+pub(crate) fn object_look(text: &str) -> Result<crate::extend::ObjectLook, String> {
+    match text.split_once('=') {
+        Some((object, model)) if !object.is_empty() && !model.is_empty() => {
+            Ok(crate::extend::ObjectLook::new(object, model))
+        }
+        _ => Err(format!("--object-model {text}: <name>=<file>")),
+    }
 }
 
 #[cfg(test)]

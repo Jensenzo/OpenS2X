@@ -916,17 +916,26 @@ impl AiPlayer {
         match outcome {
             Outcome::Placed(at) => {
                 // AI-CON-7.1, SIM-START-4.4 b (T88): the placed site's
-                // production record, for the need the order remembered.
+                // production record. AI-CON-2.5b (T108): it is tied to the
+                // first need in its cell's need list that its good supplies
+                // and that has no production yet, which may be an
+                // earlier-celled need than the one the order remembered
+                // (that one then stays waiting); else to the order's need.
                 let (Some(good), Area::Cell(cell)) =
                     (self.plan.need(need).map(|n| n.good), order.area)
                 else {
                     return;
                 };
-                let production = self.plan.add_production(good, cell, Some(need));
+                let cfg = ctx.config;
+                let tied = self
+                    .plan
+                    .first_need_in(cell, |g| cfg.supplies(good, g))
+                    .unwrap_or(need);
+                let production = self.plan.add_production(good, cell, Some(tied));
                 if let Some(p) = self.plan.prods.iter_mut().find(|p| p.id == production) {
                     p.building = Some(at);
                 }
-                if let Some(n) = self.plan.need_mut(need) {
+                if let Some(n) = self.plan.need_mut(tied) {
                     n.production = Some(production);
                 }
             }

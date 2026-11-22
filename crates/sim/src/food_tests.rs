@@ -659,27 +659,51 @@ fn t8_a_fish_is_made_when_the_field_was_emptied_meanwhile() {
     assert_eq!(w.fish_field(at), None);
 }
 
-// ECO-FOOD-4.5: with the hut's field emptied, the first field holding fish
-// within the fishing distance of where he stands gives the unit.
+// ECO-FOOD T63 (ECO-FOOD-4.5, corrected): the hut's remembered field
+// emptied by another hut during the catch gives nothing: no unit is taken
+// from the fish around him, the hut forgets the field, the fish is still
+// made (4.6). Only a hut that remembers no field takes from the first field
+// holding fish within the fishing distance of where he stands.
+// spec: ECO-FOOD-4.5 (T63), ECO-FOOD-4.6
 #[test]
-fn catch_falls_back_to_the_fish_around_him() {
-    let mut w = world();
-    let at = (10, 10);
-    let id = working(&mut w, FISHERY, at, FISHERMAN);
-    let (coast, water) = lake(&mut w);
-    ore(&mut w, water, FISH, 1);
-    let near = w.terrain.neighbour(coast, 0).unwrap();
-    let mut emptied = false;
-    for _ in 0..800 {
-        w.step();
-        if !emptied && matches!(work_of(&w, id), Work::AtSpot { .. }) {
-            w.set_resource(water, None);
-            ore(&mut w, near, FISH, 3);
-            emptied = true;
+fn t63_an_emptied_remembered_field_gives_nothing() {
+    let run = |forget: bool| {
+        let mut w = world();
+        let at = (10, 10);
+        let id = working(&mut w, FISHERY, at, FISHERMAN);
+        let (coast, water) = lake(&mut w);
+        ore(&mut w, water, FISH, 1);
+        // Another field next to his coast spot, within the fishing distance.
+        let near = (0..6)
+            .filter_map(|d| w.terrain.neighbour(coast, d))
+            .find(|&f| f != water)
+            .unwrap();
+        let mut emptied = false;
+        let mut fish_at_flag = false;
+        for _ in 0..800 {
+            w.step();
+            if !emptied && matches!(work_of(&w, id), Work::AtSpot { .. }) {
+                w.set_resource(water, None);
+                ore(&mut w, near, FISH, 3);
+                if forget {
+                    w.fish_fields.remove(&at);
+                }
+                emptied = true;
+            }
+            if at_flag(&w, at) == [FISH] {
+                fish_at_flag = true;
+                break;
+            }
         }
-    }
-    assert!(emptied);
-    assert_eq!(w.resource_at(near).unwrap().amount, 2);
+        assert!(emptied);
+        assert!(fish_at_flag, "ECO-FOOD-4.6: the fish is made in every case");
+        // At the first fish's put-down, before a second trip.
+        (w.resource_at(near).unwrap().amount, w.fish_field(at))
+    };
+    // Remembered, emptied: nothing taken, forgotten.
+    assert_eq!(run(false), (3, None));
+    // Nothing remembered: the first fish around him gives the unit.
+    assert_eq!(run(true).0, 2);
 }
 
 // ECO-FOOD-4.5: a field with several units gives one per trip and stays
@@ -1905,7 +1929,11 @@ fn a_hunter_of_a_save_goes_on_with_his_hunt() {
         w.resume_outdoor(&saved(animal, None, Some(walk))),
         Some(false)
     );
-    assert_eq!(work_of(&w, id), Work::Approach { spot: animal_field });
+    assert!(
+        matches!(work_of(&w, id), Work::Approach { spot, .. } if spot == animal_field),
+        "{:?}",
+        work_of(&w, id)
+    );
     assert_eq!(w.settlers[id].as_ref().unwrap().timer, total - 15);
     for _ in 0..total - 15 {
         w.step();

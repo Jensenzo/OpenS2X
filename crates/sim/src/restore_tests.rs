@@ -1278,7 +1278,13 @@ fn a_woodcutter_of_a_save_goes_on_with_his_approach() {
     let (work, timer, field, fine) = hut_worker(&world);
     assert_eq!(
         (work, field),
-        (crate::Work::Approach { spot: TREE_AT }, OUT_FIELD)
+        (
+            crate::Work::Approach {
+                spot: TREE_AT,
+                walk: None
+            },
+            OUT_FIELD
+        )
     );
     assert_eq!(timer, total - 15);
     let fine = fine.expect("on the lattice");
@@ -1384,7 +1390,10 @@ fn t14_a_worker_of_a_save_walks_on_out_to_his_tree() {
         assert!(ticks < 200, "he never got there");
     }
     assert_eq!(fields, [path[3], path[2], path[1]]);
-    assert_eq!(worker(&world).0, crate::Work::Approach { spot: TREE_AT });
+    assert!(matches!(
+        worker(&world).0,
+        crate::Work::Approach { spot: TREE_AT, .. }
+    ));
     while matches!(worker(&world).0, crate::Work::Approach { .. }) {
         world.step();
     }

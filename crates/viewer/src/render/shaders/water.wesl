@@ -30,6 +30,11 @@ struct WaterParams {
     // and strength (w, 0 none), and its reach (x of foam_reach).
     foam: vec4<f32>,
     foam_reach: vec4<f32>,
+    // The ground study (a development switch, `ground_study.rs`): x 1 when
+    // on, y the lightness step, z the variant; the shallow, middle and deep
+    // colours.
+    study: vec4<f32>,
+    study_water: array<vec4<f32>, 3>,
 };
 
 @group(3) @binding(0) var<uniform> params: WaterParams;
@@ -143,9 +148,81 @@ fn shadow_lit(world_position: vec3<f32>) -> f32 {
     return select(0.0, 1.0, local.z >= stored);
 }
 
+// The ground study: the water as flat facets of the sample lattice (as
+// the terrain's), each one colour by the depth at its middle (shallow,
+// middle, deep), stepped by its place, under the sun and sky; opaque but for
+// the fog of war.
+const STUDY_STEP: f32 = 1.5;
+const STUDY_ROW_STEP: f32 = 1.2990375;
+
+fn study_water(g: vec3<f32>) -> vec4<f32> {
+    let rect = params.world_rect;
+    // The facet: the lattice row and column, and which half of the cell.
+    let row = floor((g.z - rect.y) / STUDY_ROW_STEP);
+    let shift = select(0.0, STUDY_STEP / 2.0, (i32(row) & 1) == 1);
+    let u = (g.x - rect.x - shift) / STUDY_STEP;
+    let v = (g.z - rect.y) / STUDY_ROW_STEP - row;
+    let column = floor(u);
+    let upper = select(0u, 1u, fract(u) + v > 1.0);
+    let middle_x = rect.x + shift + (column + select(0.33, 0.67, upper == 1u)) * STUDY_STEP;
+    let middle_z = rect.y + (row + select(0.33, 0.67, upper == 1u)) * STUDY_ROW_STEP;
+    let middle_uv = (vec2<f32>(middle_x, middle_z) - rect.xy) / (rect.zw - rect.xy);
+    let depth = textureSampleLevel(world, world_sampler, middle_uv, 0.0).g;
+    // The depth term is 1 at the waterline, 0 deep (GFX-WATER-4.4).
+    var colour = params.study_water[2].rgb;
+    if depth > 0.7 {
+        colour = params.study_water[0].rgb;
+    } else if depth > 0.3 {
+        colour = params.study_water[1].rgb;
+    }
+    var h = (u32(i32(column) + 65536) * 73856093u) ^ (u32(i32(row) + 65536) * 19349663u)
+        ^ ((upper + 1u) * 83492791u);
+    h = (h ^ (h >> 13u)) * 1274126177u;
+    h = h ^ (h >> 16u);
+    colour *= 1.0 + params.study.y * (f32(h % 3u) - 1.0);
+    let to_light = -params.light_dir.xyz;
+    let d = params.light_color.rgb * saturate(to_light.y) + params.ambient.rgb;
+    let uv = (vec2<f32>(g.x, g.z) - rect.xy) / (rect.zw - rect.xy);
+    let visible = textureSampleLevel(world, world_sampler, uv, 0.0).r;
+    return vec4<f32>(saturate(d * colour * visible), 1.0);
+}
+
+// The ground study, round 2 (variants 4 to 6, study.z): the water one flat
+// surface over the ground (drawn under it in its own colour), its colour
+// pale to deep and its opacity from see-through to whole by the depth under
+// it, so that the shore is the line where the surface cuts the land; under
+// the sun and sky, no waves, no mirror, no highlight.
+fn study_surface(g: vec3<f32>) -> vec4<f32> {
+    let rect = params.world_rect;
+    let uv = (vec2<f32>(g.x, g.z) - rect.xy) / (rect.zw - rect.xy);
+    let texel = textureSampleLevel(world, world_sampler, uv, 0.0);
+    // The depth term: 1 at the waterline, 0 deep (GFX-WATER-4.4).
+    let deep = saturate(1.0 - texel.g);
+    var colour = mix(params.study_water[0].rgb, params.study_water[1].rgb, saturate(deep * 2.0));
+    colour = mix(colour, params.study_water[2].rgb, saturate(deep * 2.0 - 1.0));
+    // Half see-through at the waterline, so the line where the surface
+    // cuts the land shows; opaque only over the deepest ground.
+    var alpha = mix(0.5, 1.0, smoothstep(0.0, 1.0, deep));
+    if params.study.z > 6.5 {
+        // Round 3 (the hybrids): see-through further from the shore (the
+        // opacity rises slowly at first). The pale edge where the surface
+        // meets the land is drawn on the ground (terrain.wesl).
+        alpha = mix(0.3, 1.0, pow(smoothstep(0.0, 1.0, deep), 1.8));
+    }
+    let d = params.light_color.rgb * saturate(-params.light_dir.y) + params.ambient.rgb;
+    let visible = texel.r;
+    return vec4<f32>(saturate(d * colour * visible), saturate(alpha + 1.0 - visible));
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let g = vec3<f32>(in.world_position.x, in.world_position.y, -in.world_position.z);
+    if params.study.x > 0.5 && params.mirror.x < 1.5 {
+        if params.study.z > 3.5 {
+            return study_surface(g);
+        }
+        return study_water(g);
+    }
     let time = globals.time;
     // GFX-WATER-4.2: two maps, each scaled from the world position, rotated
     // and shifted by its drift times the render time.

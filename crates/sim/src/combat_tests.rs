@@ -970,6 +970,7 @@ fn atk_t30_the_pairing_only_links_the_waiting_interceptor() {
         opponent: None,
         hit: false,
         offset: None,
+        paired: 0,
     });
     // The attacker (made after him, so updated after him in a tick) pairs
     // in his waiting check: the interceptor is linked, not walking yet.
@@ -1067,6 +1068,7 @@ fn pair_on_field(ra: usize, ha: u32, rd: usize, hd: u32) -> (World, usize, usize
             walk: crate::movement::LatticeWalk::standing(crate::grid::field_sample(field)),
             back: false,
         }),
+        paired: 0,
     });
     let s = world.settlers[defender].as_mut().unwrap();
     s.walker = Walker::new(field);
@@ -1914,6 +1916,7 @@ fn atk_4_3_free_field_avoids_flags_and_roads() {
         opponent: None,
         hit: false,
         offset: None,
+        paired: 0,
     });
     assert_ne!(world.free_field(start, None), Some(taken));
 }
@@ -2244,6 +2247,7 @@ fn atk_t21_unpaired_no_step_and_back_to_the_point_before_the_door() {
         opponent: None,
         hit: false,
         offset: None,
+        paired: 0,
     });
     let sample = crate::grid::field_sample(field);
     // Tick t: paired, no draw, no step.
@@ -2286,17 +2290,164 @@ fn atk_t21_unpaired_no_step_and_back_to_the_point_before_the_door() {
                 back_from = Some((world.tick(), world.rng().draws()));
             }
             (Some((t, d)), _) if walking => {
-                assert_eq!(world.tick() - t, 12, "12 ticks back to the point");
+                // T36: 12 ticks back to the point; the door in the update
+                // after the step's end.
+                assert_eq!(world.tick() - t, 13, "12 ticks back, then one update");
                 // The draws of this tick are the door walk's (TRN-FREE).
                 assert_eq!(draws_before, d, "no draw on the way back");
                 assert_eq!(r.field, None, "for the door");
                 return;
             }
-            (Some(_), o) => assert!(o.is_some_and(|o| o.back), "nothing before the point"),
+            // T36: on the point (no offset) in the step's end update.
+            (Some(_), o) => assert!(o.is_none_or(|o| o.back), "nothing before the point"),
             _ => {}
         }
     }
     panic!("never started for the door");
+}
+
+// T36 (MIL-ATK-6.1a (b), E-mil-030): in the update the step back ends the
+// attacker only becomes a waiting attacker on the field's point; his
+// choice (here the door of the target, which can be taken) comes in his
+// next update, the door walk at progress 0 there.
+// spec: MIL-ATK-6.1a (T36), MIL-ATK-4.4
+#[test]
+fn atk_t36_the_step_backs_end_does_nothing_more() {
+    let mut world = scene();
+    fill(&mut world, P1, BARRACKS, TARGET, &[(0, 1)]);
+    fill(&mut world, P0, GUARD, (40, 20), &[(0, 3)]);
+    let field = (48, 20);
+    let attacker = world.add_settler(Settler {
+        number: 0,
+        player: P0,
+        profession: RANK[4],
+        list: crate::SettlerList::Soldiers,
+        walker: Walker::new(field),
+        job: SettlerJob::Attack {
+            home: world.target_of((40, 20)).unwrap(),
+            health: 7,
+            step: AttackStep::Waiting,
+        },
+        timer: 0,
+        carrying: None,
+    });
+    let target = world.target_of(TARGET).unwrap();
+    world.attackers.push(crate::AttackRecord {
+        soldier: attacker,
+        target,
+        counter: 0,
+        field: Some(field),
+        opponent: None,
+        hit: false,
+        offset: None,
+        paired: 0,
+    });
+    let step_of = |w: &World| match w.settlers[attacker].as_ref().unwrap().job {
+        SettlerJob::Attack { step, .. } => Some(step),
+        _ => None,
+    };
+    let mut backing = false;
+    for _ in 0..3000 {
+        world.step();
+        let r = world
+            .attack_records()
+            .iter()
+            .find(|r| r.soldier == attacker)
+            .cloned()
+            .expect("his record");
+        if r.offset.is_some_and(|o| o.back) {
+            backing = true;
+            continue;
+        }
+        if backing {
+            // The update the step ended: waiting on the point, no walk.
+            assert_eq!(step_of(&world), Some(AttackStep::Waiting));
+            let s = world.settlers[attacker].as_ref().unwrap();
+            assert!(!s.walker.is_walking(), "nothing more in the step's end");
+            assert_eq!(r.field, Some(field));
+            world.step();
+            assert_eq!(step_of(&world), Some(AttackStep::Walking), "the door next");
+            let s = world.settlers[attacker].as_ref().unwrap();
+            assert!(s.walker.is_walking());
+            assert_eq!(s.walker.progress(), 0.0, "at progress 0 in that update");
+            return;
+        }
+    }
+    panic!("no step back seen");
+}
+
+// T37 (MIL-ATK-6.1a, E-mil-030): during the step back to the waiting
+// field's point the attacker's field (as the views show it) is the field
+// his offset sample truncates to, the sample the step started from; from
+// the update the step ends it is the waiting field.
+// spec: MIL-ATK-6.1a (T37), MAP-GRID-4.3
+#[test]
+fn atk_t37_the_field_during_the_step_back() {
+    let mut world = scene();
+    fill(&mut world, P1, BARRACKS, TARGET, &[(0, 1)]);
+    fill(&mut world, P0, GUARD, (40, 20), &[(0, 3)]);
+    let field = (48, 20);
+    let attacker = world.add_settler(Settler {
+        number: 0,
+        player: P0,
+        profession: RANK[4],
+        list: crate::SettlerList::Soldiers,
+        walker: Walker::new(field),
+        job: SettlerJob::Attack {
+            home: world.target_of((40, 20)).unwrap(),
+            health: 7,
+            step: AttackStep::Waiting,
+        },
+        timer: 0,
+        carrying: None,
+    });
+    let target = world.target_of(TARGET).unwrap();
+    world.attackers.push(crate::AttackRecord {
+        soldier: attacker,
+        target,
+        counter: 0,
+        field: Some(field),
+        opponent: None,
+        hit: false,
+        offset: None,
+        paired: 0,
+    });
+    let view = |w: &World| {
+        w.settler_view(crate::view::SettlerRef::Settler(attacker))
+            .expect("the attacker")
+    };
+    let mut seen_back = false;
+    for _ in 0..3000 {
+        world.step();
+        let Some(r) = world
+            .attack_records()
+            .iter()
+            .find(|r| r.soldier == attacker)
+            .cloned()
+        else {
+            break;
+        };
+        match r.offset {
+            Some(o) if o.back && !o.walk.is_done(&world.terrain) => {
+                seen_back = true;
+                assert_eq!(
+                    view(&world).walk.at,
+                    crate::grid::sample_field_truncating(o.walk.from),
+                    "during the step back: the field of the sample it started from"
+                );
+            }
+            _ if seen_back => {
+                assert_eq!(
+                    view(&world).walk.at,
+                    field,
+                    "the step ended: the waiting field"
+                );
+                return;
+            }
+            _ => {}
+        }
+    }
+    panic!("no step back seen (seen: {seen_back})");
 }
 
 // T20, T17 (MIL-ATK-6.1a, 3.4, 5.1): interceptor I of the target wins his
@@ -2341,6 +2492,7 @@ fn atk_t20_the_interceptor_waits_and_fights_on_the_next_attackers_field() {
                 walk: crate::movement::LatticeWalk::standing(crate::grid::field_sample(at)),
                 back: false,
             }),
+            paired: 0,
         });
         id
     };
@@ -2432,4 +2584,73 @@ fn atk_t22_the_door_is_the_flag_and_no_building_field_is_a_waiting_field() {
         }
     }
     panic!("no waiting field");
+}
+
+// MIL-ATK T38 (MIL-ATK-6.3b): two pairs fight a round in one tick; the
+// pair made earlier runs its round first and takes the first two draws,
+// whatever the records' order (the second record here was paired first).
+// spec: MIL-ATK-6.3b (MIL-ATK T38), MIL-ATK-6.3
+#[test]
+fn atk_t38_rounds_in_the_order_the_pairs_were_made() {
+    let (mut world, a1, _, field) = pair_on_field(0, 3, 0, 3);
+    // A second pair on the field next to it, the same ranks.
+    let field2 = (49, 22);
+    let d2 = garrison(&mut world, TARGET, 0, 3);
+    let a2 = world.add_settler(Settler {
+        number: 0,
+        walker: Walker::new(field2),
+        ..world.settlers[a1].clone().unwrap()
+    });
+    let mut record = world.attackers[0].clone();
+    record.soldier = a2;
+    record.field = Some(field2);
+    record.opponent = Some(d2);
+    world.attackers.push(record);
+    let home = world.target_of(TARGET).unwrap();
+    let s = world.settlers[d2].as_mut().unwrap();
+    s.walker = Walker::new(field2);
+    s.job = SettlerJob::Defend {
+        home,
+        health: 3,
+        step: DefendStep::Waiting,
+        opponent: Some(a2),
+        intercept: false,
+        defends: None,
+    };
+    // The second record's pair was made first.
+    world.attackers[0].paired = 2;
+    world.attackers[1].paired = 1;
+    let _ = field;
+    // Rank 0 against rank 0: a = 2, b = 2; a hit when r1 <= 2 and r2 > 2.
+    let hit = |r1: u32, r2: u32| r1 % 7 <= 2 && r2 % 7 > 2;
+    // Burn draws until the two orders give different results.
+    loop {
+        let mut probe = world.rng.clone();
+        let d: Vec<u32> = (0..4).map(|_| probe.draw()).collect();
+        if hit(d[0], d[1]) != hit(d[2], d[3]) {
+            world.fight_rounds();
+            assert_eq!(world.attackers[1].hit, hit(d[0], d[1]), "paired first");
+            assert_eq!(world.attackers[0].hit, hit(d[2], d[3]));
+            assert_eq!(world.attackers[0].counter, 1);
+            assert_eq!(world.attackers[1].counter, 1);
+            break;
+        }
+        world.rng.draw();
+    }
+}
+
+// MIL-ATK-6.3b: pairing marks each new pair newer than every pair there is.
+// spec: MIL-ATK-6.3b
+#[test]
+fn atk_6_3b_a_new_pair_is_the_newest() {
+    let (mut world, ..) = pair_on_field(0, 3, 0, 3);
+    world.attackers[0].paired = 5;
+    let mut record = world.attackers[0].clone();
+    record.opponent = None;
+    record.paired = 0;
+    world.attackers.push(record);
+    let defender = garrison(&mut world, TARGET, 0, 3);
+    let home = world.target_of(TARGET).unwrap();
+    world.pair(1, defender, home, false, None);
+    assert_eq!(world.attackers[1].paired, 6);
 }

@@ -682,11 +682,12 @@ impl World {
                 }
             }
             ShipState::Returning => {
-                // SHIP-6.5: when stopped, search at once.
+                // SHIP-6.5: when stopped, search at once; SHIP-2.4 (T21,
+                // Q-1073): its first try in the second update after this.
                 if !self.ships[i].vessel.walker.is_walking() {
                     let v = &mut self.ships[i].vessel;
                     v.state = ShipState::Search;
-                    v.counter = PERIOD_LAST;
+                    v.counter = PERIOD_LAST - 1;
                 }
             }
         }
@@ -1521,6 +1522,14 @@ impl World {
             .find(|&n| !self.terrain.has(n, state::WATER) && self.on_land_continent(n))
     }
 
+    /// SHIP-7.1: the spot a founding by the player's ship `ship` would take
+    /// now (whether it is near enough or not).
+    pub fn founding_spot_of(&self, ship: usize) -> Option<Point> {
+        (ship < self.ships.len())
+            .then(|| self.founding_spot(ship))
+            .flatten()
+    }
+
     /// SHIP-7, UI-GAME-4.5 (f): whether `Command::ExpeditionBuildHarbor`
     /// would be accepted for the player's ship `ship` now (its window then
     /// shows the button).
@@ -1536,11 +1545,13 @@ impl World {
             .is_some_and(|spot| grid::distance(v.walker.at, spot) < BUILD_DISTANCE)
     }
 
-    /// SHIP-7: found a harbour.
+    /// SHIP-7: found a harbour; `records` numbers right after the site's
+    /// own (SIM-START-4.4 b, T16: a computer player's records of it).
     pub(crate) fn expedition_build_harbour(
         &mut self,
         player: PlayerId,
         ship: u32,
+        records: u32,
     ) -> Result<(), Rejection> {
         let i = self.expedition_ship(player, ship)?;
         let v = &self.ships[i].vessel;
@@ -1561,7 +1572,7 @@ impl World {
         let aboard = std::mem::take(&mut self.ships[i].vessel.aboard);
         // The site first, then its claim (TER-2.4).
         let new_flag = self.new_flag_of(spot);
-        let mut touched = self.put_building(player, kind.0, kind.1, spot, true);
+        let mut touched = self.put_building_numbered(player, kind.0, kind.1, spot, true, records);
         // ECO-HQ-4.8a: the site's field takes the mean height around it;
         // 4.8b: then a new flag's height ring.
         touched.extend(self.level_site_height(spot));
@@ -1569,6 +1580,16 @@ impl World {
             touched.extend(self.flag_height_ring(flag));
         }
         self.start_construction(spot);
+        // SHIP-7.2 (T22, E-ship-012): the founded site is levelled from its
+        // creation, whatever the ground: no leveller.
+        if let Some(site) = self.sites.get_mut(&spot) {
+            let needed = site.levelling_needed;
+            site.levelling_needed = false;
+            site.levelling_bits = crate::construction::LEVELLING_DONE.to_bits();
+            if needed {
+                self.clear_decorations(spot);
+            }
+        }
         self.claim_landing(spot);
         // SHIP-7.2: the materials aboard become the site's delivered
         // material, so its orders are cancelled; the builder is on the site.
@@ -1581,11 +1602,15 @@ impl World {
             .any(|&(good, _)| Some(good) == builder)
             .then(|| self.new_number());
         let mut delivered: Vec<(u32, u32)> = Vec::new();
+        let mut walks_out = None;
         if let Some(site) = self.sites.get_mut(&spot) {
             for &(good, count) in &aboard {
                 if Some(good) == builder {
-                    if site.builder.is_none() {
-                        site.builder = number.map(crate::Builder::arrived);
+                    // SHIP-7.2 (T22, Q-1075): made on the site's field, he
+                    // walks to its flag as a builder coming to his site.
+                    if site.builder.is_none() && !site.builder_on_way {
+                        site.builder_on_way = true;
+                        walks_out = number;
                     }
                     continue;
                 }
@@ -1600,12 +1625,37 @@ impl World {
         for (good, n) in delivered {
             self.cancel_orders(spot, good, n);
         }
+        if let (Some(number), Some(profession), Some(target)) =
+            (walks_out, builder, self.target_of(spot))
+        {
+            // SHIP-7.2 (T22): a plain one-field walk to the flag at progress
+            // 0 now; Q-1075 (E-ship-014): a road walk ordered off the roads,
+            // so he stands one tick on the flag before his walk ends there.
+            let flag = self.flag_of(spot);
+            let mut walker = crate::movement::Walker::new(spot);
+            walker.walk([flag]);
+            walker.road_to = Some(flag);
+            self.add_settler(crate::Settler {
+                number,
+                player,
+                profession,
+                list: crate::SettlerList::Constructors,
+                walker,
+                job: crate::SettlerJob::ToSite {
+                    target,
+                    builder: true,
+                },
+                timer: crate::settlers::OFF_ROADS,
+                carrying: None,
+            });
+        }
         self.changed(&touched);
+        // T20 (E-ship-011): only the expedition changes; the ship keeps its
+        // state (waiting) and turns to returning in its next update.
         let v = &mut self.ships[i].vessel;
         v.expedition = false;
         v.target = None;
         v.options = [None; 6];
-        v.state = ShipState::Idle;
         Ok(())
     }
 }

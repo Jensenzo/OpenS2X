@@ -379,6 +379,7 @@ pub(crate) fn describe_result(world: &World, result: &s2_sim::CommandResult) -> 
             command @ (Command::ExpeditionStart { .. }
             | Command::ExpeditionStop { .. }
             | Command::ExpeditionBuildHarbor { .. }
+            | Command::PlanHarbour { .. }
             | Command::ExpeditionGo { .. }),
             Ok(()),
         ) => crate::world::ships::describe(command).unwrap_or_default(),

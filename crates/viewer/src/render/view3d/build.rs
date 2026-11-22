@@ -447,6 +447,9 @@ pub(crate) struct Layers {
     /// GFX-VIEW-2.4a: per layer the highlight's intensity and power, zero
     /// but for type-3 patterns.
     pub(crate) specular: [Vec4; MAX_LAYERS],
+    /// The ground study (a development switch): each layer's colour by its
+    /// pattern's rules name (none: zero).
+    pub(crate) study: [Vec4; MAX_LAYERS],
     pub(crate) fields: Vec<u8>,
 }
 
@@ -460,8 +463,23 @@ pub(crate) fn pattern_layers(viewer: &crate::game::Viewer, map: &s2_assets::s2m:
         // Patterns without a texture come last in priority.
         kinds: [UVec4::new(0, u32::MAX, 0, 0); MAX_LAYERS],
         specular: [Vec4::new(0.0, 1.0, 0.0, 0.0); MAX_LAYERS],
+        study: [Vec4::ZERO; MAX_LAYERS],
         fields: Vec::new(),
     };
+    if let Some(study) = crate::render::ground_study::study() {
+        for (i, id) in ids.iter().enumerate() {
+            let name = viewer
+                .rules
+                .as_ref()
+                .and_then(|r| r.patterns.get(*id))
+                .and_then(|p| p.name.as_deref())
+                .unwrap_or("");
+            let [r, g, b] = crate::render::ground_study::colour_of(name, &study.swatches);
+            // w: the kind's family (round 3, `hybrid-crisp`).
+            let family = crate::render::ground_study::family_of(name) as u32 as f32;
+            layers.study[i] = Vec4::new(r, g, b, family);
+        }
+    }
     // A pattern without a normal map: flat, in the smallest array.
     let flat_normal = textures::mip_chain(
         &textures::solid(NORMAL_SIZES[0], [128, 128, 255, 255]),
@@ -743,10 +761,11 @@ pub fn build_scene(
             ambient,
             caustics: Vec4::new(
                 f32::from(u8::from(caustics.is_some() && caustics_on)),
-                0.0,
-                0.0,
+                crate::render::ground_study::study().map_or(0.0, |s| s.variant as u32 as f32),
+                crate::render::ground_study::study().map_or(0.0, |s| s.variant.step()),
                 0.0,
             ),
+            study: layers.study,
         },
         caustics: assets.images.add(caustics.unwrap_or_else(|| {
             Image::new_fill(
@@ -819,6 +838,15 @@ pub fn build_scene(
     // Hook W18: a project's shore foam, none by default.
     let (foam, foam_reach) =
         crate::render::view3d::materials::foam_params(crate::extend::render().shore_foam);
+    // The ground study (a development switch): the water's facets.
+    let study_water = match crate::render::ground_study::study() {
+        Some(study) => (
+            Vec4::new(1.0, study.variant.step(), study.variant as u32 as f32, 0.0),
+            crate::render::ground_study::water_colours_for(study.variant, &study.swatches)
+                .map(|[r, g, b]| Vec4::new(r, g, b, 1.0)),
+        ),
+        None => (Vec4::ZERO, [Vec4::ZERO; 3]),
+    };
     let surface = WaterMaterial {
         params: WaterParams {
             water_color: vec4(WATER_COLOR, 1.0),
@@ -845,6 +873,8 @@ pub fn build_scene(
             ),
             foam,
             foam_reach,
+            study: study_water.0,
+            study_water: study_water.1,
         },
         wave0,
         wave1,

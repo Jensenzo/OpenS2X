@@ -251,7 +251,10 @@ fn the_autosave_continues_with_its_computer_players() {
             assert!(ticks < 300, "{spot:?}: never there");
         }
         let (work, field, _) = worker(&world);
-        assert_eq!((work, field), (s2_sim::Work::Approach { spot }, stop));
+        assert_eq!(
+            (work, field),
+            (s2_sim::Work::Approach { spot, walk: None }, stop)
+        );
     }
     assert_eq!(restored.workers_walking_out, rough.len());
     // ECO-OUT-2.6: the woodcutters' trees are their huts' targets.
