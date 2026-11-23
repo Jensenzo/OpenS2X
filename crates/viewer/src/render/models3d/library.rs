@@ -42,6 +42,8 @@ pub struct ModelLibrary {
     pub(crate) models: HashMap<(String, String, u32), Option<LoadedModel>>,
     pub(crate) skeletons: HashMap<String, Option<Arc<anim::Skeleton>>>,
     pub(crate) clips: HashMap<(String, String), Option<Arc<anim::Clip>>>,
+    /// Hook W30d: the clip names of each figure file loaded.
+    pub(crate) figure_clips: HashMap<String, Vec<String>>,
     pub(crate) images: HashMap<String, Option<Handle<Image>>>,
     pub(crate) materials: HashMap<MaterialKey, Handle<ObjectMaterial>>,
     pub(crate) white: Option<Handle<Image>>,
@@ -102,6 +104,7 @@ impl ModelLibrary {
             rest_slots: HashMap::new(),
             skeletons: HashMap::new(),
             clips: HashMap::new(),
+            figure_clips: HashMap::new(),
             images: HashMap::new(),
             materials: HashMap::new(),
             white: None,

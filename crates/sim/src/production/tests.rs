@@ -957,6 +957,53 @@ fn t23_the_woodcutter_asks_for_his_place_on_the_way() {
     assert_eq!(work_of(&world, id), Work::AtFlag, "the put-down at once");
 }
 
+// ECO-OUT T28 (ECO-OUT-3.8a (3), the view on admission): the woodcutter's
+// longer walk back to a full flag holds him before it (standing); in the
+// tick a place is free and his check admits him his walk shows again at
+// once, still on his field and at progress 0; the step moves from the next
+// tick (Q-1078 answered).
+// spec: ECO-OUT-3.8a (ECO-OUT T28)
+#[test]
+fn t28_admitted_before_the_full_flag_his_walk_shows_at_once() {
+    let (mut world, id) = hut_with(&[(13, 8)]);
+    let flag = world.terrain.neighbour((10, 10), 1).unwrap();
+    let fillers: Vec<usize> = (0..6)
+        .map(|_| world.new_ware_at(STONE, flag, Some((29, 29)), None))
+        .collect();
+    let walker = |w: &World| w.settlers[id].as_ref().unwrap().walker.clone();
+    let mut held = false;
+    for _ in 0..3000 {
+        world.step();
+        if matches!(work_of(&world, id), Work::Back { .. }) && walker(&world).held {
+            held = true;
+            break;
+        }
+    }
+    assert!(held, "held before the full flag");
+    let number = world.settlers[id].as_ref().unwrap().number;
+    for _ in 0..5 {
+        world.step();
+        assert!(!walker(&world).has_walk(), "he stands");
+    }
+    world.remove_ware(fillers[0]);
+    while !world.held_joins.contains_key(&number) {
+        world.step();
+        assert!(world.tick() < 6000, "admitted");
+    }
+    let at = walker(&world).at;
+    assert!(
+        walker(&world).has_walk(),
+        "his walk shows in the admission tick"
+    );
+    assert_eq!(walker(&world).next, None, "no step yet");
+    world.step();
+    let w = walker(&world);
+    assert!(
+        w.next.is_some() || w.at != at,
+        "the step moves from the next tick"
+    );
+}
+
 // ECO-OUT T24 (ECO-OUT-3.8a (2)): a walk back of a single step to the flag
 // is ordered only once a check admits the ware. The check as the walk back
 // starts raises the flag's bar; another ware bidding next with the same

@@ -13,6 +13,12 @@ use crate::map::{state, Terrain};
 use crate::movement::{self, Walker};
 use crate::{PlayerId, Rejection, Requester, SettlerJob, World};
 
+/// SHIP-2.4a (T25): the search counter of a ship pushed out of its berth:
+/// the recorded 90 is 89 in ours' counter (SHIP-2.4, "the counter as an
+/// implementation sees it", (iv): it tries in its twelfth update after the
+/// one that turns it to searching).
+const PUSHED_OUT_COUNTER: u32 = 89;
+
 /// SHIP-2.4, SHIP-4, SHIP-5.2: counters run 0 to 100, one event every 101
 /// updates.
 const PERIOD_LAST: u32 = 100;
@@ -172,6 +178,9 @@ pub struct Harbour {
     /// SHIP-5.2: materials set aside, and whether the builder is.
     pub aside: Vec<(u32, u32)>,
     pub builder_aside: bool,
+    /// SHIP-4 (T26): finished in this tick; its first update is in the
+    /// next, so its passes fall 101, 202, ... ticks after its finishing.
+    pub fresh: bool,
 }
 
 /// One row of a harbour's expedition page (UI-GAME-8.1, SHIP-5.2).
@@ -382,6 +391,56 @@ impl World {
         best.map(|(at, _)| at)
     }
 
+    /// SHIP-4.1 (corrected 2026-11-21 eve, T24): the harbour a ware order of
+    /// `player` for `good` is attached to: the harbours passing the tests of
+    /// [`World::harbour_for`] (reachability by `costs`, the routes towards
+    /// the order's flag), each then asked, once and in the harbour list's
+    /// order, the stored ware route cost (TRN-CARRY-5.3a) from the flag
+    /// `from` of the matching's representative order (ECO-REQ-5.3d) to its
+    /// flag; the lowest wins, on equal cost the first.
+    pub(crate) fn harbour_for_stored(
+        &mut self,
+        player: PlayerId,
+        good: u32,
+        costs: &crate::transport::CostsTo,
+        from: Point,
+    ) -> Option<Point> {
+        let seas: Vec<u32> = self
+            .ships
+            .iter()
+            .filter(|s| s.owner == player && s.finished())
+            .map(|s| self.region_of(s.vessel.walker.at))
+            .filter(|&sea| sea != 0)
+            .collect();
+        if seas.is_empty() {
+            return None;
+        }
+        let candidates: Vec<Point> = self
+            .harbours
+            .iter()
+            .filter(|h| {
+                self.harbour_owner(h.at) == Some(player)
+                    && self.warehouse_accepts(h.at, good)
+                    && h.docks
+                        .iter()
+                        .any(|d| seas.contains(&self.region_of(d.field)))
+                    && costs.from(self.flag_of(h.at)).is_some()
+            })
+            .map(|h| h.at)
+            .collect();
+        let mut best: Option<(Point, u32)> = None;
+        for at in candidates {
+            let to = self.flag_of(at);
+            let Some(cost) = self.stored_ware_cost(player, from, to) else {
+                continue;
+            };
+            if best.is_none_or(|(_, c)| cost < c) {
+                best = Some((at, cost));
+            }
+        }
+        best.map(|(at, _)| at)
+    }
+
     /// SHIP-4.1 (Q-063): whether the player has a harbour (only then can a
     /// request be attached).
     pub(crate) fn has_harbour(&self, player: PlayerId) -> bool {
@@ -432,6 +491,7 @@ impl World {
             expedition_counter: 0,
             aside: Vec::new(),
             builder_aside: false,
+            fresh: true,
         });
     }
 
@@ -713,6 +773,9 @@ impl World {
             }
             self.release_links(i);
             let at = self.ships[i].vessel.walker.at;
+            // SHIP-2.4a: with no place free, an idle ship lying there makes
+            // room.
+            self.push_out_idle(harbour, i);
             if self.reachable_by_sea(harbour, at) {
                 if let Some(dock) = self.reserve_dock(harbour, i) {
                     if self.sail(i, dock) {
@@ -747,10 +810,53 @@ impl World {
                 }
             }
         }
-        // 5
+        // 5 (corrected 2026-11-21 eve, T25, Q-1074): a ship still linked
+        // to its harbour (docked there) stays idle; one without a link
+        // searches, keeping the counter it holds (SHIP-2.4a: 90 when it was
+        // pushed out).
         let v = &mut self.ships[i].vessel;
-        v.state = ShipState::Search;
-        v.counter = 0;
+        if v.harbour.is_none() {
+            v.state = ShipState::Search;
+        }
+    }
+
+    /// SHIP-2.4a (T25): a ship reserving a docking place at `harbour` for a
+    /// call or to unload finds none free on its sea: the first docking place
+    /// there (in their order) where a finished, idle, empty ship lies still
+    /// linked to the harbour (no cargo, no expedition goods, no expedition,
+    /// no target, not called) is freed: that ship's counter is set to the
+    /// recorded 90 (ours' 89), its link and berth dropped. A harbour search
+    /// never pushes out.
+    fn push_out_idle(&mut self, harbour: Point, ship: usize) {
+        let sea = self.region_of(self.ships[ship].vessel.walker.at);
+        if sea == 0 || self.reachable_by_sea(harbour, self.ships[ship].vessel.walker.at) {
+            return;
+        }
+        let Some(h) = self.harbour_at(harbour) else {
+            return;
+        };
+        let lying = h
+            .docks
+            .iter()
+            .filter(|d| self.region_of(d.field) == sea)
+            .filter_map(|d| d.docked)
+            .find(|&j| {
+                let s = &self.ships[j];
+                let v = &s.vessel;
+                j != ship
+                    && s.finished()
+                    && v.state == ShipState::Idle
+                    && v.harbour == Some(harbour)
+                    && v.cargo.is_empty()
+                    && v.aboard.is_empty()
+                    && !v.expedition
+                    && v.target.is_none()
+                    && v.called.is_none()
+            });
+        if let Some(j) = lying {
+            self.release_links(j);
+            self.ships[j].vessel.counter = PUSHED_OUT_COUNTER;
+        }
     }
 
     fn release_dock_reservation(&mut self, harbour: Point, ship: usize) {
@@ -877,6 +983,8 @@ impl World {
         }
         self.release_links(i);
         let at = self.ships[i].vessel.walker.at;
+        // SHIP-2.4a: with no place free, an idle ship lying there makes room.
+        self.push_out_idle(destination, i);
         if self.harbour_at(destination).is_some() && self.reachable_by_sea(destination, at) {
             if let Some(dock) = self.reserve_dock(destination, i) {
                 if self.sail(i, dock) {
@@ -959,6 +1067,10 @@ impl World {
     // ---- Harbours (SHIP-4, 5) ----
 
     fn update_harbour(&mut self, h: usize) {
+        // SHIP-4 the passes' ticks (T26): no update in the finishing tick.
+        if std::mem::take(&mut self.harbours[h].fresh) {
+            return;
+        }
         self.expedition_step(h);
         if self.harbours[h].counter < PERIOD_LAST {
             self.harbours[h].counter += 1;
@@ -1032,9 +1144,15 @@ impl World {
         let Some(owner) = self.harbour_owner(at) else {
             return;
         };
+        // SHIP-4.2 a good the asking harbour holds (T26): the need is
+        // skipped in the pass, neither checked nor asked.
+        let held = |w: &World, good: u32| w.warehouses.get(&at).is_some_and(|s| s.count(good) > 0);
         // A need whose supplier can no longer supply it is cancelled.
         for n in 0..self.harbours[h].needs.len() {
             let need = self.harbours[h].needs[n].clone();
+            if held(self, need.good) {
+                continue;
+            }
             if let Some(supplier) = need.supplier {
                 // Goods the supplier has ordered into itself for the
                 // transfer count as supply (Q-154).
@@ -1052,7 +1170,7 @@ impl World {
         }
         for n in 0..self.harbours[h].needs.len() {
             let need = self.harbours[h].needs[n].clone();
-            if need.supplier.is_some() {
+            if need.supplier.is_some() || held(self, need.good) {
                 continue;
             }
             let chosen = (0..self.harbours.len()).find(|&o| {
@@ -1128,10 +1246,19 @@ impl World {
             let Some(t) = self.harbours[h].transfers.get(n).cloned() else {
                 break;
             };
-            let ready = self
-                .warehouses
-                .get(&at)
-                .is_some_and(|w| w.count(t.good) >= t.count);
+            // SHIP-4.4 corrections (T26): only while the order is not yet
+            // shipped (no ship carries its good for the destination).
+            let shipped = self.ships.iter().any(|x| {
+                x.vessel.cargo.iter().any(|c| {
+                    c.destination == t.destination && c.goods.iter().any(|g| g.0 == t.good)
+                })
+            });
+            if shipped {
+                continue;
+            }
+            // SHIP-4.4 corrections (T26): "ready" is at least one in stock.
+            let stock = self.warehouses.get(&at).map_or(0, |w| w.count(t.good));
+            let ready = stock > 0;
             if self.harbours[h].called.is_none() && ready {
                 let destination = t.destination;
                 let ship = self.nearest_free_ship(owner, at, |w, i| {
@@ -1141,6 +1268,8 @@ impl World {
                 if let Some(ship) = ship {
                     self.call_ship(ship, at);
                     self.harbours[h].called = Some(ship);
+                    // SHIP-4.4 corrections (T26): a call ends the pass.
+                    return;
                 }
             }
             if let Some(ship) = self.harbours[h].called {
@@ -1148,18 +1277,35 @@ impl World {
                     && self.ships[ship].vessel.cargo.len() < limit
                     && ready
                 {
-                    let w = self.warehouses.get_mut(&at).expect("a warehouse");
-                    for _ in 0..t.count {
-                        w.take(t.good);
+                    // SHIP-4.4 corrections (T26): as many as the
+                    // destination's need counts now, at most the stock.
+                    let need = self
+                        .harbours
+                        .iter()
+                        .find(|x| x.at == t.destination)
+                        .and_then(|x| x.needs.iter().find(|e| e.good == t.good))
+                        .map_or(0, |e| e.count);
+                    let count = need.min(stock);
+                    if count > 0 {
+                        let w = self.warehouses.get_mut(&at).expect("a warehouse");
+                        for _ in 0..count {
+                            w.take(t.good);
+                        }
+                        self.ships[ship].vessel.cargo.push(Cargo {
+                            destination: t.destination,
+                            goods: vec![(t.good, count)],
+                        });
+                        served = true;
+                        loaded = true;
                     }
-                    self.ships[ship].vessel.cargo.push(Cargo {
-                        destination: t.destination,
-                        goods: vec![(t.good, t.count)],
-                    });
-                    served = true;
-                    loaded = true;
-                    // Done: the order goes (its slot is reused below).
-                    self.harbours[h].transfers[n].count = 0;
+                    // The order keeps what is not aboard yet; with no need
+                    // left it goes (its slot is reused below).
+                    let left = if need == 0 {
+                        0
+                    } else {
+                        t.count.saturating_sub(count)
+                    };
+                    self.harbours[h].transfers[n].count = left;
                 }
             }
         }

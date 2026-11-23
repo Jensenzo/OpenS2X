@@ -60,11 +60,11 @@ fn a_broken_snapshot_is_refused() {
     longer.push(0);
     assert!(World::from_snapshot(&longer).is_err());
     let mut other_version = bytes;
-    other_version[8] = 99;
+    other_version[8] = 120;
     let Err(SnapError(text)) = World::from_snapshot(&other_version) else {
         panic!("a different version reads");
     };
-    assert!(text.contains("version 99"), "{text}");
+    assert!(text.contains("version 120"), "{text}");
 }
 
 // spec: none (our own snapshot format, docs/snapshot.md: a save of an earlier format loads; older than the first or newer is refused)

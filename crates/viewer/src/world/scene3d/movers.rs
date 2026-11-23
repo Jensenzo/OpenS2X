@@ -67,6 +67,9 @@ pub struct Mover {
     /// settler (GFX-OBJ-2.8).
     pub family: models3d::Family,
     pub player: [f32; 3],
+    /// Hook W30d: the project's figure drawing this settler (its file is
+    /// `file`), none for the original's model.
+    pub figure: Option<&'static crate::extend::FigureLook>,
 }
 
 /// GFX-ANIM-1.1: the base animations of settlers and the donkey, by index.
@@ -410,8 +413,36 @@ pub fn movers(
                   heading: Option<f32>,
                   mut state: SettlerState,
                   look: Look| {
-        let c = character(player, kind).or_else(|| character(player, "Carrier"))?;
         state.override_base = look.base;
+        // Hook W30d: a kind a project draws as its own figure, in game
+        // units, its owner's colour on the team swatch.
+        if let Some(figure) = crate::extend::figure_look_of(kind) {
+            return Some(Mover {
+                id,
+                file: figure.model.clone(),
+                units_per_metre: models3d::DEFAULT_SCALE,
+                at,
+                heading,
+                tint: WHITE,
+                carried: mesh_of(look.held.as_deref()),
+                boat: None,
+                link: Some(models3d::figure::HAND_POINT.into()),
+                skeleton: None,
+                anim: MoverAnim::Settler {
+                    state,
+                    good: look.good,
+                    profession: look.profession,
+                    tribe: world.tribe(player),
+                    donkey: false,
+                },
+                paint: None,
+                bob: false,
+                family: models3d::Family::FacetFigure,
+                player: models3d::player_colour(player),
+                figure: Some(figure),
+            });
+        }
+        let c = character(player, kind).or_else(|| character(player, "Carrier"))?;
         Some(Mover {
             id,
             file: c.mesh.clone(),
@@ -434,6 +465,7 @@ pub fn movers(
             bob: false,
             family: models3d::Family::Plain,
             player: [0.0; 3],
+            figure: None,
         })
     };
     let views = world.settler_views();
@@ -541,6 +573,7 @@ pub fn movers(
                     bob: false,
                     family: models3d::Family::Animal,
                     player: [0.0; 3],
+                    figure: None,
                 }
             }),
             None => {
@@ -693,6 +726,7 @@ pub fn movers(
             bob: false,
             family: models3d::Family::Animal,
             player: [0.0; 3],
+            figure: None,
         });
     }
     for (id, ship) in world.ships().iter().enumerate() {
@@ -736,6 +770,7 @@ pub fn movers(
             bob: launched,
             family: models3d::Family::Ship,
             player: models3d::player_colour(ship.owner),
+            figure: None,
         });
     }
     out

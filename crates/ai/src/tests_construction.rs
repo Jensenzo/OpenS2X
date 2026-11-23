@@ -757,6 +757,48 @@ fn t84_a_torn_down_producers_need_is_placed_again() {
     assert_eq!(p.plan.need(plain).unwrap().production, Some(pb));
 }
 
+// AI-CON T109 (AI-CON-9.3, the building's own needs): a sawmill's wood
+// need (its consumer the sawmill) waiting for expansion, and a woodcutter
+// production of another cell, not placed, linked to it: when the sawmill is
+// removed, its own needs are deleted (off the need list and the waiting
+// list) and the production loses its need; a need of another consumer
+// stays.
+// spec: AI-CON-9.3 (AI-CON T109), AI-CON-3.4
+#[test]
+fn t109_a_removed_buildings_own_needs_go_with_it() {
+    let mut world = world(&[0]);
+    let mut ai = start(&world, 2);
+    let sawmill = (26, 22);
+    with_building(&mut world, SAWMILL, sawmill);
+    let snapshot = crate::snapshot::Snapshot::take(&world);
+    ai.update_with(&world, P0, &snapshot);
+    let p = ai.player_mut(P0);
+    let own = p.plan.add_need(WOOD, Some(sawmill), 0.0);
+    p.plan.put_waiting(own);
+    let home = p.home;
+    let other = p.plan.add_need(WOOD, Some(home), 0.0);
+    let prod = p.plan.add_production(WOOD, cell_of((14, 20)), Some(own));
+    world.submit(Command::RemoveBuilding {
+        player: P0,
+        at: sawmill,
+    });
+    world.step();
+    let snapshot = crate::snapshot::Snapshot::take(&world);
+    ai.update_with(&world, P0, &snapshot);
+    let p = ai.player_mut(P0);
+    assert!(
+        p.plan.need(own).is_none(),
+        "the sawmill's own need is deleted"
+    );
+    assert!(!p.plan.waiting.contains(&own));
+    assert!(!p.plan.needs.iter().any(|n| n.consumer == Some(sawmill)));
+    assert_eq!(p.plan.production(prod).unwrap().need, None);
+    assert!(
+        p.plan.need(other).is_some(),
+        "another consumer's need stays"
+    );
+}
+
 // AI-CON T102 (AI-CON-2.5b): a cell ties needs and productions from either
 // side. A producer's production, whatever order placed its building, is
 // tied when the building is announced to the first need in its cell's need

@@ -75,6 +75,12 @@ pub enum SettlerJob {
         /// target); he waits outside while it has attackers. None for a
         /// defender of the target (and an older game's interceptor).
         defends: Option<Target>,
+        /// MIL-ATK-4.3 (T41, E-mil-035): an interceptor's meeting field
+        /// (MIL-ATK-3.3), kept by his record after he has left it or been
+        /// paired with another attacker; it counts as taken in every other
+        /// attacker's free test. None for a defender of the target (and an
+        /// older game's interceptor).
+        meeting: Option<Point>,
     },
     /// ECO-SPC-2: a geologist or scout sent to the flag `flag`, with the
     /// spots he still has to visit.
@@ -1646,6 +1652,7 @@ impl World {
                 opponent,
                 intercept,
                 defends,
+                ..
             } => self.defend_job(
                 settler, number, home, health, step, opponent, intercept, defends,
             ),
@@ -1680,11 +1687,13 @@ impl World {
                 // removal on, to its position; in the tick he reaches it the
                 // line to his field's point is ordered at progress 0 (the
                 // walk's end drops the excess); the home search in the tick
-                // after the line's arrival.
+                // after the line's arrival. T53 (E-trn-044): a work walk
+                // ending in the removal tick T itself orders the line at
+                // progress 0 in T + 1 only (he moves from T + 2).
                 if let LeavingStep::Through { mut walk, mut home } = step {
                     let speed = self.settings.settler_speed;
                     walk.advance(&self.terrain, speed);
-                    if !home && walk.is_done(&self.terrain) {
+                    if !home && walk.is_done(&self.terrain) && self.tick > at {
                         let point = grid::field_sample(settler.walker.at);
                         walk = movement::LatticeWalk::new(&self.terrain, speed, walk.to, point);
                         home = true;

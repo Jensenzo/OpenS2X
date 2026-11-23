@@ -204,6 +204,79 @@ fn ship_t01_launch_search_dock() {
     assert_eq!(state_of(&w, s), ShipState::Idle);
 }
 
+// T25 (SHIP-2.3 5, SHIP-2.4a, Q-1074): a ship docked at its harbour with
+// nothing to do lies idle there (no search, its counter kept); a second ship
+// called to that harbour finds no free docking place and pushes the idle
+// one out: its counter the recorded 90, its link and berth dropped; it
+// then searches and tries in the twelfth update after its turn.
+// spec: SHIP-2.3, SHIP-2.4, SHIP-2.4a (T25)
+#[test]
+fn ship_t25_an_idle_ship_stays_until_pushed_out() {
+    let mut w = sea_world();
+    harbour(&mut w, P0, WEST_HARBOUR);
+    let s = ship(&mut w, P0, (20, 10));
+    step_until(&mut w, 2000, |w| state_of(w, s) == ShipState::Docked);
+    w.step();
+    assert_eq!(state_of(&w, s), ShipState::Idle);
+    let counter = w.ships()[s].vessel.counter;
+    // Idle for longer than a search's period, its counter as it was.
+    for _ in 0..300 {
+        w.step();
+        assert_eq!(state_of(&w, s), ShipState::Idle);
+    }
+    assert_eq!(w.ships()[s].vessel.counter, counter);
+    assert_eq!(w.ships()[s].vessel.harbour, Some(WEST_HARBOUR));
+    // Every other docking place taken: the idle ship's is the only one.
+    let berth = w
+        .harbour_at(WEST_HARBOUR)
+        .unwrap()
+        .docks
+        .iter()
+        .position(|d| d.docked == Some(s))
+        .expect("docked");
+    for (k, d) in w
+        .harbours
+        .iter_mut()
+        .find(|h| h.at == WEST_HARBOUR)
+        .unwrap()
+        .docks
+        .iter_mut()
+        .enumerate()
+    {
+        if k != berth {
+            d.reserved = Some(99);
+        }
+    }
+    let caller = ship(&mut w, P0, (22, 12));
+    w.ships[caller].vessel.state = ShipState::Idle;
+    w.ships[caller].vessel.called = Some(WEST_HARBOUR);
+    // Its first update launches it; the call is taken in its idle update.
+    step_until(&mut w, 10, |w| state_of(w, caller) == ShipState::ToHarbour);
+    let pushed = w.ships()[s].vessel.clone();
+    assert_eq!(pushed.harbour, None);
+    let dock = &w.harbour_at(WEST_HARBOUR).unwrap().docks[berth];
+    assert_eq!(dock.docked, None);
+    assert_eq!(dock.reserved, Some(caller));
+    assert_eq!(state_of(&w, caller), ShipState::ToHarbour);
+    // The recorded 90 is ours' 89 (SHIP-2.4, the counter as an
+    // implementation sees it, (iv)): the next update turns it to searching,
+    // and it tries in the twelfth update after that one.
+    assert_eq!(pushed.counter, 89);
+    w.step();
+    assert_eq!(state_of(&w, s), ShipState::Search);
+    for _ in 0..11 {
+        w.step();
+        assert_eq!(state_of(&w, s), ShipState::Search);
+    }
+    assert_eq!(w.ships()[s].vessel.counter, 100);
+    w.step();
+    assert_eq!(
+        w.ships()[s].vessel.counter,
+        0,
+        "the try in the twelfth update"
+    );
+}
+
 // SHIP-2.4: a ship picks the nearest harbour, the first in the list on a tie.
 #[test]
 fn ship_search_takes_the_nearest_harbour() {
@@ -888,6 +961,11 @@ const HUT_AT: Point = (28, 16);
 /// planks) and a hut's site needing two planks, its flag on a road to H2.
 /// The site's orders are filed; no pass has run.
 fn t19_world() -> World {
+    t19_world_with(2)
+}
+
+/// T19's world with `helpers` helpers in H2's stock.
+fn t19_world_with(helpers: u32) -> World {
     let mut w = sea_world();
     w.building_types.insert(
         HUT,
@@ -901,7 +979,7 @@ fn t19_world() -> World {
     harbour(&mut w, P0, EAST_HARBOUR);
     stock(&mut w, (4, 10), PLANK, 3);
     stock(&mut w, (4, 10), HELPER, 10);
-    stock(&mut w, EAST_HARBOUR, HELPER, 2);
+    stock(&mut w, EAST_HARBOUR, HELPER, helpers);
     road_between(&mut w, (4, 10), WEST_HARBOUR);
     assert_eq!(
         apply(
@@ -979,6 +1057,77 @@ fn ship_t12_transfer_between_harbours() {
     assert!(w.ships()[s].vessel.cargo.is_empty());
 }
 
+// T26 (SHIP-4 the passes' ticks, SHIP-4.2 a held good, SHIP-4.4
+// corrections): harbours finished before the first tick make their first
+// pass in the 102nd (no update in the finishing tick, the pass 101 updates
+// later); H2 holds helpers, so its helper need is not asked; a ship lying
+// docked at H1 is called in the pass in which a plank is ready, and nothing
+// is loaded in that pass; the next pass loads as many planks as H2's plank
+// need counts then (one requester detached in between: one plank).
+// spec: SHIP-4, SHIP-4.2, SHIP-4.4 (T26)
+#[test]
+fn ship_t26_passes_held_goods_and_the_call() {
+    let mut w = t19_world();
+    w.attach_need(EAST_HARBOUR, HELPER);
+    let s = ship(&mut w, P0, (16, 10));
+    // (The harbours were finished before the world's first tick.)
+    step_until(&mut w, 200, |w| {
+        !w.harbour_at(WEST_HARBOUR).unwrap().transfers.is_empty()
+    });
+    assert_eq!(
+        w.tick(),
+        102,
+        "the first update in the tick after the finishing, the first pass 101 later"
+    );
+    let transfers = &w.harbour_at(WEST_HARBOUR).unwrap().transfers;
+    assert!(transfers.iter().any(|t| t.good == PLANK && t.count == 2));
+    assert!(
+        transfers.iter().all(|t| t.good != HELPER),
+        "H2 holds helpers: its helper need is skipped"
+    );
+    // The ship searches, docks at H1 and lies idle there.
+    step_until(&mut w, 2000, |w| {
+        state_of(w, s) == ShipState::Idle && w.ships()[s].vessel.harbour == Some(WEST_HARBOUR)
+    });
+    // (A second docking place on the sea: the map's harbour has only the
+    // one the ship lies at, and a call needs one free there.)
+    w.harbours
+        .iter_mut()
+        .find(|h| h.at == WEST_HARBOUR)
+        .unwrap()
+        .docks
+        .push(crate::navy::Dock {
+            field: (15, 14),
+            reserved: None,
+            docked: None,
+        });
+    // The call: in the pass a plank is ready; it ends the pass.
+    step_until(&mut w, 4000, |w| {
+        w.harbour_at(WEST_HARBOUR).unwrap().called.is_some()
+    });
+    assert!(count(&w, WEST_HARBOUR, PLANK) >= 1);
+    assert!(
+        w.ships()[s].vessel.cargo.is_empty(),
+        "nothing loaded in the calling pass"
+    );
+    assert_eq!(w.harbour_at(WEST_HARBOUR).unwrap().called, Some(s));
+    w.detach_need(EAST_HARBOUR, PLANK);
+    assert_eq!(need(&w, PLANK), 1);
+    let calling = w.harbour_at(WEST_HARBOUR).unwrap().counter;
+    assert_eq!(calling, 0);
+    run(&mut w, 100);
+    assert!(w.ships()[s].vessel.cargo.is_empty());
+    w.step();
+    assert_eq!(
+        w.ships()[s].vessel.cargo,
+        [crate::navy::Cargo {
+            destination: EAST_HARBOUR,
+            goods: vec![(PLANK, 1)]
+        }],
+        "the destination's need as it is at the loading"
+    );
+}
+
 // T19 (SHIP-4.1, Q-063): each of the hut's plank orders finds no warehouse
 // with planks over island B's roads and, at its turn in the ware order pass
 // (every 11 ticks, one order chosen per pass), is attached to H2 (reachable
@@ -1002,6 +1151,29 @@ fn ship_t19_orders_attach_to_the_harbour() {
     assert_eq!(hut_orders(&w), [None, None]);
     assert_eq!(need(&w, PLANK), 0);
     assert!(w.harbour_at(EAST_HARBOUR).unwrap().needs.is_empty());
+}
+
+// T24 (SHIP-4.1, corrected 2026-11-21 eve): the harbour choice of a ware
+// order asks the stored ware route cost from the representative order's flag
+// (here the hut's, its network's only orders) to each eligible harbour's
+// flag: after the orders attach to H2, the store holds that pair; nothing
+// is stored for H1, which no road from the hut reaches.
+// spec: SHIP-4.1 (T24)
+#[test]
+fn ship_t24_the_harbour_choice_asks_the_stored_cost() {
+    let mut w = t19_world();
+    ship(&mut w, P0, (20, 10));
+    let (hut_flag, east, west) = (
+        w.flag_of(HUT_AT),
+        w.flag_of(EAST_HARBOUR),
+        w.flag_of(WEST_HARBOUR),
+    );
+    assert_eq!(w.route_store.stored(P0, hut_flag, east), None);
+    run(&mut w, 23);
+    assert_eq!(hut_orders(&w), [Some(EAST_HARBOUR), Some(EAST_HARBOUR)]);
+    let stored = w.route_store.stored(P0, hut_flag, east);
+    assert!(matches!(stored, Some(Some(_))), "{stored:?}");
+    assert_eq!(w.route_store.stored(P0, hut_flag, west), None);
 }
 
 // T19a (SHIP-4.1, Q-063 end): T19 after a ship has unloaded one plank into
@@ -1058,6 +1230,41 @@ fn ship_t19a_orders_leave_the_need() {
     );
     assert_eq!(hut_orders(&w), [None, None]);
     assert!(w.harbour_at(EAST_HARBOUR).is_none());
+}
+
+/// The road from the hut's flag to H2's flag has a carrier assigned.
+fn hut_road_has_carrier(w: &World) -> bool {
+    let (a, b) = (w.flag_of(HUT_AT), w.flag_of(EAST_HARBOUR));
+    w.roads.iter().flatten().any(|r| {
+        let ends = (r.path[0], *r.path.last().unwrap());
+        (ends == (a, b) || ends == (b, a)) && (r.carrier.is_some() || r.donkey.is_some())
+    })
+}
+
+// T27 (SHIP-4.1, Q-1079 answered: the ware network for a settler request
+// too): the hut site's builder request finds no warehouse with a builder;
+// while its road to H2 has no carrier assigned (no helper on island B) the
+// flags are in different ware networks and the request is not attached.
+// Once a helper is in H2 and the road's carrier is sent out, the request is
+// attached at its next turn.
+// spec: SHIP-4.1 (T27)
+#[test]
+fn ship_t27_a_settler_request_over_the_ware_network() {
+    let mut w = t19_world_with(0);
+    ship(&mut w, P0, (20, 10));
+    run(&mut w, 150);
+    assert!(!hut_road_has_carrier(&w));
+    assert_eq!(need(&w, BUILDER), 0);
+    stock(&mut w, EAST_HARBOUR, HELPER, 1);
+    let sent = step_until(&mut w, 200, |w| {
+        hut_road_has_carrier(w) || need(w, BUILDER) > 0
+    });
+    assert!(
+        hut_road_has_carrier(&w),
+        "not attached before the carrier is sent"
+    );
+    let attached = step_until(&mut w, 200, |w| need(w, BUILDER) == 1);
+    assert!(sent + attached <= 200);
 }
 
 // The run is deterministic.

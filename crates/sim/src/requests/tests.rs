@@ -2969,6 +2969,45 @@ fn t28_the_nearest_free_ware_is_measured_from_the_building() {
     assert_ne!(world.ware(first).unwrap().destination, Some(shed_flag));
 }
 
+// ECO-REQ T44 (ECO-REQ-5.3 (a), no H): with no warehouse of the network
+// holding the good, a free ware gets the order at once and no stored cost
+// is asked: the pair (D's flag, Wf's flag) is not in the route store after
+// the matching. With a stocked headquarters both costs are asked.
+// spec: ECO-REQ-5.3 (ECO-REQ T44)
+#[test]
+fn t44_no_stocked_warehouse_asks_no_stored_cost() {
+    for planks in [0, 22] {
+        let mut stock = full_stock();
+        stock.retain(|&(good, _)| good != PLANK);
+        stock.push((PLANK, planks));
+        let mut world = game(&stock);
+        let (shed, shed_flag) = ((14, 12), (14, 11));
+        apply_all(&mut world, vec![place(SHED, shed)]);
+        apply_all(&mut world, vec![road_cmd(HQ_FLAG, shed_flag)]);
+        let x = *grid::ring(shed_flag, 2, 40, 40)
+            .iter()
+            .find(|&&f| f.1 >= 11 && grid::distance(f, HQ_FLAG) >= 2)
+            .expect("a field 2 from the shed's flag");
+        apply_all(&mut world, vec![flag_cmd(x)]);
+        apply_all(&mut world, vec![road_cmd(shed_flag, x)]);
+        for road in 0..world.roads.len() {
+            world.spawn_carrier(road);
+        }
+        let plank = world.new_ware_at(PLANK, x, None, None);
+        while !world.tick().is_multiple_of(11) {
+            world.step();
+        }
+        world.step();
+        let stored = world.route_store.stored(P0, shed_flag, x);
+        if planks == 0 {
+            assert_eq!(world.ware(plank).unwrap().destination, Some(shed_flag));
+            assert_eq!(stored, None, "no H: nothing asked");
+        } else {
+            assert!(stored.is_some(), "an H: the pair's cost was asked");
+        }
+    }
+}
+
 // ECO-REQ T32, T33 (ECO-REQ-5.4a): of two free planks lying at the same
 // flag, so equally near the ordering shed, the one that joined the
 // free-ware list first is taken, not the one made first: the later made

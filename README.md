@@ -66,7 +66,7 @@ the game's behaviour, with no code of the original in it.
 
 ## Status
 
-**Version 0.13.0**. Free games, the campaign and
+**Version 0.14.0**. Free games, the campaign and
 the tutorial are playable, through the original's menus. The last measured differences from the
 original are being closed; see
 [How close it is](#how-close-it-is-to-the-original).
@@ -136,8 +136,8 @@ row.
 | Recorded game | Equal to the original |
 |---|---|
 | Two players, Weak computer player: every settler's place, every building | **every compared tick to 40,000** (67 minutes of game time) |
-| The same game: the random generator | the first **56,470** ticks (94 minutes) |
-| Two players, Strong computer player, long run | the first **53,726** ticks (89 minutes) |
+| The same game: the random generator | the first **59,529** ticks (99 minutes) |
+| Two players, Strong computer player, long run | the first **54,411** ticks (90 minutes) |
 
 The first row leaves out the settlers' animations, which that recording
 logged a tick late (a lag of its recorder); the chart also shows the rows
@@ -145,7 +145,7 @@ with them. The random generator is the strictest
 measure: it stays equal only while every part of the game has drawn from it
 exactly as often as the original. After the first difference the two games
 drift apart; closing those first differences is the remaining work. These
-are version 0.13.0's numbers.
+are version 0.14.0's numbers.
 
 **The picture.** The same scenes are shot in both programs from the same
 camera at the same tick: 12 pairs at 2560 x 1440, by day and at night. The
@@ -202,7 +202,7 @@ flowchart LR
   Where the original computes in 32-bit floats and the outcome depends on
   it, OpenS2X rounds the same way. The same map, seed and commands give the
   same game on Linux and Windows.
-- **Tested.** About 1,940 tests written from the specifications' test
+- **Tested.** About 1,980 tests written from the specifications' test
   cases, state hashes of whole games on Linux and Windows, 67 reference
   pictures, and a harness that plays the real program with the mouse and
   keyboard through the menus, the tutorial and the campaign.

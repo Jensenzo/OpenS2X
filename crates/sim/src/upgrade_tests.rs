@@ -213,12 +213,13 @@ fn t3_levelling_first() {
     assert!(flat_world.site(at).unwrap().levelled());
 }
 
-// MIL-UPG T9 (MIL-UPG-2.2a): an upgrade's update does one part per tick: on
-// level ground its first update after the order only marks the levelling
-// complete; the material orders and the builder request come in the next.
-// spec: MIL-UPG-2.2a (MIL-UPG T9)
+// MIL-UPG T9, T10 (MIL-UPG-2.2a): an upgrade's update does one part per
+// tick: on level ground its first update after the order marks the
+// levelling complete and files the material orders (T10, the orders'
+// tick); the builder request comes in the next.
+// spec: MIL-UPG-2.2a (MIL-UPG T9, MIL-UPG T10)
 #[test]
-fn t9_an_upgrade_on_level_ground_files_in_its_second_update() {
+fn t9_t10_an_upgrade_on_level_ground_files_its_orders_first() {
     let mut rules = upgrade_rules();
     rules.roles.builder = Some(WOODCUTTER);
     rules.start_stock.extend([(PLANK, 4), (STONE, 4)]);
@@ -238,10 +239,13 @@ fn t9_an_upgrade_on_level_ground_files_in_its_second_update() {
     };
     assert_eq!(upgrade(&mut world, at), Ok(()));
     assert!(world.site(at).unwrap().levelled(), "levelling marked");
-    assert_eq!(filed(&world), (0, false), "nothing filed yet");
-    world.step();
     let (orders, builder) = filed(&world);
-    assert!(orders > 0 && builder, "{orders} orders, builder {builder}");
+    assert!(orders > 0, "the orders filed with the levelling mark");
+    assert!(!builder, "no builder request yet");
+    world.step();
+    let (later, builder) = filed(&world);
+    assert!(builder, "the builder request in the next update");
+    assert!(later <= orders);
 }
 
 // Removing an upgrading building takes the upgrade and its site with it.

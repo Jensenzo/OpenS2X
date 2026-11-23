@@ -618,6 +618,31 @@ fn atk_t7_interceptors_need_an_attacker_to_pair() {
     assert_eq!(world.present_soldiers(TARGET), 2);
 }
 
+// T39
+// spec: MIL-ATK-3.1 (T39)
+#[test]
+fn atk_t39_the_interceptors_fall_with_the_distance() {
+    use crate::combat::interceptor_count;
+    // Six present, the setting 0.5: 2 up to 16 fields, 1 from 17 (the
+    // recording's (47, 19) at 17 sent one).
+    for e in 0..=16 {
+        assert_eq!(interceptor_count(6, 0.5, e), 2, "e {e}");
+    }
+    for e in 17..24 {
+        assert_eq!(interceptor_count(6, 0.5, e), 1, "e {e}");
+    }
+    // Up to 12 fields as before: trunc((m - 1) x setting).
+    assert_eq!(interceptor_count(3, 0.5, 12), 1);
+    assert_eq!(interceptor_count(4, 1.0, 0), 3);
+    assert_eq!(interceptor_count(4, 0.34, 3), 1);
+    // The last soldier stays, a setting of 0 sends none.
+    assert_eq!(interceptor_count(1, 1.0, 0), 0);
+    assert_eq!(interceptor_count(0, 1.0, 0), 0);
+    assert_eq!(interceptor_count(5, 0.0, 0), 0);
+    // 23 fields away: 13/24 of it.
+    assert_eq!(interceptor_count(5, 1.0, 23), 2);
+}
+
 // MIL-ATK-3.1: a smaller "Intercepting Defenders" setting sends fewer.
 #[test]
 fn atk_3_1_defend_outside_scales_the_interceptors() {
@@ -939,6 +964,7 @@ fn atk_t30_the_pairing_only_links_the_waiting_interceptor() {
             opponent: None,
             intercept: true,
             defends: Some(target),
+            meeting: None,
         };
     }
     let field = (48, 20);
@@ -982,6 +1008,347 @@ fn atk_t30_the_pairing_only_links_the_waiting_interceptor() {
     let k = world.settlers[interceptor].as_ref().unwrap().walker.clone();
     assert!(k.is_walking(), "his own update starts it");
     assert_eq!(k.destination(), field);
+}
+
+// T40 (MIL-ATK-5.1 which interceptor, E-mil-034): an attacker starting to
+// wait at the target takes the first waiting interceptor that defends it,
+// though he came out of another building, while that interceptor's partner
+// from the pairing still walks to the meeting field; once the partner has
+// arrived there he holds him, and the attacker takes the target's own
+// soldier instead.
+// spec: MIL-ATK-5.1 (T40)
+#[test]
+fn atk_t40_which_interceptor() {
+    for partner_step in [AttackStep::Meeting, AttackStep::Arrived] {
+        let mut world = scene();
+        fill(&mut world, P1, BARRACKS, TARGET, &[(0, 3)]);
+        fill(&mut world, P1, BARRACKS, (60, 20), &[(0, 3)]);
+        fill(&mut world, P0, GUARD, (40, 20), &[(0, 3), (0, 3), (0, 3)]);
+        let target = world.target_of(TARGET).unwrap();
+        let other = world.target_of((60, 20)).unwrap();
+        let interceptor = garrison(&mut world, (60, 20), 0, 3);
+        let wait = (52, 21);
+        let home = world.target_of((40, 20)).unwrap();
+        let soldier = |world: &mut World, at: Point, step| {
+            let id = world.add_settler(Settler {
+                number: 0,
+                player: P0,
+                profession: crate::military_tests::RANK[0],
+                list: crate::SettlerList::Soldiers,
+                walker: Walker::new(at),
+                job: SettlerJob::Attack {
+                    home,
+                    health: 3,
+                    step,
+                },
+                timer: 0,
+                carrying: None,
+            });
+            world.military.get_mut(&(40, 20)).unwrap().soldiers.push(id);
+            id
+        };
+        let field = (48, 20);
+        let attacker = soldier(&mut world, field, AttackStep::Waiting);
+        // The partner (updated after the attacker) towards the meeting
+        // field, or standing on it.
+        let meeting = (53, 22);
+        let partner_at = if partner_step == AttackStep::Meeting {
+            (45, 22)
+        } else {
+            meeting
+        };
+        let partner = soldier(&mut world, partner_at, partner_step);
+        if partner_step == AttackStep::Meeting {
+            let mut w = Walker::new(partner_at);
+            w.walk((46..=53).map(|x| (x, 22)));
+            world.settlers[partner].as_mut().unwrap().walker = w;
+        }
+        {
+            let s = world.settlers[interceptor].as_mut().unwrap();
+            s.walker = Walker::new(wait);
+            s.job = SettlerJob::Defend {
+                home: other,
+                health: 3,
+                step: DefendStep::Waiting,
+                opponent: Some(partner),
+                intercept: true,
+                defends: Some(target),
+                meeting: None,
+            };
+        }
+        for (soldier, field, opponent) in [
+            (attacker, field, None),
+            (partner, meeting, Some(interceptor)),
+        ] {
+            world.attackers.push(crate::AttackRecord {
+                soldier,
+                target,
+                counter: 0,
+                field: Some(field),
+                opponent,
+                hit: false,
+                offset: None,
+                paired: 0,
+            });
+        }
+        world.step();
+        let taken = world.attack_records()[0].opponent;
+        if partner_step == AttackStep::Meeting {
+            assert_eq!(taken, Some(interceptor), "the other building's interceptor");
+        } else {
+            assert!(taken.is_some(), "the target's own soldier");
+            assert_ne!(taken, Some(interceptor), "held by his arrived partner");
+        }
+    }
+}
+
+// T41 (MIL-ATK-4.3 whose fields, 4.4, E-mil-035): an attacker standing on
+// the meeting field M an interception gave him is paired by the checks of
+// 4.4 (with the target's own soldier: his interceptor has been taken by
+// another attacker). His wait job's search starts on M, which the
+// interceptor's record still keeps as its meeting field: M is taken, and he
+// walks to another field. Without that meeting field kept he stays on M.
+// spec: MIL-ATK-4.3 (T41), MIL-ATK-4.4
+#[test]
+fn atk_t41_the_search_at_the_wait_start_counts_meeting_fields() {
+    for kept in [true, false] {
+        let mut world = scene();
+        fill(&mut world, P1, BARRACKS, TARGET, &[(0, 3)]);
+        fill(&mut world, P1, BARRACKS, (60, 20), &[(0, 3)]);
+        fill(&mut world, P0, GUARD, (40, 20), &[(0, 3), (0, 3), (0, 3)]);
+        let target = world.target_of(TARGET).unwrap();
+        let other = world.target_of((60, 20)).unwrap();
+        let interceptor = garrison(&mut world, (60, 20), 0, 3);
+        let home = world.target_of((40, 20)).unwrap();
+        let soldier = |world: &mut World, at: Point, step| {
+            let id = world.add_settler(Settler {
+                number: 0,
+                player: P0,
+                profession: crate::military_tests::RANK[0],
+                list: crate::SettlerList::Soldiers,
+                walker: Walker::new(at),
+                job: SettlerJob::Attack {
+                    home,
+                    health: 3,
+                    step,
+                },
+                timer: 0,
+                carrying: None,
+            });
+            world.military.get_mut(&(40, 20)).unwrap().soldiers.push(id);
+            id
+        };
+        let meeting = (53, 22);
+        let wait = (52, 20);
+        let attacker = soldier(&mut world, meeting, AttackStep::Arrived);
+        let other_attacker = soldier(&mut world, wait, AttackStep::Waiting);
+        {
+            let s = world.settlers[interceptor].as_mut().unwrap();
+            s.walker = Walker::new(wait);
+            s.job = SettlerJob::Defend {
+                home: other,
+                health: 3,
+                step: DefendStep::Waiting,
+                opponent: Some(other_attacker),
+                intercept: true,
+                defends: Some(target),
+                meeting: kept.then_some(meeting),
+            };
+        }
+        for (soldier, field, opponent) in [
+            (attacker, meeting, None),
+            (other_attacker, wait, Some(interceptor)),
+        ] {
+            world.attackers.push(crate::AttackRecord {
+                soldier,
+                target,
+                counter: 0,
+                field: Some(field),
+                opponent,
+                hit: false,
+                offset: None,
+                paired: 0,
+            });
+        }
+        world.step();
+        let r = world.attack_records()[0].clone();
+        assert!(r.opponent.is_some() && r.opponent != Some(interceptor));
+        let s = world.settlers[attacker].as_ref().unwrap();
+        let step = match s.job {
+            SettlerJob::Attack { step, .. } => step,
+            ref j => panic!("{j:?}"),
+        };
+        if kept {
+            assert_ne!(r.field, Some(meeting), "M is taken");
+            assert_eq!(step, AttackStep::Walking);
+            assert_eq!(s.walker.destination(), r.field.unwrap());
+            assert!(r.offset.is_none(), "no step on M");
+        } else {
+            assert_eq!(r.field, Some(meeting));
+            assert_eq!(step, AttackStep::Waiting);
+        }
+    }
+}
+
+// T42 (MIL-ATK-5.3 an interceptor's first walk, E-mil-036): an
+// interceptor's walk to his meeting field M ends in update U: he turns to
+// defense wait and nothing more. With M his attacker's waiting field, his
+// Defend job starts in U + 1 (a walk of no length), its end is seen in U + 2
+// and his arrival (the pair fighting) counts in U + 3. With another waiting
+// field he walks on from M in U + 1.
+// spec: MIL-ATK-5.3 (T42)
+#[test]
+fn atk_t42_an_interceptors_first_walk() {
+    for same in [true, false] {
+        let mut world = scene();
+        fill(&mut world, P1, BARRACKS, TARGET, &[(0, 3)]);
+        fill(&mut world, P1, BARRACKS, (60, 20), &[(0, 3)]);
+        fill(&mut world, P0, GUARD, (40, 20), &[(0, 3), (0, 3)]);
+        let target = world.target_of(TARGET).unwrap();
+        let other = world.target_of((60, 20)).unwrap();
+        let interceptor = garrison(&mut world, (60, 20), 0, 3);
+        let home = world.target_of((40, 20)).unwrap();
+        let meeting = (53, 22);
+        let field = if same { meeting } else { (52, 22) };
+        let attacker = world.add_settler(Settler {
+            number: 0,
+            player: P0,
+            profession: crate::military_tests::RANK[0],
+            list: crate::SettlerList::Soldiers,
+            walker: Walker::new(field),
+            job: SettlerJob::Attack {
+                home,
+                health: 3,
+                step: AttackStep::Waiting,
+            },
+            timer: 0,
+            carrying: None,
+        });
+        world
+            .military
+            .get_mut(&(40, 20))
+            .unwrap()
+            .soldiers
+            .push(attacker);
+        world.attackers.push(crate::AttackRecord {
+            soldier: attacker,
+            target,
+            counter: 0,
+            field: Some(field),
+            opponent: Some(interceptor),
+            hit: false,
+            offset: None,
+            paired: 1,
+        });
+        {
+            let s = world.settlers[interceptor].as_mut().unwrap();
+            // His walk to M has ended: his update U sees it.
+            s.walker = Walker::new(meeting);
+            s.job = SettlerJob::Defend {
+                home: other,
+                health: 3,
+                step: DefendStep::Meeting,
+                opponent: Some(attacker),
+                intercept: true,
+                defends: Some(target),
+                meeting: Some(meeting),
+            };
+        }
+        let step = |w: &World| match w.settlers[interceptor].as_ref().unwrap().job {
+            SettlerJob::Defend { step, .. } => step,
+            ref j => panic!("{j:?}"),
+        };
+        world.step();
+        assert_eq!(step(&world), DefendStep::Out, "U: defense wait only");
+        assert!(!world.settlers[interceptor]
+            .as_ref()
+            .unwrap()
+            .walker
+            .is_walking());
+        if same {
+            world.step();
+            assert_eq!(step(&world), DefendStep::Out, "U + 1: the job starts");
+            world.step();
+            assert_eq!(step(&world), DefendStep::Out, "U + 2: its end seen");
+            world.step();
+            assert_eq!(step(&world), DefendStep::Waiting, "U + 3: arrival");
+        } else {
+            world.step();
+            let s = world.settlers[interceptor].as_ref().unwrap();
+            assert_eq!(s.walker.destination(), field, "U + 1: on from M");
+        }
+    }
+}
+
+/// T43's scene: an attacker waiting unpaired on (53, 22) for the target
+/// (which has a soldier inside), then an interceptor of (60, 20) defending
+/// it, updated after the attacker, whose fight job has just ended on
+/// (52, 21) (`Ended`). Returns (world, attacker, interceptor).
+fn t43_scene() -> (World, usize, usize) {
+    let mut world = scene();
+    fill(&mut world, P1, BARRACKS, TARGET, &[(0, 3)]);
+    fill(&mut world, P1, BARRACKS, (60, 20), &[(0, 3)]);
+    fill(&mut world, P0, GUARD, (40, 20), &[(0, 3), (0, 3)]);
+    let target = world.target_of(TARGET).unwrap();
+    let other = world.target_of((60, 20)).unwrap();
+    let home = world.target_of((40, 20)).unwrap();
+    let field = (53, 22);
+    let attacker = world.add_settler(Settler {
+        number: 0,
+        player: P0,
+        profession: crate::military_tests::RANK[0],
+        list: crate::SettlerList::Soldiers,
+        walker: Walker::new(field),
+        job: SettlerJob::Attack {
+            home,
+            health: 3,
+            step: AttackStep::Waiting,
+        },
+        timer: 0,
+        carrying: None,
+    });
+    world
+        .military
+        .get_mut(&(40, 20))
+        .unwrap()
+        .soldiers
+        .push(attacker);
+    world.attackers.push(crate::AttackRecord {
+        soldier: attacker,
+        target,
+        counter: 0,
+        field: Some(field),
+        opponent: None,
+        hit: false,
+        offset: None,
+        paired: 0,
+    });
+    let interceptor = garrison(&mut world, (60, 20), 0, 3);
+    assert!(interceptor > attacker, "updated after the attacker");
+    let s = world.settlers[interceptor].as_mut().unwrap();
+    s.walker = Walker::new((52, 21));
+    s.job = SettlerJob::Defend {
+        home: other,
+        health: 3,
+        step: DefendStep::Ended,
+        opponent: None,
+        intercept: true,
+        defends: Some(target),
+        meeting: Some((52, 21)),
+    };
+    (world, attacker, interceptor)
+}
+
+// T43 (MIL-ATK-5.1 read from the records, E-mil-037): the opponent search
+// reads only the interceptors' records: one whose fight job has just ended
+// counts as unpaired in that very update, and the attacker waiting for the
+// same target takes him (not the target's own soldier).
+// spec: MIL-ATK-5.1 (T43)
+#[test]
+fn atk_t43_an_interceptor_whose_duel_just_ended_is_unpaired() {
+    let (mut world, _, interceptor) = t43_scene();
+    world.step();
+    assert_eq!(world.attack_records()[0].opponent, Some(interceptor));
 }
 
 // T26 (MIL-ATK-6.1a, E-mil-024): an attacker walking to the meeting field
@@ -1079,6 +1446,7 @@ fn pair_on_field(ra: usize, ha: u32, rd: usize, hd: u32) -> (World, usize, usize
         opponent: Some(attacker),
         intercept: false,
         defends: None,
+        meeting: None,
     };
     (world, attacker, defender, field)
 }
@@ -1631,6 +1999,7 @@ fn atk_t33_home_one_update_after_the_step_in_but_not_at_a_castle() {
                 opponent: None,
                 intercept: false,
                 defends: None,
+                meeting: None,
             },
             timer: 0,
             carrying: None,
@@ -2508,6 +2877,7 @@ fn atk_t20_the_interceptor_waits_and_fights_on_the_next_attackers_field() {
             opponent: Some(a1),
             intercept: true,
             defends: Some(target),
+            meeting: None,
         };
     }
     let job = |world: &World| world.settlers[interceptor].as_ref().unwrap().job.clone();
@@ -2616,6 +2986,7 @@ fn atk_t38_rounds_in_the_order_the_pairs_were_made() {
         opponent: Some(a2),
         intercept: false,
         defends: None,
+        meeting: None,
     };
     // The second record's pair was made first.
     world.attackers[0].paired = 2;
@@ -2653,4 +3024,41 @@ fn atk_6_3b_a_new_pair_is_the_newest() {
     let home = world.target_of(TARGET).unwrap();
     world.pair(1, defender, home, false, None);
     assert_eq!(world.attackers[1].paired, 6);
+}
+
+// T43 (MIL-ATK-6.6 an interceptor paired in the update his fight job ends,
+// E-mil-037): taken in that update, he still runs through the end of his
+// fight job: his next update is defense wait and nothing more, and his walk
+// to the new attacker's field starts (progress 0) in the update after. One
+// paired while already in defense wait starts that walk in his first update
+// after the pairing.
+// spec: MIL-ATK-6.6 (T43), MIL-ATK-5.1
+#[test]
+fn atk_t43_paired_as_his_fight_job_ends_he_walks_one_update_later() {
+    for ended in [true, false] {
+        let (mut world, _, interceptor) = t43_scene();
+        if !ended {
+            if let SettlerJob::Defend { step, .. } =
+                &mut world.settlers[interceptor].as_mut().unwrap().job
+            {
+                *step = DefendStep::Waiting;
+            }
+        }
+        let walking = |w: &World| {
+            let s = w.settlers[interceptor].as_ref().unwrap();
+            s.walker.is_walking() && s.walker.destination() == (53, 22)
+        };
+        // T: the attacker takes him; his own update follows.
+        world.step();
+        assert_eq!(world.attack_records()[0].opponent, Some(interceptor));
+        if ended {
+            assert!(!walking(&world), "T: defense wait only");
+            world.step();
+            assert!(walking(&world), "T + 1: the walk");
+            let s = world.settlers[interceptor].as_ref().unwrap();
+            assert_eq!(s.walker.progress_bits, 0, "at progress 0");
+        } else {
+            assert!(walking(&world), "T: the walk at once");
+        }
+    }
 }

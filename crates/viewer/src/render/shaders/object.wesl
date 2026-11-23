@@ -35,6 +35,14 @@ const FACET_GROUND: u32 = 16u;
 const FACET_TREE: u32 = 17u;
 // Hook W30c: a project's map object (a project's tree without the sway).
 const FACET_OBJECT: u32 = 18u;
+// Hook W30d: a project's figure: a map object's look in the settlers' light
+// (GFX-OBJ-3.3: the luminances, untinted), on a ramp whose dark end is not
+// black, as the settlers' colour ramps.
+const FACET_FIGURE: u32 = 19u;
+// The settlers' ramps a carrier wears (skin, jacket, trousers, belt and
+// shoes), the luminance of the darkest step over the brightest: 0.43,
+// 0.15, 0.16, 0.21; their mean.
+const FIGURE_FLOOR: f32 = 0.24;
 // Hook W30b: a project's building at night is darkened as the original's
 // houses are by their light map (`project::NIGHT_LIGHT_MAP`), by how much
 // of the night it is: the light's and ambient's luminances added, 1.4377
@@ -317,7 +325,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
         raw_n = -raw_n;
         ln = -ln;
     }
-    if f == FACET_TREE || f == FACET_OBJECT {
+    if f == FACET_TREE || f == FACET_OBJECT || f == FACET_FIGURE {
         // Hook W30b: the moved face's own normal, turned to the eye (both
         // sides drawn, as the file's normals are); W30c: a map object's
         // the same (it does not move).
@@ -332,7 +340,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
     // GFX-VIEW-2.5 b, GFX-OBJ-2.3a d (Run D): every object receives
     // shadows, the ground decal too.
     var shadow_point = in.world_position;
-    if f == FACET || f == FACET_TREE || f == FACET_OBJECT {
+    if f == FACET || f == FACET_TREE || f == FACET_OBJECT || f == FACET_FIGURE {
         shadow_point = facet_shadow_point(in.world_position, n);
     }
     let shadow = shadow_at(shadow_point, n, in.clip);
@@ -408,7 +416,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
             let result = d * tex.rgb * colour_map;
             rgb = mix(result, result * light_map, saturate(vec3<f32>(1.5) - d));
         }
-    } else if f == FACET || f == FACET_TREE || f == FACET_OBJECT {
+    } else if f == FACET || f == FACET_TREE || f == FACET_OBJECT || f == FACET_FIGURE {
         // Hook W30: a project's model. Cut by the rising plane as a house
         // (GFX-OBJ-2.6b, 8.4). Colour: palette x vertex colour (the face's
         // occlusion), times the owner's colour on the team part (mode.z).
@@ -434,7 +442,17 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
         let lit = select(0.0, 1.0, lambert > 0.0);
         let spec = pow(saturate(dot(n, h)), mix(64.0, 4.0, rough)) * (1.0 - rough)
             * mix(0.04, 1.0, metal) * lit * shadow;
-        rgb = d * albedo * (1.0 - 0.5 * metal)
+        var lit_by = d;
+        if f == FACET_FIGURE {
+            // W30d: the settlers' scalar D = N.L x lum(light) x shadow +
+            // lum(ambient) (untinted: the night's blue does not take the
+            // warm colours), on a ramp from FIGURE_FLOOR to the colour at
+            // D = 1, scaled so the noon's lit side is the map objects' (the
+            // luminances at noon add to NIGHT_DAY).
+            let ds = lambert * light.light_color.w * shadow + light.ambient.w * occlusion;
+            lit_by = vec3<f32>(NIGHT_DAY * (FIGURE_FLOOR + (1.0 - FIGURE_FLOOR) * saturate(ds)));
+        }
+        rgb = lit_by * albedo * (1.0 - 0.5 * metal)
             + light.light_color.rgb * spec * mix(vec3<f32>(1.0), albedo, metal);
         if f == FACET {
             // W30b: a building at night, as by the original's light maps.

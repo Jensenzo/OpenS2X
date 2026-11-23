@@ -112,6 +112,57 @@ pub struct Extensions {
     /// landscape element's, by their rules name. Default none: every one as
     /// the original draws it.
     pub object_looks: Vec<ObjectLook>,
+    /// Hook W30d: settler kinds (the carriers, of every tribe) drawn as a
+    /// figure of rigid parts with motions of its own (a `.glb`, and a far
+    /// version) in place of the install's skinned model and clips, by their
+    /// rules name. Default none: every settler as the original draws it.
+    pub figure_looks: Vec<FigureLook>,
+}
+
+/// Hook W30d: a settler kind's look from a project's own figure, a binary
+/// glTF file (`.glb`) of rigid parts that turn at their joints, moved by
+/// clips of its own, drawn where and as the game draws that kind (its
+/// place, heading and turn, the stepping aside, the blend between ticks,
+/// the ware at the hand, shadows, the day's light); its clips are chosen by
+/// the motion the game asks for. What the file must hold:
+/// `docs/extending.md`, "A figure's own model".
+#[derive(Debug, Clone, PartialEq)]
+pub struct FigureLook {
+    /// The kind by its name in the rules: `Carrier` the road carriers (of
+    /// every tribe); a profession's job name for the others.
+    pub figure: String,
+    /// The model: its path below the install (`data/...`, any case), found
+    /// in the asset folders first, as the install's files.
+    pub model: String,
+    /// A lighter model with the same nodes, points and clips, drawn while
+    /// the figure is small on the screen. Default none: the model at every
+    /// size.
+    pub far: Option<String>,
+    /// The far version is drawn while the figure's height on the screen is
+    /// below this share of the view's height. Default [`FIGURE_FAR_BELOW`].
+    pub far_below: f32,
+}
+
+/// Hook W30d: the default switch to a figure's far version: 4 percent of
+/// the view's height (43 pixels of a 1080-pixel view). The size is the
+/// figure's standing height (2.15 for the trial's carrier) over the view's
+/// height at its depth, as the trees' ([`TREE_FAR_BELOW`]): in the middle of
+/// the view a standing figure is drawn about 46 pixels high at the default
+/// zoom (21.4 pixels a unit) and 36 at the farthest (16.8), so the far
+/// version shows at the farthest zoom and along the far edge of the
+/// default's.
+pub const FIGURE_FAR_BELOW: f32 = 0.04;
+
+impl FigureLook {
+    /// The kind `figure`'s look from `model`, with no far version.
+    pub fn new(figure: &str, model: &str) -> Self {
+        Self {
+            figure: figure.into(),
+            model: model.into(),
+            far: None,
+            far_below: FIGURE_FAR_BELOW,
+        }
+    }
 }
 
 /// Hook W30c: the look of a kind of thing lying on the map from a
@@ -702,30 +753,41 @@ struct Shared {
     building_looks: Vec<BuildingLook>,
     tree_looks: Vec<TreeLook>,
     object_looks: Vec<ObjectLook>,
+    figure_looks: Vec<FigureLook>,
 }
 
 static SHARED: OnceLock<Shared> = OnceLock::new();
 
 /// Keep the asset folders, render options, the music switch and the
-/// buildings', trees' and map objects' own looks for [`find`], [`render`],
-/// [`music_external`], [`building_looks`], [`tree_looks`] and
-/// [`object_looks`]. The first call wins (one game per process).
+/// buildings', trees', map objects' and figures' own looks for [`find`],
+/// [`render`], [`music_external`], [`building_looks`], [`tree_looks`],
+/// [`object_looks`] and [`figure_looks`]. The first call wins (one game per
+/// process).
 pub(crate) fn install(
     asset_folders: Vec<PathBuf>,
     render: RenderOptions,
     music_external: bool,
-    building_looks: Vec<BuildingLook>,
-    tree_looks: Vec<TreeLook>,
-    object_looks: Vec<ObjectLook>,
+    looks: Looks,
 ) {
     let _ = SHARED.set(Shared {
         asset_folders,
         render,
         music_external,
-        building_looks,
-        tree_looks,
-        object_looks,
+        building_looks: looks.buildings,
+        tree_looks: looks.trees,
+        object_looks: looks.objects,
+        figure_looks: looks.figures,
     });
+}
+
+/// The projects' own looks of the things on the map (hooks W30 .. W30d),
+/// as [`install`] keeps them.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Looks {
+    pub buildings: Vec<BuildingLook>,
+    pub trees: Vec<TreeLook>,
+    pub objects: Vec<ObjectLook>,
+    pub figures: Vec<FigureLook>,
 }
 
 /// Hook W30: the building types' own looks (none until [`install`]).
@@ -741,6 +803,37 @@ pub(crate) fn tree_looks() -> &'static [TreeLook] {
 /// Hook W30c: the map objects' own looks (none until [`install`]).
 pub(crate) fn object_looks() -> &'static [ObjectLook] {
     SHARED.get().map_or(&[][..], |s| &s.object_looks[..])
+}
+
+/// Hook W30d: the settler kinds' own figures (none until [`install`]).
+pub(crate) fn figure_looks() -> &'static [FigureLook] {
+    SHARED.get().map_or(&[][..], |s| &s.figure_looks[..])
+}
+
+/// Hook W30d: the figure look drawing a settler kind (`Carrier`, a job's
+/// name), if a project gave one (the last of a kind wins).
+pub(crate) fn figure_look_of(kind: &str) -> Option<&'static FigureLook> {
+    figure_looks().iter().rev().find(|l| l.figure == kind)
+}
+
+/// Hook W30d: the first of `models` (figures' files) that cannot be drawn:
+/// as [`unusable_model`], and a figure lacking what its contract asks
+/// (`models3d::figure::lacks`). The error starts with the file's name.
+pub(crate) fn unusable_figure<'a>(
+    folders: &[PathBuf],
+    root: &std::path::Path,
+    models: impl IntoIterator<Item = &'a str>,
+) -> Result<(), String> {
+    for model in models {
+        let path = s2_assets::find_in(folders, root, model)
+            .map_err(|e| format!("{model}: not found ({e})"))?;
+        let data = crate::files::read(&path).map_err(|e| format!("{model}: {e}"))?;
+        let glb = s2_assets::glb::load(&data).map_err(|e| format!("{model}: {e}"))?;
+        if let Some(lack) = crate::render::models3d::figure::lacks(&glb) {
+            return Err(format!("{model}: {lack}"));
+        }
+    }
+    Ok(())
 }
 
 /// Hook W30c: the first of `models` (looks' files) that cannot be drawn:

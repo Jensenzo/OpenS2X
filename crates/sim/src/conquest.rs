@@ -149,29 +149,10 @@ impl World {
             self.attacker_goes_home(settler, number, home, health);
             return;
         }
-        // 2.2 step 1: interceptors out for the target lose that errand.
-        for r in 0..self.attackers.len() {
-            if self.attackers[r].target != target {
-                continue;
-            }
-            let intercepting = self.attackers[r].opponent.is_some_and(|o| {
-                self.settlers
-                    .get(o)
-                    .and_then(|s| s.as_ref())
-                    .is_some_and(|s| {
-                        matches!(
-                            s.job,
-                            SettlerJob::Defend {
-                                intercept: true,
-                                ..
-                            }
-                        )
-                    })
-            });
-            if intercepting {
-                self.attackers[r].opponent = None;
-            }
-        }
+        // 2.2 step 1 (corrected, T19, E-mil-038): nothing is done to the
+        // target's interceptors at the take-over. A pair holds (the duel, or
+        // the walk to it, goes on); an interceptor finds the building he
+        // defends gone in defense wait and walks home (MIL-ATK-3.4).
         // 2
         self.message(old.owner, at, "Lost Military Building to enemy.");
         // 3: removed without remains, together with its flag, which stays

@@ -51,6 +51,25 @@ pub(crate) fn shot_folder(project: Option<PathBuf>, option: &Path) -> PathBuf {
     project.unwrap_or_else(|| option.to_path_buf())
 }
 
+/// `--shot-frames`: the game time of each frame of a sequence (60 frames a
+/// second).
+pub(crate) const SEQUENCE_FRAME: f32 = 1.0 / 60.0;
+
+/// `--shot-frames`: the file of frame `k` of a shot of `frames` frames:
+/// the shot's own for one, `<stem>-NN.<ext>` for a sequence.
+pub(crate) fn sequence_path(path: &Path, k: u32, frames: u32) -> PathBuf {
+    if frames <= 1 {
+        return path.to_path_buf();
+    }
+    let stem = path
+        .file_stem()
+        .map_or_else(Default::default, |s| s.to_string_lossy());
+    let ext = path
+        .extension()
+        .map_or_else(|| "png".into(), |e| e.to_string_lossy());
+    path.with_file_name(format!("{stem}-{k:02}.{ext}"))
+}
+
 /// `--compare`: frames drawn after the scene is built before the shot.
 pub(crate) const COMPARE_FRAMES: u32 = 1;
 
@@ -149,12 +168,18 @@ pub(crate) fn automatic_shot(
         return;
     }
     let due = !viewer.compare && viewer.frames_since_load >= viewer.shot_after;
+    let frames = viewer.shot_frames.max(1);
     match viewer.shot_taken_at {
         None if due => {
-            take_screenshot(&mut commands, path);
+            take_screenshot(&mut commands, sequence_path(&path, 0, frames));
             viewer.shot_taken_at = Some(viewer.frames_since_load);
         }
-        Some(taken) if viewer.frames_since_load >= taken + SHOT_SETTLE_FRAMES => {
+        // `--shot-frames`: the next frames of the sequence.
+        Some(taken) if viewer.frames_since_load < taken + frames => {
+            let k = viewer.frames_since_load - taken;
+            take_screenshot(&mut commands, sequence_path(&path, k, frames));
+        }
+        Some(taken) if viewer.frames_since_load >= taken + frames + SHOT_SETTLE_FRAMES => {
             exit.write(if viewer.error.is_some() {
                 AppExit::error()
             } else {
@@ -177,6 +202,25 @@ mod tests {
         assert!(!keep_capture(false, 1));
         assert!(!keep_capture(false, COMPARE_TRIES - 1));
         assert!(keep_capture(false, COMPARE_TRIES));
+    }
+
+    // spec: none (the picture tools' --shot-frames: a sequence's files)
+    #[test]
+    fn a_sequence_names_its_frames() {
+        let p = Path::new("out/walk.png");
+        assert_eq!(sequence_path(p, 0, 1), PathBuf::from("out/walk.png"));
+        assert_eq!(sequence_path(p, 0, 16), PathBuf::from("out/walk-00.png"));
+        assert_eq!(sequence_path(p, 15, 16), PathBuf::from("out/walk-15.png"));
+        let o = crate::app::options::parse_from(
+            false,
+            ["--shot", "a.png", "--shot-frames", "16"].map(String::from),
+        )
+        .expect("parses");
+        assert_eq!(o.shot_frames, 16);
+        assert!(
+            crate::app::options::parse_from(false, ["--shot-frames", "0"].map(String::from))
+                .is_err()
+        );
     }
 
     // spec: none (the golden pictures' --still: no hover depends on the desktop's pointer)

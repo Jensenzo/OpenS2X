@@ -24,6 +24,23 @@ const LEAVE_DELAY: u32 = 2;
 /// MIL-ATK-1.4: the fractions of the dialog's four count buttons.
 pub const COUNT_FRACTIONS: [f32; 4] = [0.25, 0.5, 0.75, 1.0];
 
+/// MIL-ATK-3.1 (corrected 2026-11-21 eve, T39): the interceptors a building
+/// with `present` soldiers at home provides at the distance `e` from the
+/// target under the owner's "Intercepting Defenders" setting `outside`:
+/// none unless (present - 1) x outside > 0; then min(36 - e, 24) times the
+/// float32 1/24 (the attack count's distance factor, MIL-ATK-1.1 item 7),
+/// times that product, truncated, in float32 as the spec orders it (up to
+/// 12 fields the factor is exactly 1: trunc((present - 1) x outside) as
+/// before).
+pub(crate) fn interceptor_count(present: usize, outside: f32, e: u32) -> usize {
+    let wanted = (present as f32 - 1.0) * outside;
+    if wanted <= 0.0 {
+        return 0;
+    }
+    let factor = (36u32.saturating_sub(e)).min(24) as f32 * (1.0f32 / 24.0);
+    (factor * wanted) as usize
+}
+
 pub(crate) const UNDER_ATTACK: &str = "You are under attack!";
 
 /// Where an attacker is in its errand.
@@ -82,6 +99,10 @@ pub enum DefendStep {
     Held,
     /// MIL-ATK-4.4 (T33, T33a): as [`AttackStep::In`].
     In,
+    /// MIL-ATK-5.3 an interceptor's first walk (T42, E-mil-036): walking to
+    /// his meeting field (MIL-ATK-3.3), not with his Defend job; in the
+    /// update it ends he turns to defense wait and does nothing more.
+    Meeting,
 }
 
 /// MIL-ATK-2.3: the attacker record.
@@ -503,7 +524,7 @@ impl World {
                 }
             }
             let present = self.idle_soldiers(at).len();
-            let j = ((present as f32 - 1.0) * outside).max(0.0) as usize;
+            let j = interceptor_count(present, outside, e);
             let out = self.interceptors_out(at);
             for _ in out..j {
                 // 3.2: the first attacker still at home without a field.
@@ -564,17 +585,44 @@ impl World {
 
     /// MIL-ATK-4.3: the first free field of a breadth-first search from
     /// `start` over walkable fields, the start itself first. `own` is the
-    /// soldier looking, whose own field does not count as taken.
+    /// soldier looking.
+    /// MIL-ATK-4.3 whose fields (T41, E-mil-035): the test leaves out every
+    /// record whose soldier or opponent is he or the soldier he is paired
+    /// with; every other attacker's waiting field and every interceptor's
+    /// meeting field counts.
     pub(crate) fn free_field(&self, start: Point, own: Option<usize>) -> Option<Point> {
+        let partner = own.and_then(|o| {
+            self.attackers
+                .iter()
+                .find(|r| r.soldier == o)
+                .and_then(|r| r.opponent)
+        });
+        let pair = |id: Option<usize>| id.is_some() && (id == own || id == partner);
+        let mut taken_fields: Vec<Point> = self
+            .attackers
+            .iter()
+            .filter(|r| !pair(Some(r.soldier)) && !pair(r.opponent))
+            .filter_map(|r| r.field)
+            .collect();
+        for (id, s) in self.settlers() {
+            if let SettlerJob::Defend {
+                intercept: true,
+                meeting: Some(m),
+                opponent,
+                ..
+            } = s.job
+            {
+                if !pair(Some(id)) && !pair(opponent) {
+                    taken_fields.push(m);
+                }
+            }
+        }
         let mut seen = vec![false; self.terrain.len()];
         seen[self.terrain.index(start)] = true;
         let mut queue = VecDeque::from([start]);
         while let Some(f) = queue.pop_front() {
             let index = self.terrain.index(f);
-            let taken = self
-                .attackers
-                .iter()
-                .any(|r| r.field == Some(f) && Some(r.soldier) != own);
+            let taken = taken_fields.contains(&f);
             if !taken && self.streets[index].is_none() && self.flags[index].is_none() {
                 return Some(f);
             }
@@ -631,13 +679,34 @@ impl World {
             opponent: Some(attacker),
             intercept,
             defends,
+            meeting: if intercept { field } else { None },
         };
         settler.timer = if intercept { LEAVE_DELAY } else { 0 };
     }
 
-    /// MIL-ATK-5.1, 3.4: the first unpaired interceptor of the building
-    /// `target` itself, waiting outside (defense wait), in settler order.
+    /// MIL-ATK-5.1, 3.4: the first unpaired interceptor defending the
+    /// building `target`, waiting outside (defense wait), in settler order.
     fn waiting_interceptor(&self, target: Target) -> Option<usize> {
+        // MIL-ATK-5.1 read from the records (T43, E-mil-037): the records
+        // only, never what he does: one whose duel has just ended (his fight
+        // job saw the pair gone, `Ended`) is unpaired in that very update.
+        // MIL-ATK-5.1 which interceptor (T40): one that defends the target,
+        // whichever building he came from, and is unpaired: a partner from
+        // the pairing still walking to the meeting field does not hold him.
+        let meeting = |o: usize| {
+            self.settlers
+                .get(o)
+                .and_then(|s| s.as_ref())
+                .is_some_and(|s| {
+                    matches!(
+                        s.job,
+                        SettlerJob::Attack {
+                            step: AttackStep::Meeting,
+                            ..
+                        }
+                    )
+                })
+        };
         self.settlers()
             .find(|(_, s)| {
                 matches!(
@@ -645,10 +714,12 @@ impl World {
                     SettlerJob::Defend {
                         home,
                         intercept: true,
-                        opponent: None,
-                        step: DefendStep::Waiting,
+                        opponent,
+                        defends,
+                        step: DefendStep::Waiting | DefendStep::Ended,
                         ..
-                    } if home == target
+                    } if (home == target || defends == Some(target))
+                        && opponent.is_none_or(meeting)
                 ) && !s.walker.is_walking()
             })
             .map(|(id, _)| id)
@@ -669,6 +740,13 @@ impl World {
         }
         let settler = self.settlers[id].as_mut().expect("an interceptor");
         if let SettlerJob::Defend { step, opponent, .. } = &mut settler.job {
+            // MIL-ATK-6.6 (T43, E-mil-037): paired in the update his fight
+            // job ends, he still turns to defense wait in his next update
+            // and walks (at progress 0) in the one after (the timer: 3,
+            // read as 2, then 1).
+            if *step == DefendStep::Ended {
+                settler.timer = 3;
+            }
             *step = DefendStep::Out;
             *opponent = Some(attacker);
         }
@@ -1078,6 +1156,9 @@ impl World {
                     self.find_opponent(record, settler.player);
                 }
                 settler.job = set(AttackStep::Waiting);
+                if self.attackers[record].opponent.is_some() {
+                    self.wait_start_search(settler, record);
+                }
             }
             AttackStep::Waiting => {
                 let field = self.attackers[record].field;
@@ -1116,6 +1197,9 @@ impl World {
                         // Paired here, his wait job starts: the draw and
                         // the step in its next update (Q-1050 a).
                         self.find_opponent(record, settler.player);
+                        if self.attackers[record].opponent.is_some() {
+                            self.wait_start_search(settler, record);
+                        }
                     }
                     return true;
                 }
@@ -1156,6 +1240,38 @@ impl World {
         self.target_flag(target).unwrap_or(target.at)
     }
 
+    /// MIL-ATK-4.3, 4.4 (T41, E-mil-035): an attacker standing on a field
+    /// (a meeting field, or a waiting field where he stood unpaired) has
+    /// just been paired by the checks of 4.4: his wait job starts, which
+    /// clears his field and searches again from where he stands, his new
+    /// opponent's records left out. The field he stands on: nothing changes.
+    /// Another: his wait job walks him there, and he makes his offset step
+    /// on arriving (6.1a, as an attacker paired at the door).
+    fn wait_start_search(&mut self, settler: &mut Settler, record: usize) {
+        let at = settler.walker.at;
+        let kept = self.attackers[record].field;
+        self.attackers[record].field = None;
+        let number = self.attackers[record].soldier;
+        let Some(field) = self.free_field(at, Some(number)) else {
+            self.attackers[record].field = kept;
+            return;
+        };
+        self.attackers[record].field = Some(field);
+        if field == at {
+            return;
+        }
+        self.attackers[record].offset = None;
+        if self.walk_to(settler, field) {
+            if let SettlerJob::Attack { home, health, .. } = settler.job {
+                settler.job = SettlerJob::Attack {
+                    home,
+                    health,
+                    step: AttackStep::Walking,
+                };
+            }
+        }
+    }
+
     /// MIL-ATK-4.2: the attacker has reached the target's door.
     fn attacker_at_door(
         &mut self,
@@ -1191,7 +1307,7 @@ impl World {
     }
 
     /// MIL-ATK-5.1: pair the attacker (a soldier of `attacking`) with the
-    /// first unpaired interceptor of the target itself waiting outside
+    /// first unpaired interceptor defending the target, waiting outside
     /// (MIL-ATK-3.4); otherwise, if the target's owner is an enemy, with one
     /// of the target's idle soldiers.
     fn find_opponent(&mut self, record: usize, attacking: PlayerId) {
@@ -1241,6 +1357,10 @@ impl World {
                 .iter()
                 .position(|r| r.soldier == a && r.opponent == Some(number) && r.field.is_some())
         });
+        let meeting = match settler.job {
+            SettlerJob::Defend { meeting, .. } => meeting,
+            _ => None,
+        };
         let set = |step, opponent| SettlerJob::Defend {
             home,
             health,
@@ -1248,6 +1368,7 @@ impl World {
             opponent,
             intercept,
             defends,
+            meeting,
         };
         let arrived = !settler.walker.is_walking();
         // MIL-ATK-6.6 (T32, E-mil-025, E-mil-026): in his fight, the pair
@@ -1318,20 +1439,54 @@ impl World {
                 // own defender too (MIL-ATK-5.3), goes out through his own
                 // flag first; on it, in the arrival tick, on to the field
                 // (`DefendStep::Out`).
+                // MIL-ATK-5.3 (T42): an interceptor's first walk goes to his
+                // meeting field (`DefendStep::Meeting`).
+                let out = if intercept && meeting.is_some() {
+                    DefendStep::Meeting
+                } else {
+                    DefendStep::Out
+                };
                 if let Some(flag) = self.own_flag_step(settler, home) {
                     settler.walker.walk([flag]);
-                    settler.job = set(DefendStep::Out, opponent);
+                    settler.job = set(out, opponent);
                     return true;
                 }
+                let field = match (out, meeting) {
+                    (DefendStep::Meeting, Some(m)) => m,
+                    _ => self.attackers[record.expect("paired")]
+                        .field
+                        .expect("a field"),
+                };
+                if self.walk_to(settler, field) {
+                    settler.job = set(out, opponent);
+                }
+            }
+            DefendStep::Meeting => {
+                if !arrived {
+                    return true;
+                }
+                let m = meeting.expect("a meeting field");
+                if settler.walker.at != m {
+                    self.walk_to(settler, m);
+                    return true;
+                }
+                // MIL-ATK-5.3 an interceptor's first walk (T42, E-mil-036):
+                // in this update defense wait and nothing more. Paired, his
+                // Defend job starts in his next update: on his attacker's
+                // waiting field already, a walk of no length whose end is
+                // seen the update after, his arrival counting in the update
+                // after that (the timer: 4, read as 3, 2, 1); otherwise he
+                // walks on from here in his next update (2, read as 1).
                 let field = self.attackers[record.expect("paired")]
                     .field
                     .expect("a field");
-                if self.walk_to(settler, field) {
-                    settler.job = set(DefendStep::Out, opponent);
-                }
+                settler.timer = if field == m { 4 } else { 2 };
+                settler.job = set(DefendStep::Out, opponent);
             }
             DefendStep::Out => {
-                if !arrived {
+                // T42, T43: held (defense wait) while the timer reads more
+                // than 1.
+                if !arrived || settler.timer > 1 {
                     return true;
                 }
                 let r = &self.attackers[record.expect("paired")];
@@ -1341,7 +1496,8 @@ impl World {
                     // the pair fighting) counts in his next update, when his
                     // job sees the movement stopped: the timer holds that
                     // one update (2, read as 1 after the next tick's
-                    // countdown).
+                    // countdown). T42: an interceptor's after his first walk
+                    // ended on it, two updates more (4).
                     if settler.timer == 0 {
                         settler.timer = 2;
                         return true;
@@ -1501,6 +1657,9 @@ impl World {
                 opponent: Some(attacker),
                 intercept: o.intercept,
                 defends: o.intercept.then_some(target),
+                // FMT-SAV-3.7a: the original's save gives no meeting field
+                // here (as an older game of ours).
+                meeting: None,
             };
             self.settlers[id] = Some(settler);
             paired_with = Some(id);

@@ -819,8 +819,10 @@ impl World {
             // which goes on to the frame part.
             self.sites.get_mut(&at).expect("a site").levelling_bits = LEVELLING_DONE.to_bits();
             // MIL-UPG-2.2a (T9): an upgrade's update does one part: this one
-            // only marks the levelling; the construction part is the next.
+            // marks the levelling; the builder request is the next. The
+            // orders' tick (T10): its material orders are filed in this one.
             if self.upgrades.contains_key(&at) {
+                self.file_site_orders(at);
                 return;
             }
         }

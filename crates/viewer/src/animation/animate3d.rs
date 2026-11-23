@@ -44,6 +44,10 @@ pub struct Animator {
     poses: HashMap<PoseKey, BoundPose>,
     /// The palette slots of the poses let go, for [`animate`] to give back.
     freed: Vec<u32>,
+    /// Hook W30d: the shared poses held for good (a figure's looping clips
+    /// and walking phases, by model, clip and look), so that figures moving
+    /// between them only change materials, never make new ones.
+    pinned: std::collections::HashSet<(String, String, String)>,
 }
 
 /// F55: the palette slots the poses hold (`--bench`).
@@ -149,6 +153,32 @@ impl Animator {
             out.push((p.mesh.clone(), material));
         }
         out
+    }
+
+    /// Hook W30d: hold the shared pose `want` asks for, drawn in `look`,
+    /// for good: one user that never leaves (the first time only). A pose
+    /// whose last figure leaves then keeps its parts' materials for the
+    /// next. At most one pose per figure clip and walking phase and look.
+    pub fn pin(
+        &mut self,
+        want: &PoseWant,
+        model: &LoadedModel,
+        look: &Look,
+        library: &mut ModelLibrary,
+        images: &mut Assets<Image>,
+        materials: &mut Assets<ObjectMaterial>,
+    ) {
+        if !want.looping || want.private {
+            return;
+        }
+        let key = (
+            want.model.clone(),
+            want.clip.clone(),
+            format!("{:?}", look.key()),
+        );
+        if self.pinned.insert(key) {
+            let _ = self.attach(want, model, look, library, images, materials);
+        }
     }
 
     /// One user drawing `look` leaves the pose (GFX-ANIM-2.4 c). The last
@@ -396,6 +426,69 @@ mod tests {
             Assets::default(),
             buffers,
         )
+    }
+
+    /// Hook W30d: a figure's pinned pose keeps its materials when its last
+    /// figure leaves, so a walker moving from phase to phase makes no new
+    /// material; a play-once clip is never pinned.
+    // spec: none (hook W30d: the figures' shared poses are held for good)
+    #[test]
+    fn a_pinned_pose_keeps_its_materials() {
+        let (mut library, model, mut images, mut materials, _buffers) = walker();
+        let mut animator = Animator::default();
+        let look = Look::plain([1.0; 4]);
+        let want = PoseWant::new("walker.gr2", "c.glb#figure:Walk@3", true);
+        animator.pin(
+            &want,
+            &model,
+            &look,
+            &mut library,
+            &mut images,
+            &mut materials,
+        );
+        let made = materials.len();
+        for _ in 0..10 {
+            let (pose, _) = animator.attach(
+                &want,
+                &model,
+                &look,
+                &mut library,
+                &mut images,
+                &mut materials,
+            );
+            animator.detach(&pose, &look);
+        }
+        assert_eq!(materials.len(), made, "no new material per visit");
+        assert!(animator.freed.is_empty());
+        // Pinned once: a second pin adds no user.
+        animator.pin(
+            &want,
+            &model,
+            &look,
+            &mut library,
+            &mut images,
+            &mut materials,
+        );
+        let (pose, _) = animator.attach(
+            &want,
+            &model,
+            &look,
+            &mut library,
+            &mut images,
+            &mut materials,
+        );
+        assert_eq!(animator.pool.users(&pose), 2);
+        // A play-once clip: nothing held.
+        let once = PoseWant::new("walker.gr2", "c.glb#figure:Pickup", false);
+        animator.pin(
+            &once,
+            &model,
+            &look,
+            &mut library,
+            &mut images,
+            &mut materials,
+        );
+        assert_eq!(animator.pinned.len(), 1);
     }
 
     /// A settler figure's look: its own atlas block (GFX-OBJ-3.2 (3)).

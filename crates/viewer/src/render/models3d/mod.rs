@@ -2,6 +2,7 @@
 //! lookup of which file draws what, a cache of loaded models and the
 //! material they are drawn with.
 
+pub mod figure;
 mod library;
 pub mod preload;
 pub mod project;
@@ -258,6 +259,9 @@ pub enum Family {
     /// Hook W30c: a project's map object (a stone pile, a grain field, a
     /// decoration, a sign; `project`): a project's tree without the sway.
     FacetObject = 18,
+    /// Hook W30d: a project's figure: a map object's look in the settlers'
+    /// light (the luminances untinted, on a ramp with a dark end).
+    FacetFigure = 19,
 }
 
 impl Family {

@@ -342,6 +342,31 @@ fn mine_searches_only_without_a_field_and_with_its_worker() {
     assert_eq!(w.ore_field(at), None);
 }
 
+// ECO-FOOD T64 (2.3, a field emptied by another mine): the mine's current
+// field is emptied by someone else; the mine's next 101-tick try reads it
+// as none, searches and takes the other field.
+// spec: ECO-FOOD-2.3 (T64)
+#[test]
+fn t64_a_field_emptied_by_another_mine() {
+    let mut w = world();
+    let at = (10, 10);
+    ore(&mut w, (10, 11), COAL, 7);
+    ore(&mut w, (12, 10), COAL, 7);
+    let _ = working(&mut w, COAL_MINE, at, MINER);
+    w.ore_fields.insert(at, (12, 10));
+    for _ in 0..150 {
+        w.step();
+    }
+    assert_eq!(w.ore_field(at), Some((12, 10)));
+    w.set_resource((12, 10), None);
+    let mut tries = 0;
+    while w.ore_field(at) != Some((10, 11)) {
+        w.step();
+        tries += 1;
+        assert!(tries <= 101, "found at the next try");
+    }
+}
+
 // ECO-FOOD T5, 5.1: one search every 51 ticks; reserved at the first
 // search after the animal is in reach.
 #[test]

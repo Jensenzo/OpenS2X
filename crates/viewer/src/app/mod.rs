@@ -132,6 +132,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         mut building_looks,
         mut tree_looks,
         mut object_looks,
+        mut figure_looks,
     } = extensions;
     crate::extend::messages::install(project_messages);
     crate::extend::install_buttons(button_pictures);
@@ -238,7 +239,17 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
     // Hook W30c: `--object-model` to its map objects'. A file that cannot
     // be drawn stops the start with its name, not a hole in the map.
     object_looks.extend(options.object_looks.iter().cloned());
+    // Hook W30d: `--figure-model` to its figures', checked the same way.
+    figure_looks.extend(options.figure_looks.iter().cloned());
     if let Some(dir) = &game_dir {
+        let figures = figure_looks
+            .iter()
+            .flat_map(|l| std::iter::once(&l.model).chain(&l.far))
+            .map(String::as_str);
+        if let Err(e) = crate::extend::unusable_figure(&asset_folders, dir.root(), figures) {
+            eprintln!("{e}");
+            return std::process::ExitCode::FAILURE;
+        }
         let models = object_looks.iter().map(|l| l.model.as_str());
         if let Err(e) = crate::extend::unusable_model(&asset_folders, dir.root(), models) {
             eprintln!("{e}");
@@ -251,9 +262,12 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         asset_folders,
         render,
         music_external,
-        building_looks,
-        tree_looks,
-        object_looks,
+        crate::extend::Looks {
+            buildings: building_looks,
+            trees: tree_looks,
+            objects: object_looks,
+            figures: figure_looks,
+        },
     );
     let mut maps = game_dir
         .as_ref()
@@ -420,6 +434,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         screenshot_dir: crate::tools::shots::shot_folder(project_shots, &options.screenshot_dir),
         shot: options.shot,
         shot_after: options.shot_after,
+        shot_frames: options.shot_frames,
         frames_since_load: 0,
         shot_taken_at: None,
         world: None,

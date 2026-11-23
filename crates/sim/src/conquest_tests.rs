@@ -76,6 +76,7 @@ fn con_t1_soldiers_out_still_defend() {
         opponent: None,
         intercept: true,
         defends: Some(target),
+        meeting: None,
     };
     // The one inside is an opponent still.
     assert!(!world.can_take(target, P0));
@@ -794,6 +795,7 @@ fn con_5_3_who_is_a_target() {
             opponent: None,
             intercept: true,
             defends: Some(target),
+            meeting: None,
         },
         timer: 0,
         carrying: None,
@@ -923,4 +925,61 @@ fn con_t17a_the_players_demolish_leaves_material_and_a_ruin() {
     assert_eq!(goods_at(&world, flag), [PLANK, PLANK]);
     assert!(world.ruins().is_empty());
     assert!(world.flag_at(flag).is_some());
+}
+
+// T19 (MIL-CON-2.2 step 1, corrected 2026-11-22 pm, E-mil-038): the target
+// is taken while an interceptor of another building, defending it, is paired
+// with another attacker: the take-over unlinks nobody. The pair holds on
+// both sides (the duel goes on), the other attacker's record now names the
+// new building, and the interceptor still defends the old target (gone), so
+// his defense wait sends him home once his duel is over (MIL-ATK-3.4).
+// spec: MIL-CON-2.2 (T19), MIL-ATK-3.4
+#[test]
+fn con_t19_fights_at_a_taken_target_go_on() {
+    let mut world = scene();
+    fill(&mut world, P1, BARRACKS, TARGET, &[(0, 3)]);
+    kill_defenders(&mut world, TARGET);
+    fill(&mut world, P1, GUARD, (70, 20), &[(0, 1)]);
+    fill(&mut world, P0, GUARD, (40, 20), &privates(2));
+    let target = world.target_of(TARGET).unwrap();
+    let home = world.target_of((40, 20)).unwrap();
+    let door = world.flag_of(TARGET);
+    let taker = waiting_attacker(&mut world, (40, 20), door);
+    let fighter = waiting_attacker(&mut world, (40, 20), (52, 22));
+    let interceptor = world.military_at((70, 20)).unwrap().soldiers[0];
+    let defender_home = world.target_of((70, 20)).unwrap();
+    world.settlers[interceptor].as_mut().unwrap().job = SettlerJob::Defend {
+        home: defender_home,
+        health: 1,
+        step: DefendStep::Waiting,
+        opponent: Some(fighter),
+        intercept: true,
+        defends: Some(target),
+        meeting: None,
+    };
+    let record = |w: &World, id: usize| w.attackers.iter().position(|r| r.soldier == id).unwrap();
+    let r = record(&world, fighter);
+    world.attackers[r].opponent = Some(interceptor);
+    assert!(world.can_take(target, P0));
+    let rt = record(&world, taker);
+    let mut s = world.settlers[taker].take().unwrap();
+    world.take_building(&mut s, taker, rt, home, 3);
+    world.settlers[taker] = Some(s);
+    assert_eq!(world.building_at(TARGET).unwrap().owner, P0);
+    // The pair holds on both sides.
+    let r = record(&world, fighter);
+    assert_eq!(world.attackers[r].opponent, Some(interceptor));
+    assert_ne!(
+        world.attackers[r].target, target,
+        "linked to the new building"
+    );
+    match world.settlers[interceptor].as_ref().unwrap().job {
+        SettlerJob::Defend {
+            opponent, defends, ..
+        } => {
+            assert_eq!(opponent, Some(fighter));
+            assert_eq!(defends, Some(target));
+        }
+        ref j => panic!("{j:?}"),
+    }
 }

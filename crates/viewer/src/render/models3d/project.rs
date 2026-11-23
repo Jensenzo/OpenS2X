@@ -78,6 +78,8 @@ pub struct Facet {
     pub kind: FacetKind,
     /// A ground part's colour (with its alpha) per triangle of its decal.
     pub decal_colours: Vec<[f32; 4]>,
+    /// Hook W30d: a part of a figure's far version.
+    pub far: bool,
 }
 
 /// The look of a project model's part: the placed look (its owner's
@@ -91,6 +93,8 @@ pub fn facet_look(facet: &Facet, look: &Look) -> Look {
         _ if look.family == Family::FacetTree => Family::FacetTree,
         // Hook W30c: a project's map object keeps its family too.
         _ if look.family == Family::FacetObject => Family::FacetObject,
+        // Hook W30d: a project's figure keeps its family.
+        _ if look.family == Family::FacetFigure => Family::FacetFigure,
         FacetKind::Solid | FacetKind::Team => Family::Facet,
     };
     out.base = None;
@@ -262,6 +266,17 @@ pub fn clip(
     skeleton: &anim::Skeleton,
     bone_of: &[usize],
 ) -> Option<anim::Clip> {
+    clip_scaled(glb, name, skeleton, bone_of, 1.0)
+}
+
+/// [`clip`] with its key times (and length) multiplied by `scale`.
+pub fn clip_scaled(
+    glb: &Glb,
+    name: &str,
+    skeleton: &anim::Skeleton,
+    bone_of: &[usize],
+    scale: f32,
+) -> Option<anim::Clip> {
     let animation = glb.animation(name)?;
     let mut tracks: Vec<Option<[gr2::Curve; 3]>> = vec![None; skeleton.len()];
     let empty = || gr2::Curve {
@@ -290,11 +305,14 @@ pub fn clip(
         };
         track[slot] = gr2::Curve {
             degree: 1,
-            knots: c.times.clone(),
+            knots: c.times.iter().map(|t| t * scale).collect(),
             controls,
         };
     }
-    Some(anim::Clip::from_curves(animation.duration(), tracks))
+    Some(anim::Clip::from_curves(
+        animation.duration() * scale,
+        tracks,
+    ))
 }
 
 /// An embedded PNG image as RGBA bytes (8 bits a channel; grey, grey with
@@ -497,6 +515,140 @@ pub fn read(path: &Path) -> Option<Glb> {
         .ok()
 }
 
+/// A material's palette image and roughness and metallic image.
+pub type MaterialImages = (Option<Handle<Image>>, Option<Handle<Image>>);
+
+/// The palette and roughness images of each material of a file, added to
+/// `images` (none where a material has no image).
+pub fn material_images(glb: &Glb, images: &mut Assets<Image>) -> Vec<MaterialImages> {
+    let handles: Vec<Option<Handle<Image>>> = glb
+        .images
+        .iter()
+        .map(|i| image(&i.bytes).map(|i| images.add(i)))
+        .collect();
+    let of = |index: Option<usize>| index.and_then(|i| handles.get(i)?.clone());
+    glb.materials
+        .iter()
+        .map(|m| (of(m.base_colour), of(m.metallic_roughness)))
+        .collect()
+}
+
+/// A part of a project's model with its images, ready to be made a mesh;
+/// `far`: a part of a figure's far version (hook W30d).
+pub struct TexturedPart {
+    pub part: PartData,
+    pub texture: Option<Handle<Image>>,
+    pub light: Option<Handle<Image>>,
+    pub far: bool,
+}
+
+/// The parts of a file with their material's images.
+pub fn textured_parts(
+    data: Vec<PartData>,
+    images: &[MaterialImages],
+    far: bool,
+) -> Vec<TexturedPart> {
+    data.into_iter()
+        .map(|part| {
+            let (texture, light) = part
+                .material
+                .and_then(|m| images.get(m).cloned())
+                .unwrap_or((None, None));
+            TexturedPart {
+                part,
+                texture,
+                light,
+                far,
+            }
+        })
+        .collect()
+}
+
+/// A project's model from its parts (in the meshes' frame) and skeleton:
+/// one mesh per part, rigid on its bone; the box and height of its body
+/// (all but the ground and a far version's parts).
+pub fn build_model(
+    data: Vec<TexturedPart>,
+    skeleton: anim::Skeleton,
+    file: &str,
+    basis: Mat4,
+    meshes: &mut Assets<Mesh>,
+) -> LoadedModel {
+    let body = || {
+        data.iter()
+            .filter(|p| p.part.kind != FacetKind::Ground && !p.far)
+            .flat_map(|p| &p.part.positions)
+    };
+    let mut lo = [f32::MAX; 3];
+    let mut hi = [f32::MIN; 3];
+    for p in body() {
+        for k in 0..3 {
+            lo[k] = lo[k].min(p[k]);
+            hi[k] = hi[k].max(p[k]);
+        }
+    }
+    let extent = [0, 1, 2].map(|k| (hi[k] - lo[k]).max(0.0));
+    let house = game_box(body());
+    let bounds = game_box(
+        data.iter()
+            .filter(|p| !p.far)
+            .flat_map(|p| &p.part.positions),
+    );
+    let mut out = Vec::new();
+    for (group, textured) in data.into_iter().enumerate() {
+        let TexturedPart {
+            part,
+            texture,
+            light,
+            far,
+        } = textured;
+        let (decal, decal_colours) = if part.kind == FacetKind::Ground {
+            ground_triangles(&part)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        let count = part.positions.len();
+        let mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::RENDER_WORLD,
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, part.positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, part.normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, part.uvs.clone())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, part.uvs.clone())
+        .with_inserted_attribute(ATTRIBUTE_UV_2, part.uvs)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, part.colours)
+        .with_inserted_attribute(ATTRIBUTE_BONE_INDEX, vec![[0u32; 4]; count])
+        .with_inserted_attribute(ATTRIBUTE_BONE_WEIGHT, vec![[1.0f32, 0.0, 0.0, 0.0]; count])
+        .with_inserted_indices(Indices::U32(part.indices));
+        out.push(LoadedPart {
+            mesh: meshes.add(mesh),
+            texture,
+            light,
+            palette: vec![part.bone],
+            ground: false,
+            decal,
+            piece: group,
+            group,
+            facet: Some(Facet {
+                kind: part.kind,
+                decal_colours,
+                far,
+            }),
+        });
+    }
+    LoadedModel {
+        parts: out,
+        skeleton: Some(Arc::new(skeleton)),
+        skeleton_file: file.to_owned(),
+        basis,
+        basis_inverse: basis.inverse(),
+        extent,
+        bounds,
+        house: Some(house),
+    }
+}
+
 impl ModelLibrary {
     /// Hook W30: a project's model loaded as an original's is: its parts
     /// with their meshes and images, its skeleton of nodes.
@@ -516,91 +668,14 @@ impl ModelLibrary {
             );
             return None;
         }
-        let image_handles: Vec<Option<Handle<Image>>> = glb
-            .images
-            .iter()
-            .map(|i| image(&i.bytes).map(|i| images.add(i)))
-            .collect();
-        let texture_of = |material: Option<usize>, orm: bool| -> Option<Handle<Image>> {
-            let m = glb.materials.get(material?)?;
-            let index = if orm {
-                m.metallic_roughness
-            } else {
-                m.base_colour
-            }?;
-            image_handles.get(index)?.clone()
-        };
-        let data = parts(&glb, &skeleton, &bone_of);
-        // The house's box and height: everything but the ground.
-        let body = || {
-            data.iter()
-                .filter(|p| p.kind != FacetKind::Ground)
-                .flat_map(|p| &p.positions)
-        };
-        let mut lo = [f32::MAX; 3];
-        let mut hi = [f32::MIN; 3];
-        for p in body() {
-            for k in 0..3 {
-                lo[k] = lo[k].min(p[k]);
-                hi[k] = hi[k].max(p[k]);
-            }
-        }
-        let extent = [0, 1, 2].map(|k| (hi[k] - lo[k]).max(0.0));
-        let house = game_box(body());
-        let bounds = game_box(data.iter().flat_map(|p| &p.positions));
-        let mut out = Vec::new();
-        for (group, part) in data.into_iter().enumerate() {
-            let texture = texture_of(part.material, false);
-            let light = texture_of(part.material, true);
-            let (decal, decal_colours) = if part.kind == FacetKind::Ground {
-                ground_triangles(&part)
-            } else {
-                (Vec::new(), Vec::new())
-            };
-            let count = part.positions.len();
-            let mesh = Mesh::new(
-                PrimitiveTopology::TriangleList,
-                RenderAssetUsages::RENDER_WORLD,
-            )
-            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, part.positions)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, part.normals)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, part.uvs.clone())
-            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, part.uvs.clone())
-            .with_inserted_attribute(ATTRIBUTE_UV_2, part.uvs)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, part.colours)
-            .with_inserted_attribute(ATTRIBUTE_BONE_INDEX, vec![[0u32; 4]; count])
-            .with_inserted_attribute(ATTRIBUTE_BONE_WEIGHT, vec![[1.0f32, 0.0, 0.0, 0.0]; count])
-            .with_inserted_indices(Indices::U32(part.indices));
-            out.push(LoadedPart {
-                mesh: meshes.add(mesh),
-                texture,
-                light,
-                palette: vec![part.bone],
-                ground: false,
-                decal,
-                piece: group,
-                group,
-                facet: Some(Facet {
-                    kind: part.kind,
-                    decal_colours,
-                }),
-            });
-        }
-        Some(LoadedModel {
-            parts: out,
-            skeleton: Some(Arc::new(skeleton)),
-            skeleton_file: file.to_owned(),
-            basis: Mat4::IDENTITY,
-            basis_inverse: Mat4::IDENTITY,
-            extent,
-            bounds,
-            house: Some(house),
-        })
+        let material_images = material_images(&glb, images);
+        let data = textured_parts(parts(&glb, &skeleton, &bone_of), &material_images, false);
+        Some(build_model(data, skeleton, file, Mat4::IDENTITY, meshes))
     }
 
     /// A project's model file read (each read again: models are loaded
     /// once and kept, clips once per name).
-    fn read_project_model(&self, file: &str) -> Option<Glb> {
+    pub(crate) fn read_project_model(&self, file: &str) -> Option<Glb> {
         let root = self.root.as_ref()?;
         let path = crate::extend::find(root, file)
             .map_err(|e| eprintln!("model {e}"))
@@ -614,6 +689,10 @@ impl ModelLibrary {
         let (model, name) = split_clip(file)?;
         let glb = self.read_project_model(model)?;
         let (skeleton, bone_of) = skeleton(&glb);
+        // Hook W30d: a figure's clip, in real seconds or at one phase.
+        if let Some((name, phase)) = super::figure::parse_clip(name) {
+            return super::figure::clip(&glb, name, phase, &skeleton, &bone_of);
+        }
         clip(&glb, name, &skeleton, &bone_of)
     }
 }
@@ -800,10 +879,12 @@ mod tests {
         let solid = Facet {
             kind: FacetKind::Solid,
             decal_colours: Vec::new(),
+            far: false,
         };
         let ground = Facet {
             kind: FacetKind::Ground,
             decal_colours: Vec::new(),
+            far: false,
         };
         let mut house = look.clone();
         house.extra = [3.0, 1.5, 1.0, 0.0];
@@ -861,11 +942,13 @@ mod tests {
         let solid = Facet {
             kind: FacetKind::Solid,
             decal_colours: Vec::new(),
+            far: false,
         };
         assert_eq!(facet_look(&solid, &look).family, Family::FacetTree);
         let ground = Facet {
             kind: FacetKind::Ground,
             decal_colours: Vec::new(),
+            far: false,
         };
         assert_eq!(facet_look(&ground, &look).family, Family::FacetGround);
     }
@@ -897,8 +980,32 @@ mod tests {
         let solid = Facet {
             kind: FacetKind::Solid,
             decal_colours: Vec::new(),
+            far: false,
         };
         assert_eq!(facet_look(&solid, &look).family, Family::FacetObject);
+    }
+
+    // spec: GFX-OBJ-3.3 (hook W30d: a project's figure in the settlers' light: its own family, the shader's number, the luminances untinted on a ramp with a dark end)
+    #[test]
+    fn a_figure_keeps_the_figure_family_and_the_settlers_light() {
+        let look = Look::family(Family::FacetFigure, [0.0; 3]);
+        for kind in [FacetKind::Solid, FacetKind::Team] {
+            let facet = Facet {
+                kind,
+                decal_colours: Vec::new(),
+                far: false,
+            };
+            assert_eq!(facet_look(&facet, &look).family, Family::FacetFigure);
+        }
+        let src = include_str!("../shaders/object.wesl");
+        assert!(src.contains(&format!(
+            "const FACET_FIGURE: u32 = {}u;",
+            Family::FacetFigure as u32
+        )));
+        assert!(src.contains("const FIGURE_FLOOR: f32 = 0.24;"));
+        assert!(src.contains(
+            "let ds = lambert * light.light_color.w * shadow + light.ambient.w * occlusion;"
+        ));
     }
 
     /// An RGB PNG of `width` x `height`: its upper half red, its lower half

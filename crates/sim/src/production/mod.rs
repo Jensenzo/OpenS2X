@@ -573,6 +573,18 @@ impl World {
         let (Some(product), radius) = (kind.product, kind.working_radius) else {
             return;
         };
+        // ECO-FOOD-2.3 a field emptied by another mine (T64): read at the
+        // try, a current field no longer holding the good counts as none.
+        if building.active {
+            if let Some(field) = self.ore_fields.get(&at).copied() {
+                let holds = self
+                    .resource_at(field)
+                    .is_some_and(|r| r.good == product && r.amount > 0);
+                if !holds {
+                    self.ore_fields.remove(&at);
+                }
+            }
+        }
         if !building.active
             || self.ore_fields.contains_key(&at)
             || !self.goods.get(&product).is_some_and(|g| g.resource)
@@ -1314,9 +1326,17 @@ impl World {
                 }
             }
             // ECO-OUT-3.8a (3): walking, a check in every tick.
-            Work::Back { score } => Work::Back {
-                score: self.ask_flag(settler, flag, score),
-            },
+            Work::Back { score } => {
+                let before = self.admitted(settler);
+                let score = self.ask_flag(settler, flag, score);
+                // ECO-OUT-3.8a (3) the view on admission (T28): held before
+                // the flag and admitted now, his walk shows again at once
+                // (at progress 0); the step moves from the next tick.
+                if !before && self.admitted(settler) && settler.walker.held {
+                    settler.walker.held = false;
+                }
+                Work::Back { score }
+            }
             Work::WaitFlag => {
                 let good = settler.carrying.expect("a product to put down");
                 if self.flag_reserve_direct(flag, good, &mut 0) {

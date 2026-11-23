@@ -46,6 +46,60 @@ pub(crate) struct MoverState {
     /// GFX-OBJ-3.2 (3a): a settler figure's atlas block, given back when
     /// the figure goes.
     pub(crate) block: Option<crate::render::settler_colors::FigureBlock>,
+    /// Hook W30d: a project's figure: its look and walking phase.
+    pub(crate) figure: Option<FigureState>,
+}
+
+/// Hook W30d: what the view keeps of a figure between frames.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct FigureState {
+    pub(crate) look: &'static crate::extend::FigureLook,
+    /// The walking cycle's phase (0 .. 1), moved on by the ground covered.
+    pub(crate) phase: f32,
+    /// Where it was drawn in the last frame (game frame).
+    pub(crate) last: Option<[f32; 3]>,
+    /// The figure clip of the motion and whether it loops.
+    pub(crate) clip: Option<(&'static str, bool)>,
+}
+
+/// Hook W30d: a step of more than this between two frames is a jump (a new
+/// place), not ground covered.
+const FIGURE_JUMP: f32 = 4.0;
+
+/// Hook W30d: the figure clip of the tick's motion (`figure::motion`, from
+/// the base index the game's choice gave), the file's own or its fallback
+/// (`figure::choose`); a missing clip is logged once by file and name.
+pub(crate) fn figure_motion(
+    visual: &crate::animation::settler_anim::SettlerVisual,
+    anim: &crate::world::scene3d::MoverAnim,
+    carrying: bool,
+    available: &[String],
+    logged: &mut std::collections::HashSet<(String, String)>,
+    model: &str,
+) -> Option<(&'static str, bool)> {
+    use crate::render::models3d::figure;
+    let base = visual.choice.as_ref()?.base;
+    let moving =
+        matches!(anim, crate::world::scene3d::MoverAnim::Settler { state, .. } if state.moving);
+    let (chosen, missing) = figure::choose(figure::motion(base, carrying), moving, available);
+    if let Some(name) = missing {
+        if logged.insert((model.to_owned(), name.to_owned())) {
+            eprintln!(
+                "figure {model}: no clip {name}, drawn with {} (hook W30d)",
+                chosen.0
+            );
+        }
+    }
+    Some(chosen)
+}
+
+/// Hook W30d: the clip file a figure shows now: its motion's clip, a
+/// walking one at the phase it has walked to.
+pub(crate) fn figure_clip_file(figure: &FigureState) -> Option<(String, bool)> {
+    use crate::render::models3d::figure;
+    let (clip, looping) = figure.clip?;
+    let phase = figure::walks(clip).then(|| figure::phase_index(figure.phase));
+    Some((figure::clip_file(&figure.look.model, clip, phase), looping))
 }
 
 impl MoverState {
@@ -480,6 +534,8 @@ pub struct Movers {
     pub(crate) states: std::collections::HashMap<crate::world::scene3d::MoverId, MoverState>,
     pub(crate) tick: Option<u64>,
     pub(crate) ship_phase: f32,
+    /// Hook W30d: the figures' missing clips already logged (file, clip).
+    pub(crate) figure_missing: std::collections::HashSet<(String, String)>,
 }
 
 /// An entity with one child per part.
@@ -561,6 +617,11 @@ pub(crate) fn repose(
     // GFX-ANIM-2.4 (c): leave the old pose before taking the new (T19c).
     if let Some(old) = state.pose.take() {
         animator.detach(&old, &state.look);
+    }
+    // Hook W30d: a figure's shared poses are held for good.
+    if let (Some(_), Some(want)) = (&state.figure, &wanted) {
+        let (images, materials) = (&mut *assets.0, &mut *assets.1);
+        animator.pin(want, &model, &state.look, library, images, materials);
     }
     let (pose, parts) = parts_in(
         animator,
@@ -656,6 +717,7 @@ pub fn sync_movers(
             &|field| viewer.fogged(world, field),
         );
         let mut keep = std::collections::HashSet::new();
+        let mut figure_missing = std::mem::take(&mut movers.figure_missing);
         for mover in now {
             keep.insert(mover.id);
             let reuse = movers
@@ -675,13 +737,18 @@ pub fn sync_movers(
                 let heading = mover.heading.unwrap_or(0.0);
                 let transform = Transform::from_translation(Vec3::from(world3d::to_bevy(mover.at)))
                     .with_rotation(Quat::from_rotation_y(world3d::bevy_yaw(heading)));
-                let Some(model) = library.skinned_model(
-                    &mover.file,
-                    mover.skeleton.as_deref(),
-                    mover.units_per_metre,
-                    &mut meshes,
-                    &mut images,
-                ) else {
+                // Hook W30d: a project's figure, with its far version.
+                let model = match mover.figure {
+                    Some(look) => library.figure_model(look, &mut meshes, &mut images),
+                    None => library.skinned_model(
+                        &mover.file,
+                        mover.skeleton.as_deref(),
+                        mover.units_per_metre,
+                        &mut meshes,
+                        &mut images,
+                    ),
+                };
+                let Some(model) = model else {
                     continue;
                 };
                 let mut block = None;
@@ -711,12 +778,35 @@ pub fn sync_movers(
                     library,
                     Some((&model, mover.at[1])),
                 );
+                let carrying = mover.carried.is_some() && mover.boat.is_none();
+                let figure = mover.figure.map(|look| {
+                    let clip = figure_motion(
+                        &visual,
+                        &mover.anim,
+                        carrying,
+                        library.figure_clips(&look.model),
+                        &mut figure_missing,
+                        &look.model,
+                    );
+                    FigureState {
+                        look,
+                        phase: 0.0,
+                        last: None,
+                        clip,
+                    }
+                });
+                if let Some(f) = &figure {
+                    visual.clip = figure_clip_file(f);
+                }
                 let first = match &mover.anim {
                     MoverAnim::Clip(c) => c.clone(),
                     MoverAnim::Unique(f) => Some((f.clone(), false)),
                     MoverAnim::Settler { .. } => visual.clip.clone(),
                 };
                 let want = wanted_pose(&model, first, matches!(mover.anim, MoverAnim::Unique(_)));
+                if let (Some(_), Some(w)) = (&figure, &want) {
+                    animator.pin(w, &model, &look, library, &mut images, &mut materials);
+                }
                 let (pose, parts) = parts_in(
                     animator,
                     library,
@@ -734,6 +824,31 @@ pub fn sync_movers(
                     mirrored_object_layers()
                 };
                 let (entity, children) = spawn_parts(&mut commands, transform, parts, &layers);
+                // Hook W30d: a figure shows its model or its far version by
+                // its height on the screen, as a project's tree does
+                // (`tree_versions`); the model until it is decided.
+                if let Some(look) = mover.figure {
+                    let fars: Vec<bool> = model
+                        .parts
+                        .iter()
+                        .map(|p| p.facet.as_ref().is_some_and(|f| f.far))
+                        .collect();
+                    if fars.iter().any(|&f| f) {
+                        for (&child, &far) in children.iter().zip(&fars) {
+                            let shown = if far {
+                                Visibility::Hidden
+                            } else {
+                                Visibility::Inherited
+                            };
+                            commands.entity(child).insert((TreeVersion { far }, shown));
+                        }
+                        commands.entity(entity).insert(ProjectTree {
+                            extent: [0.0, model.extent[1], 0.0],
+                            far_below: look.far_below,
+                            far: None,
+                        });
+                    }
+                }
                 let link = mover
                     .link
                     .as_deref()
@@ -777,6 +892,7 @@ pub fn sync_movers(
                         settler,
                         at: mover.at,
                         block,
+                        figure,
                         ship: match mover.id {
                             crate::world::scene3d::MoverId::Ship(i) => Some(i),
                             _ => None,
@@ -809,7 +925,24 @@ pub fn sync_movers(
             state.anim = mover.anim.clone();
             state.at = mover.at;
             let swim = state.model.as_ref().map(|m| (m, mover.at[1]));
-            let changed = choose_clip(&mut state.visual, &mover.anim, library, swim);
+            let mut changed = choose_clip(&mut state.visual, &mover.anim, library, swim);
+            // Hook W30d: a figure's own clip for the motion.
+            if let Some(figure) = state.figure.as_mut() {
+                let carrying = mover.carried.is_some() && mover.boat.is_none();
+                let clip = figure_motion(
+                    &state.visual,
+                    &mover.anim,
+                    carrying,
+                    library.figure_clips(&figure.look.model),
+                    &mut figure_missing,
+                    &figure.look.model,
+                );
+                // A motion of another clip (carrying or not) is a change,
+                // as the original's good-dependent clips are.
+                changed |= clip != figure.clip;
+                figure.clip = clip;
+                state.visual.clip = figure_clip_file(figure);
+            }
             if changed {
                 state.idle = None;
             }
@@ -885,6 +1018,7 @@ pub fn sync_movers(
             }
             state.in_boat = in_boat;
         }
+        movers.figure_missing = figure_missing;
         let gone: Vec<_> = movers
             .states
             .keys()
@@ -956,7 +1090,33 @@ pub fn sync_movers(
         log_still_builders(&movers, animator, world.tick());
     }
     for (&mover, state) in movers.states.iter_mut() {
-        // GFX-ANIM-3.3: random idle clips of a standing settler.
+        // Hook W30d: a walking figure's phase follows the ground it covers
+        // (a cycle a stride: its feet do not slide, on a slope and on the
+        // slow free walk too); it shows that phase's pose.
+        if let Some(figure) = state.figure.as_mut() {
+            let at = state.motion.at(t);
+            let moved = figure
+                .last
+                .map_or(0.0, |l| Vec3::from(l).distance(Vec3::from(at)));
+            if moved < FIGURE_JUMP {
+                figure.phase = crate::render::models3d::figure::advance(figure.phase, moved);
+            }
+            figure.last = Some(at);
+            let want = figure_clip_file(figure);
+            if want != state.visual.clip {
+                state.visual.clip = want;
+                repose(
+                    state,
+                    false,
+                    animator,
+                    library,
+                    &mut part_materials,
+                    (&mut images, &mut materials),
+                );
+            }
+        }
+        // GFX-ANIM-3.3: random idle clips of a standing settler (not a
+        // figure's: its own clips only, hook W30d).
         if let MoverAnim::Settler {
             good,
             donkey: false,
@@ -968,7 +1128,7 @@ pub fn sync_movers(
                 if state.pose.as_ref().is_none_or(|p| animator.finished(p)) {
                     state.idle = None;
                 }
-            } else if state.visual.standing() {
+            } else if state.figure.is_none() && state.visual.standing() {
                 if state.visual.random.is_none() {
                     if let Some(i) =
                         crate::animation::settler_anim::random_set(&sets, good.as_deref())
@@ -1059,6 +1219,8 @@ pub fn sync_movers(
                 };
                 // A settler's resolved entry carries its own events; a
                 // random idle and the other movers go by the clip file.
+                // Hook W30d: a figure's clips carry none (the entries' are
+                // timed to the original's clips).
                 let entry = match (&state.anim, &state.idle) {
                     (crate::world::scene3d::MoverAnim::Settler { .. }, None) => {
                         state.visual.entry.as_deref()
@@ -1066,6 +1228,7 @@ pub fn sync_movers(
                     _ => None,
                 };
                 let events = match entry {
+                    _ if state.figure.is_some() => &[][..],
                     Some(name) => library.sounds_of_entry(name),
                     None => library.sounds_of(&pose.clip),
                 };
@@ -1092,7 +1255,14 @@ pub fn sync_movers(
             state.in_boat,
         ) {
             if let Some(world) = animator.bone_world(pose, bone) {
-                let m = crate::world::carry::attach_matrix(model.basis, model.basis_inverse, world);
+                let m = match state.figure {
+                    // Hook W30d: the point's frame turned with the figure,
+                    // the item in its file's axes.
+                    Some(_) => crate::render::models3d::figure::ware_matrix(world),
+                    None => {
+                        crate::world::carry::attach_matrix(model.basis, model.basis_inverse, world)
+                    }
+                };
                 if let Ok(mut t) = transforms.get_mut(*ware) {
                     *t = Transform::from_matrix(m);
                 }

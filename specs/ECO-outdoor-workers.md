@@ -185,6 +185,14 @@ repeat. Times are on level ground with room at the flag.
   3. a longer free walk is ordered at once without a check, and while he walks with
      the ware not yet admitted he checks in every tick from the next (refused: he
      does not step onto the flag).
+     **The view while he waits and when he is admitted (2026-11-22 day, Q-1078, E-eco-054:
+     the Hard recording and an experiment build; high for the measured case):** held before
+     the flag he stands (the stand clip). In the tick a check admits him his walk shows again
+     at once: the walk clip at clip time 0 on his point, his position unchanged; the step onto
+     the flag moves from the next tick, as a walk ordered in a tick (`TRN-settler-movement.md`
+     TRN-MOVE-2.1a). Only the view changes: positions and ticks are as before. A worker of (2),
+     whose one-step walk is ordered when a check admits him, shows the stand clip in that tick
+     (three stonemasons in the same recording). Test T28.
   When admitted, his place is reserved from that tick (TRN-CARRY-4.3: it counts for
   the room rules and the route costs of other wares) and on his arrival he puts the
   ware down at once (3.9 without the wait). Because the first check raises the bar,
@@ -520,6 +528,7 @@ ticks for 1 .. 4 lattice steps (TRN-FREE-5.3).
 | T25 | 8.1 (which field): E-trace-012 / E-trace-013 (Hard), hunter 90463 of the hut (139, 47), animal 91025 (home (144, 37)) | the hunter's walk target | the animal walks (143, 38) -> (142, 39) -> (142, 40) from counter 7397, is reserved by the hut at 7422 while on (142, 39) and stands on (142, 40) from 7442; the hunter walks out at 7440, starts his free walk at 7463 from the flag (140, 46), ends it on (141, 41) (one field short of (142, 40)) at 7591, walks the lattice (566, 164) -> (566, 163) -> (567, 162) by 7614 and shoots from 7615. Aiming at (142, 39) (the field at the reservation) walks him onto (142, 40), the approach finds nothing and he takes a ham at 7636. Experiment build: Hard pair settlers (view-free) 7592 -> 7623, generator 7668 -> 8471; the other pairs unchanged |
 | T26 | 3.11 (the productivity entries): E-trace-013 (Hard, player 1), the statistics entries in the heap dump of counter 10 000 (value, falls counted) | each building's value | farm 90720 0.4 (2 falls; built from its site of 4776, two sowings at 9453 and 9900, no harvest), brewery 90786 0.4 (2; no beer made), mill 90961 0.5 (0), building 90896 0.5 (0), woodcutters 91097 0.65 (2; one product), 90986 0.9 (2), forester 90954 0.7 (1: first planting 9100 sets 0.5, fall 9600, planting 9732), sites 91254, 91283, 91310 0.5 (0), sawmills, smithy, spring 1.0, stone pits 0.95; no entry for the castle, harbour, tower and catapult. Experiment build (0.5 at placement for types with a product, sowing not counted): every value above equal; with AI-CON T67 the Hard pair's buildings 10175 -> 10278 |
 | T27 | 8.1 (the animal's walk goal): E-trace-013 (R3, the Hard game), hunter 95536 of the hut at (127, 26) (flag (127, 25)), animal 90047 | the hunter's walk | the animal walks (120, 28) -> (120, 27) -> (121, 26), its walk goal (121, 26), stepping onto (121, 26) from counter 42883 and registered there from 42905; the hunter's free walk starts at counter 42904 from the flag (127, 25), ends on (121, 25) (one field short of (121, 26)) at trace tick 43039, walks the lattice to (485000, 101080) by 43051 and the animal dies at 43061 (recorded). Aiming at the field the animal stands on at the walk's start, (120, 27), walks him onto (121, 26) (the Hard game vs R3 differs from settlers 43039). With the rule (experiment build, with TRN-CARRY T56 and AI-CON T97): settlers 43100 -> 43500, buildings 44700 -> 45400, generator 43124 -> 43426 (the pair's rows); every other pair unchanged |
+| T28 | 3.8a (3), the view on admission: E-trace-012 (the Hard game to 20 000), woodcutter 90664 back from (135, 57), standing from trace tick 18 308 on (136, 56) next to his flag (137, 56), which is full; a ware leaves the flag in 18 415 (counter 18 414) and his ware is admitted in trace tick 18 417 | his rows 18 416 .. 18 419 | 18 416 Stand; 18 417 the walk clip at time 0 on (136, 56) (544 000, 224 000); 18 418 walk clip 1 at 544 180; 18 419 at 544 360 (recorded). Showing the stand clip in 18 417 (as before) is the Hard 20 000 pair's only difference (trace tick 18 417, the animation column); with the rule (experiment build) the pair is equal to 20 000 and every other pair unchanged |
 
 ## Evidence
 
@@ -558,6 +567,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-eco-028, E-trace-011, E-trace-010 | code reading and recordings | wares tables (admissions of grains 91253, 91764, wood 91638, wood 91589) | ECO-OUT-3.8a (T23, T24) |
 | E-eco-031, E-trace-013 | code reading and memory reads of the running game | the game's statistics entries in E-trace-013's heap dumps (each: building id, value, falls) | ECO-OUT-3.11 (T26), `ECO-food-mining.md` ECO-FOOD-1.2 |
 | E-eco-041, E-trace-013 | code reading and recording | the hunter's two walks (the free walk to the animal's walk goal, then the lattice walk to its position); R3 `animals` (90047, counters 42880 .. 43061) | 8.1, T27 |
+| E-eco-054, E-trace-012 | recording, experiment build | (session 2026-11-22 day): the woodcutter's rows and the wares of his flag, counters 18 405 .. 18 420 | ECO-OUT-3.8a (3) the view on admission (T28), Q-1078 |
 
 ## Open questions
 

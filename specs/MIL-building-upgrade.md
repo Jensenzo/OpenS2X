@@ -92,6 +92,13 @@ Meanwhile it stays what it was: it keeps its soldiers and its territory.
   differs from a new site, whose first update levels and files in the same update
   (`ECO-requests-dispatch.md` ECO-REQ-1.3). (Added 2026-10-30, E-eco-040; measured T9.) Confidence: high for the builder request's
   tick (measured), medium for the orders' tick (code, not separately measured).
+  **The orders' tick (2026-11-22 day, E-mil-033: the Weak recording's objects and wares tables and
+  an experiment build; high):** the material orders are filed in the update of **T + 1**, the one
+  that marks the levelling done, not with the builder request in T + 2. So the ware order matching
+  of T + 1 (ECO-REQ-5.3, when it falls in that tick) already serves them. Recorded: player 1's
+  barracks 96106 on (114, 36), finished at counter 56 648, its upgrade ordered at the end of
+  56 715: a plank for it leaves the warehouse (133, 39) in the matching of 56 716 (ware 96814, its
+  helper 96813), the builder request is filed in 56 717 (request 96815). Test T10.
 - **MIL-UPG-2.3a The builder's positions.** The four construction positions
   of each unit (`ECO-warehouse-construction.md` ECO-HQ-4.6a: offsets from the
   building flag's sample, per tribe) are those of the building's **current
@@ -152,6 +159,7 @@ Meanwhile it stays what it was: it keeps its soldiers and its territory.
 | T7 | MIL-UPG-2.3a: E-trace-011, player 1's guard house 90300 on (138, 57) upgrading to a tower (Romans); builder 90825 (made at counter 6335), material for the first unit at hand | the builder's work positions (fine coordinates of the raw settlers table, x 1000 in the s2trace rows) | unit 1: (555, 226) from trace tick 7646, (554, 225) from 7713, (557, 226) from 7802, (556, 226) from 7869; every later unit the same four (units from 7938, 8713, 9005, 9297, 9589, ...; 32 work starts in all); the tower's offsets would give (557, 226) second (an experiment build with them first differs at trace tick 7702, its builder walking east) |
 | T8 | MIL-UPG-2.4: E-trace-011, player 1's guard house 90300 on (138, 57) upgrading to a tower (frame 3 planks, main 5 stones), builder 90825 on his eighth unit, last step begun at counter 10671 | the last unit | the main part falls below 0 at the unit's 213th decrement (counter 10718, the step's 48th tick; float32 as ECO-HQ-4.7); the builder works on to 10725 and is released (going home) at 10726; the building is a tower from counter 10727 (the recording's buildings table; trace tick 10728). Changing the type with the completing decrement (an experiment build) makes it a tower at 10718: the dense trace's buildings first differ at 10719, with the rule at 13256 |
 | T9 | 2.2a: E-trace-013 (R3, the Hard game), player 1's barracks 93148 on (144, 54) (finished at counter 24604, its builder 93183 released and going home), upgraded to a guard house (same size class, level ground) by the computer player's upgrade run of counter 24710 (AI-MIL-4.5) | the builder for the upgrade | the builder request and the builder 93378 out of the castle in counter 24712 (the object numbers 93377 and 93378 taken in 24712; the builder walking from (139, 52) at 0.045 in 24712). Filing in the first update after the order (24711, our build) sent him a tick early: the Hard pair's settlers differed from 24720; with one part per update (experiment build) settlers 28010, buildings 29030 (was 25800), generator 28946 (was 25302), every other pair unchanged. The guard house -> tower upgrade of counter 17495 (the size class grows) takes its next two numbers (a request and its settler) in 17496 in both builds: its levelling part requests the leveller in the first update. The upgrade run's tick 24710 is our build's (the runs every 37 ticks agree with R3 at 10724, 15497 and 17495) |
+| T10 | 2.2a the orders' tick: E-trace-018 (R5, the Weak game), player 1's barracks 96106 on (114, 36), finished at counter 56 648; the computer player orders its upgrade at the end of 56 715; the warehouse (133, 39) holds planks | the object numbers and wares of 56 716 .. 56 750 | 56 716: plank 96814 for 96106 out of (133, 39) with helper 96813 (the matching of 56 716); 56 717: builder request 96815; 56 727: a plank and a stone (96819, 96821) for it (objects and wares tables, recorded). Filing the orders with the builder request in T + 2: they are first matched in 56 727, the plank of (133, 39) goes out only at 56 749, and the Weak 150 000 pair's generator first differs at trace tick 56 729 (Weak settlers 56 717). With the rule (experiment build with every rule of 2026-11-21 and 2026-11-22): the Weak generator 56 729 -> 59 530 (matching 56 822 -> 59 680), Weak settlers 56 717 -> 59 568; the Hard pair, the war, the dense and one-player pairs unchanged |
 
 ## Evidence
 
@@ -173,6 +181,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ai-031, E-trace-011 | code reading and recording | buildings and settlers tables (90300 type at counter 10727, builder 90825 released 10726; 90785 finished 9938, builder 90795 released 9942) | MIL-UPG-1.2, 2.4 (T8) |
 | E-eco-019, E-trace-011 | code reading and recording | E-trace-011 heap dumps 5500, 6000, 6500 (the height samples) | the upgrade's site height (MIL-UPG-2.2, T6) |
 | E-eco-040, E-trace-013 | code reading and recording | `counter.csv.gz`, `settlers.csv.gz` (builder 93378 at 24712) | MIL-UPG-2.2a (T9) |
+| E-mil-033, E-trace-018 | recording, experiment build | (session 2026-11-22 day): R5's objects, wares and buildings tables, counters 56 640 .. 56 750 (the upgrade of barracks 96106) | MIL-UPG-2.2a the orders' tick (T10) |
 
 ## Open questions
 

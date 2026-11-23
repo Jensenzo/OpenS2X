@@ -368,7 +368,7 @@ mod tests {
         let src = include_str!("../shaders/object.wesl");
         let fragment = &src[src.find("fn fragment").unwrap()..];
         assert!(fragment.contains(
-            "if f == FACET || f == FACET_TREE || f == FACET_OBJECT {\n        shadow_point = facet_shadow_point(in.world_position, n);"
+            "if f == FACET || f == FACET_TREE || f == FACET_OBJECT || f == FACET_FIGURE {\n        shadow_point = facet_shadow_point(in.world_position, n);"
         ));
         let offset = &src[src.find("fn facet_shadow_point").unwrap()..];
         assert!(offset.contains("FACET_NORMAL_OFFSET * texel * normal"));

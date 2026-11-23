@@ -190,7 +190,7 @@ pub const TABLE: &[(&str, &[&str])] = &[
     ("rocky plants", &["rock", "turf"]),
     ("rocky earth dark", &["rock_dark", "earth_dark"]),
     ("rocky earth", &["rock", "earth"]),
-    ("rock red", &["terracotta_dark"]),
+    ("rock red", &["sandstone"]),
     ("stone ground", &["rock_light"]),
     ("rock", &["rock"]),
     ("Desert meadow", &["turf_dry"]),
@@ -368,7 +368,13 @@ mod tests {
         let hex = |r: u8, g: u8, b: u8| [r, g, b].map(|c| f32::from(c) / 255.0);
         assert_eq!(own["rock"], hex(0x8C, 0x85, 0x73));
         assert_eq!(own["snow"], hex(0x9A, 0xA8, 0xB4));
-        assert_eq!(own.len(), 9);
+        assert_eq!(own.len(), 10);
+        // The MED red rock kinds take the sandstone, not a brick red.
+        assert_eq!(own["sandstone"], hex(0x99, 0x7D, 0x4C));
+        assert_eq!(
+            row_of("!!!MED rock red big").expect("a row").1,
+            &["sandstone"]
+        );
         // The snow's lit planes stay below white under the day's light
         // (sun 0.9375 0.898 0.781 full on, ambient 0.6 0.5 0.6).
         let sun = [0.9375, 0.898, 0.781];

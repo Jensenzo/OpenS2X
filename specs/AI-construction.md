@@ -1415,6 +1415,27 @@ Multiplicative factors, starting at 1; v = 0 means unusable.
   production had stood since counter 9628). Confidence: high for the outcome
   (measured T84), medium for the steps between the removal and the next
   arrangement.
+  **Which removals take the cell away (corrected 2026-11-22 night, Q-1081,
+  E-ai-084: code reading, the four-player recording and an experiment build;
+  high):** only this tear-down does. Before it sends the demolish command, it
+  takes every need linked to one of the building's productions, and holding a
+  square, off its cell and square; that is the step that makes T84's need new
+  again. The removal of a building record itself (whatever removes the
+  building: land lost, a take-over, the tear-down's own demolition) only
+  deletes its productions, and a need linked to one loses **only the
+  production**: it **keeps its cell and its square**, and the needs order of
+  that cell places a new producer for it there (AI-CON-4). Measured T111: a
+  gold mine site lost with its land keeps its need in cell (3, 2), and the next
+  mine is placed in that cell; clearing the cell at that removal too (the earlier
+  reading) moved the mine to the neighbouring cell.
+  **The building's own needs (2026-11-22 day, E-ai-080: code reading, the four-player recording's
+  heap dumps and an experiment build; high):** the needs whose **consumer** is the removed building
+  (the goods it was to receive) are **deleted** with it, in the same step as its productions: they
+  leave the need list and the waiting list (AI-CON-3.4), and a production linked to one of them
+  loses its need. They are not kept for a later arrangement. Recorded: player 3's sawmills on
+  (26, 21) and (28, 19) and its building on (27, 17), gone at counter 13 449; their three wood needs
+  are in the need map of the heap dump of 13 000 and not in that of 13 500 (two wood needs left,
+  both with a cell). Test T109.
 - **AI-CON-9.4 Clearing (every 59 ticks).** In every cell with the clearing
   marker and ordinary buildings, the first building whose size equals the
   marker's size is torn down and the marker cleared (one per cell per run).
@@ -1457,7 +1478,19 @@ Multiplicative factors, starting at 1; v = 0 means unusable.
   Confidence: high.
 - **AI-CON-10.2 Locksmith (every 337 ticks, not during need stage 1).** Tool
   goods with stock(t) + stock2(t) = 0 are "missing"; the next missing tool
-  after the last one handled (cyclic) is chosen. If none is missing: the
+  after the last one handled (cyclic) is chosen. **Which one is "next"**
+  (corrected 2026-11-22 night, E-ai-083, code reading and the Weak recording):
+  the missing tools are listed in good-id order, the id read as a signed
+  32-bit number (the order of AI-CON-4.2; for the twelve tools: rolling pin,
+  axe, pot, hatchet, fishing rod, scythe, saw, pickaxe, shovel, hammer,
+  gripper, spear). If the last tool handled is in that list, the tool after it
+  is chosen (after the last in the list: the first). **If the last tool handled
+  is not missing (or none was handled yet), the last tool of the list is
+  chosen**, not the first. The chosen tool becomes the last handled only when
+  the sliders are set below (not in a run that creates the tools need or finds
+  no producer). (Measured T110: the earlier reading, the first missing tool
+  after the last handled by slot, made a pot where the original made a fishing
+  rod.) Confidence: high (code), the order of the ids medium-high. If none is missing: the
   tools need's building, if finished and on, is switched off. Else: if no
   tools need exists one is created; otherwise its producer (if finished) is
   switched on and the player's 12 tool sliders are set to 1.0 for the chosen
@@ -1670,6 +1703,9 @@ Multiplicative factors, starting at 1; v = 0 means unusable.
 | T106 | 8.1f (next flag after the T97 move): E-trace-018 (R5, the Weak game), player 1's street construction (a run every 7 ticks); after the run of counter 51416 the cursor is 88 with work on the flag (121, 31); a flag earlier in the list is removed before the run of 51423 (the list 119 -> 118 flags) | the runs from 51423 | 51423: the flag at 88 is now (121, 52), not the worked one: the cursor moves to 89, (121, 52) is handled as a new F and finds no T, the cursor moves on to 90 (recorded: cursor 90 after 51423; 91 after 51430, 92 after 51437; work on (122, 35) remembered at 51444 and on (114, 35) at 51675, its road "114,35 115,35 116,34 117,34" built at 51717 and the castle's builder for the site (114, 36) made at 51721). Setting the cursor to the handled flag's place plus one (89) puts every later run one place behind: the work on (114, 35) begins only at 51682 and is dropped at the next run (another T97), the road is never built there, and the Weak game's generator differs from 51724; with the rule (experiment build, the tick-exact branch's head) from 52420, every other pair unchanged |
 | T107 | 4.2 (avgProd over production records only): E-trace-019 (R6, the war: MP_4P_Fight, players 1 to 3 Hard), player 1's needs construction at counter 12080 (the needs order of 12044 placed at 12075); open needs with a cell and a producer type: meat D 1 A 0 stock 12 priority 50; donkeys D 1 A 0 stock 0 priority 40; others lower; player 1's only meat-making building is the hunter's hut on (43, 60) (placed by the hunter part, value 0.5); no meat production record (heap dump of 12000: 18 records, none of meat) | the chosen good | meat: 1 x 50 x 0.88 / 0.2 x 1.0 = 220 against donkeys 1 x 40 x 0.99 / 0.2 x 1.0 = 198; the slaughterhouse order for the cell (3, 3), its site (48, 63) placed at counter 12224 (recorded). With the hut's 0.5 counted, meat scores 110, the donkey farm is ordered and fails for material, and the war's buildings differ from 12225; with the rule (experiment build, the tick-exact branch's head) settlers 12227 -> 12486, buildings 12225 -> 12705, generator 12476 -> 12485, every Storm Coast pair unchanged |
 | T108 | 2.5b with a needs order: E-trace-013 (R3, the Hard game), player 1's stone needs in cell (8, 3): 90188 (made at counter 41, given the cell after 93251), 93251 (made at 24011); the needs order for 90188 places the granite mine 94759 on (132, 53) in counter 34129 | which need gets its production 94760 | 93251 (heap dumps 34000 / 34500: 93251 production -1 -> 94760; 90188 stays without one, and gets its own mine 97572 on (133, 49) at 52427, whose food need draws the bread need 97581 at 52436). Tying the production to the order's need (90188) leaves 93251 waiting, the mine of 52427 is not placed and the bread need's draw is missing: the Hard 150 000 generator first differs at trace tick 52437; with the rule 53194, settlers 52600 -> 53000, buildings 52600 -> 54000 (experiment build on 0.12.3 with the rules of 2026-11-21; every other pair unchanged; the only placement in 53 000 ticks whose tie changes) |
+| T109 | AI-CON-9.3 the building's own needs: E-trace-019 (MP_4P_Fight, players 1 .. 3 computer), player 3, whose sawmills (26, 21), (28, 19) and building (27, 17) are removed at counter 13 449 | its need list and waiting list, the expansion target taken at 14 339 | the wood needs of the three buildings are gone by the heap dump of 13 500 (need map: 27 needs, wood only for the sawmill (25, 22) and one other consumer, both with a cell); the waiting list stays empty (dumps 13 500, 14 000), so no waiting-need target is made at 13 531 and the target taken at 14 339 is the attack target towards (31, 21) made at 14 086 (its military order in the dump of 15 000). Keeping the needs (as before): the need of (27, 17) finds no square in 13 530, goes on the waiting list, its waiting-need target (16, 48) is the oldest at 14 339 and player 3's orders follow a different target: the war (R6) apart at trace tick 17 030 (a forester (19, 17) placed where the original places a woodcutter (22, 23)). With the rule (experiment build with every rule of 2026-11-21 and the harbour rules of T26 in `SHIP-ships-expeditions.md`): war settlers 17 030 -> 17 060, buildings 17 030 -> 17 670, generator 17 032 -> 17 055; every other pair's first difference unchanged |
+| T110 | AI-CON-10.2 which missing tool: E-trace-018 (R5, the Weak game), player 1's locksmith run of counter 52 902 (trace tick 52 903); pot and fishing rod both missing (stock and wares 0: the pot from 52 623, the rod from 52 865), the last tool handled the rolling pin (not missing) | the tool chosen, the next tool made | the fishing rod (the last of the list pot, rod); the metalworks' next tool is a fishing rod (in the headquarters at 53 745; the player's stock holds one rod and no pot in the heap dumps of 59 000 and 59 500). The fisher test of AI-CON-4.1 then passes and the fish need of cell (9, 2) gets its fisher order (slot time 5 952.856 in the dump of 59 500). Choosing the first missing tool after the rolling pin by slot (the pot) leaves no rod: no fisher order, the woodcutter placed 50 ticks earlier and the generator apart at 59 530 |
+| T111 | AI-CON-9.3 which removals take the cell away: E-trace-019 (MP_4P_Fight, players 1 .. 3 computer), player 2's gold need (cell (3, 2), resource square (15, 10)), linked to the production of its gold mine site on (62, 40) (placed at counter 14 433); the site is removed with land lost to a take-over at counter 17 540 | the need after the removal, the next gold mine | the need has no production but keeps cell (3, 2) and square (15, 10) (heap dump read over 17 499 .. 17 556, after the removal); the next gold mine site is placed on (62, 37) in cell (3, 2) (its building rows from 17 690; production in the dump of 18 000). Taking the cell away at that removal instead arranges the need into cell (4, 2) and places the mine on (65, 39) (counter 17 672): the war's buildings then differ from 17 680, and the extra builder request shifts the request queue's turns (ECO-REQ-2.2), so a carrier of player 1 leaves one tick later (17 690). T84 (a tear-down) is unchanged |
 
 ## Evidence
 
@@ -1756,6 +1792,9 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ai-074, E-trace-018 | recording and experiment build | (session 2026-11-17 day): R5's `ai_street` table (cursor and work per run, counters 51000 .. 51730) and flags table; the experiment build's runs | 8.1f next flag (T106) |
 | E-ai-075, E-trace-019 | code reading, heap dump, experiment build | (session 2026-11-17 day): the needs score's mean over the production records; player 1's production records in R6's dump of 12000 | 4.2 avgProd records only (T107) |
 | E-ai-079, E-trace-013 | memory reads of the running game, recording, experiment build | (session 2026-11-21 pm): R3's heap dumps 34000, 34500, 52000, 52500 (player 1's need map), objects and buildings tables | 2.5b the production of a site placed by a needs order (T108) |
+| E-ai-080, E-trace-019 | code reading, memory reads of the running game, recording, experiment build | (session 2026-11-22 day): the computer player's removal of a building record (its needs and productions deleted); player 3's need maps, waiting list, construction slots and military record in the heap dumps of 9500 .. 15 000; the buildings and stocks tables | AI-CON-9.3 the building's own needs (T109), Q-1080 |
+| E-ai-083, E-trace-018 | code reading, memory reads of the running game, recording, experiment build | (session 2026-11-22 night): the locksmith run (the missing list, its order, the choice when the last tool handled is not missing, when the last handled is stored) and the worker test of AI-CON-4.1; player 1's stocks in the heap dumps of 59 000 and 59 500 and the stock table of the Weak recording; the experiment build with the corrected choice (T110) |
+| E-ai-084, E-trace-019 | code reading, memory reads of the running game, recording, experiment build | (session 2026-11-22 night): the removal of a building record and the tear-down step before the demolish command, which of the two takes a need off its cell and square; the heap dump of 17 500 read over 17 499 .. 17 556; the experiment build with the split (T111) |
 | E-ai-020 | code reading and experiment | experiment build exp4: the route task equals E-trace-010 run for run to counter 3472 (from 2584), dense settlers 4218 -> 4308 |
 | E-ai-021 | code reading, memory reads of the running game and experiment | E-trace-010 heap dumps 3500, 4000, 4500 (the AI player's destruction cursor) |
 | E-ai-022 | code reading, memory reads of the running game and experiment | E-trace-010 heap dumps 4500, 5000, 5500 (the AI player's construction part: budget, state, hunter holder; cell (8, 2)'s hunter id) |

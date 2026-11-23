@@ -37,6 +37,12 @@ pub(crate) const USAGE: &str =
                           its rules name, e.g. StoneResourceA01, Field01,
                           bush01, Coal (few)) with a project's .glb model
                           (hook W30c; repeatable; docs/extending.md)
+  --figure-model <kind>=<file>[,far=<file>][,far-below=<share>]
+                          draw the settler kind <kind> (its rules name, e.g.
+                          Carrier) as a project's .glb figure of rigid parts
+                          with its own clips, and its far version below
+                          <share> of the view's height (default 0.04; hook
+                          W30d; repeatable; docs/extending.md)
   --ground-study <hard|blend|clear|ragged|ragged-flat|calm>=<palette.json>
                           development: a study of the ground cut into flat
                           facets in a project palette's colours (not a
@@ -51,6 +57,10 @@ pub(crate) const USAGE: &str =
                           the player's folders
   --shot <file.png>       save one screenshot of the first map and quit
   --shot-after <frames>   frames the map is on screen before the shot
+  --shot-frames <n>       with --shot: n consecutive frames, saved as
+                          <file>-00.png ..., each frame a game step of
+                          1/60 s (motion at 60 frames a second, however
+                          long a capture takes)
   --bench <frames>        time that many frames of the map once its 3D
                           scene is built and drawn for a while, then quit
                           (the frame-time benchmark, docs/test-coverage.md)
@@ -230,12 +240,16 @@ pub(crate) struct Options {
     pub(crate) tree_looks: Vec<crate::extend::TreeLook>,
     /// Hook W30c: `--object-model`.
     pub(crate) object_looks: Vec<crate::extend::ObjectLook>,
+    /// Hook W30d: `--figure-model`.
+    pub(crate) figure_looks: Vec<crate::extend::FigureLook>,
     /// `--ground-study` (a development switch).
     pub(crate) ground_study: Option<crate::render::ground_study::Study>,
     pub(crate) screenshot_dir: PathBuf,
     pub(crate) shot: Option<PathBuf>,
     /// `--shot-after`: frames on screen before the shot.
     pub(crate) shot_after: u32,
+    /// `--shot-frames`: the shot as this many consecutive frames.
+    pub(crate) shot_frames: u32,
     /// `--profile-dir`: the settings and the profile file live here, not in
     /// the player's folders (the harness's own, `docs/test-coverage.md`).
     pub(crate) profile_dir: Option<PathBuf>,
@@ -381,10 +395,12 @@ pub(crate) fn parse_from(
         building_looks: Vec::new(),
         tree_looks: Vec::new(),
         object_looks: Vec::new(),
+        figure_looks: Vec::new(),
         ground_study: None,
         screenshot_dir: PathBuf::from("screens"),
         shot: None,
         shot_after: SHOT_SETTLE_FRAMES,
+        shot_frames: 1,
         profile_dir: None,
         bench: None,
         bench_pan: false,
@@ -479,6 +495,7 @@ pub(crate) fn parse_from(
             "--building-model" => options.building_looks.push(building_look(&value()?)?),
             "--tree-model" => options.tree_looks.push(tree_look(&value()?)?),
             "--object-model" => options.object_looks.push(object_look(&value()?)?),
+            "--figure-model" => options.figure_looks.push(figure_look(&value()?)?),
             "--ground-study" => {
                 options.ground_study = Some(crate::render::ground_study::from_option(&value()?)?)
             }
@@ -489,6 +506,14 @@ pub(crate) fn parse_from(
                 options.autosave = Some(value()?.parse().map_err(|e| format!("--autosave: {e}"))?)
             }
             "--shot" => options.shot = Some(value()?.into()),
+            "--shot-frames" => {
+                let frames = value()?;
+                options.shot_frames = frames
+                    .parse()
+                    .ok()
+                    .filter(|&n| (1..=600).contains(&n))
+                    .ok_or_else(|| format!("bad frame count {frames}, want 1 to 600"))?;
+            }
             "--shot-after" => {
                 let frames = value()?;
                 options.shot_after = frames
@@ -787,6 +812,35 @@ pub(crate) fn object_look(text: &str) -> Result<crate::extend::ObjectLook, Strin
         }
         _ => Err(format!("--object-model {text}: <name>=<file>")),
     }
+}
+
+/// `--figure-model <kind>=<file>[,far=<file>][,far-below=<share>]` (hook
+/// W30d).
+pub(crate) fn figure_look(text: &str) -> Result<crate::extend::FigureLook, String> {
+    let bad = || format!("--figure-model {text}: <kind>=<file>[,far=<file>][,far-below=<share>]");
+    let mut fields = text.split(',');
+    let (figure, model) = fields
+        .next()
+        .and_then(|f| f.split_once('='))
+        .ok_or_else(bad)?;
+    if figure.is_empty() || model.is_empty() {
+        return Err(bad());
+    }
+    let mut look = crate::extend::FigureLook::new(figure, model);
+    for field in fields {
+        match field.split_once('=') {
+            Some(("far", v)) if !v.is_empty() => look.far = Some(v.into()),
+            Some(("far-below", v)) => {
+                look.far_below = v
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|f| f.is_finite() && *f >= 0.0)
+                    .ok_or_else(bad)?;
+            }
+            _ => return Err(bad()),
+        }
+    }
+    Ok(look)
 }
 
 #[cfg(test)]

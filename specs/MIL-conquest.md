@@ -56,7 +56,14 @@ one soldier and a building with no soldier left burns down.
   Nothing is taken over. Confidence: high.
 - **MIL-CON-2.2 Other military buildings**, in this order:
   1. soldiers out intercepting for the target (MIL-ATK-3) lose that errand
-     (they walk home, MIL-ATK-3.4);
+     (they walk home, MIL-ATK-3.4); **corrected 2026-11-22 pm (E-mil-038: code reading, the war
+     recording and an experiment build; high):** nothing is done to them at the take-over itself.
+     The conquest only collects the target's attackers and links them to the new building (6).
+     With the old building removed (3) an interceptor has lost only the building he defends. A
+     pair he is in holds, so his duel goes on, or his walk to his attacker and then the duel, and
+     so does his attacker's. An interceptor with no attacker, in defense wait (MIL-ATK-3.4), finds
+     the defended building gone in his next update and walks home. So does one whose duel ends
+     later, as he survives it. Test T19;
   2. the old owner gets "Lost Military Building to enemy." at its field;
   3. the building is removed **without** remains (no ruin, no fire); its land
      is released as in TER-4.1 (recomputed from the other buildings, no
@@ -293,6 +300,7 @@ Confidence: high for texts and recipients.
 | T17 | 4.1, 4.4, `AI-construction.md` AI-CON-9.3: E-trace-010, the computer player tears down its finished hunter's hut 90244 on (139, 47) (flag (140, 46)) at counter 4791 | wares and numbers | one plank 90644 lies at (140, 46) (the hut's frame and main planks, halved, rounded up), then the remains 90645 on (139, 47) (measured, `objects.csv`); the hut's hunter, resting inside, goes home (`TRN-free-walk.md` T28) |
 | T17a | 4.1b (Q-150): the human player demolishes their finished woodcutter's hut (frame cost 1 plank, main cost 1 plank) through the building window; separately, a woodcutter's site whose frame is done (frame share 1, main share 0) with its main plank delivered and not yet used is destroyed through the site window | wares, ruin, flag | the hut: 1 plank on its flag (frame 1 plus main 1 = 2, halved rounded up), then a ruin on the hut's field burning 333 ticks; the site: 1 plank for the frame (1 halved rounded up) plus the unused plank in full = 2 planks on its flag, no ruin; in both cases the flag and its roads stay, and carriers take the planks off |
 | T18 | 1.2, 2.3 (the take-over's ticks): E-trace-019 (R6, the war), player 3's guard house 15251 on (31, 21), flag (32, 20); attacker 16592 of player 2 walking to that door, the condition holding | his rows and the building's (counters) | on the flag (32, 20) and capturing (state 15) in counter 13447, the building still player 3's 15251; in 13448 the building is player 2's new 18699 and he stands on the flag (state 16, the walk in); the step (32, 20) -> (31, 21) at progress 0 in 13449, 0.045 in 13450. The next two attackers of the same target arrive at a building of their own and turn to capturing likewise (16600 in 13457, 17868 in 13470). Taking it in the arrival update and walking in at once is one and two ticks early; with the rule: not yet measured (no experiment build on 2026-11-19 night) |
+| T19 | 2.2 step 1 (fights at a taken target): E-trace-019 (R6, the war), player 2's guard house (31, 21) taken by 19481 (player 3) in trace tick 17 608, while the interceptor 16608 of (47, 19), who defends it, fights 18814 on (33, 20) (both at 1 health) | 16608 and 18814 | the duel goes on: 16608 falls (dying from about 17 616, recorded), 18814 survives and then steps back to his field's point (recorded at (132 000, 80 639) in 17 620). Unpairing the pair at the take-over sends 16608 home on a free walk with its draws in 17 611 (the war's generator apart from 17 611, settlers from 17 620); with the rule (experiment build) from 17 718 and 17 690 |
 
 ## Evidence
 
@@ -313,6 +321,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-013 | code reading | (session 2026-11-15 night) | 2.3: the taking soldier's job after the takeover: walk to the flag, walk in (ECO-WORK-3.8), or stay out as the defender when paired |
 | E-mil-014 | code reading | (session 2026-11-15 day) | 4.1b: the remove-building command's handler removes with remains; the senders (building and site windows, the destroy action); the remains switch cleared only at shutdown; the flag not removed |
 | E-mil-028, E-trace-019 | code reading, recording | (session 2026-11-19 night): the attacker's arrival at the door (capture state only) and the capture state's own update (the test again, the take-over, the walk in); R6's first capture at counter 13447 | 1.2, 2.3 the take-over's ticks (T18) |
+| E-mil-038, E-trace-019 | code reading, recording, experiment build | (session 2026-11-22 pm): the conquest's steps re-read (the attackers collected and re-linked; no interceptor unlinked); R6's duel of 16608 and 18814 across the take-over of (31, 21), trace ticks 17 590 .. 17 650 | 2.2 step 1 corrected (T19) |
 | data | script | `buildings.lua` (catapult), `config.lua` | radius, stock, time factors |
 
 ## Open questions

@@ -95,6 +95,8 @@ pub(crate) struct Viewer {
     pub(crate) screenshot_dir: PathBuf,
     pub(crate) shot: Option<PathBuf>,
     pub(crate) shot_after: u32,
+    /// `--shot-frames`: the shot's consecutive frames (0 or 1: one).
+    pub(crate) shot_frames: u32,
     pub(crate) frames_since_load: u32,
     pub(crate) shot_taken_at: Option<u32>,
     /// The simulation on the current map.
@@ -545,7 +547,12 @@ pub(crate) fn advance_world(
     }
     // TOOL-1.2: the animation clock takes the same step as the logic.
     let held = viewer.paused || viewer.world.is_none();
-    clock.step = game_step(time.delta_secs(), viewer.speed, held);
+    // `--shot-frames`: a sequence's frames are 1/60 s of game time each.
+    let frame = match viewer.shot.is_some() && viewer.shot_frames > 1 {
+        true => crate::tools::shots::SEQUENCE_FRAME,
+        false => time.delta_secs(),
+    };
+    clock.step = game_step(frame, viewer.speed, held);
     clock.seconds += clock.step;
     clock.ticks = 0;
     clock.world_seconds = viewer

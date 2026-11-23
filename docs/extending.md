@@ -24,6 +24,7 @@ simulation only through its public API (`docs/api.md`).
 | A building's own model | a building type drawn with a project's binary glTF model (`.glb`): its objects, door and work clips, owner's colour, ground patch and smoke, in the game's light (hook W30) | `Extensions::building_looks` (`BuildingLook`), `--building-model` |
 | A tree's own model | a tree kind drawn with a project's `.glb` and its far version, as the game draws its trees: turn and sizes, growing, felling and sinking, the wind, shadows, the day's light (hook W30b) | `Extensions::tree_looks` (`TreeLook`, `TreeGrowth`), `--tree-model` |
 | A map object's own model | the stonemason's stone piles (each state its own model), the grain fields, the map's decorations and blocking rocks and the geologists' signs drawn with a project's `.glb`, each where and as the game draws its kind: turn and sizes, a field's growing, a pile's states and sinking, shadows, the day's light (hook W30c) | `Extensions::object_looks` (`ObjectLook`), `--object-model` |
+| A figure's own model | a settler kind (the carriers first) drawn as a project's `.glb` figure of rigid parts with clips of its own and a far version: the clip chosen by the motion the game asks for, the walk played by the ground covered, the ware at the hand, the owner's colour; heading, turn, stepping aside and the pick box stay the engine's (hook W30d, a trial) | `Extensions::figure_looks` (`FigureLook`), `--figure-model` |
 | Deepening a mine | an exhausted mine of a type the overlay names is deepened for material a builder works; part of the ore comes back and the mine eats more food per product | `reborn.bp_setDeepening`, `reborn.bp_addDeepeningCost`, `reborn.bp_addDeepeningFood` (in an overlay), `Command::DeepenMine`, `World::can_deepen`, `World::mine_deepening` |
 | The pictures of the hooks' buttons | the Deepen and Next recipe buttons of a building's window and the road menu's Pave button drawn with a 48 x 48 cell of the project's picture | `Extensions::button_pictures` (`ButtonPictures`, `ButtonPicture`) |
 | A message when a project's rule finishes | the player's message when a mine's deepening is done or a road is paved, in the project's words (hook W24) | `Extensions::messages` (`ProjectEvent`) |
@@ -524,7 +525,8 @@ luminances add up to noon's 1.4377, all of it at the night's 0.5993, in
 between linearly). By day nothing changes. Windows that light up at night
 are not drawn (a light map of its own is not read).
 
-What it does not cover: skinned figures, map objects (see "A tree's own
+What it does not cover: settlers (see "A figure's own model": rigid parts,
+no skin), map objects (see "A tree's own
 model" and "A map object's own model"), a switch between whole graphics sets; a site model of
 a project's own (`site_of` borrows an original's); the original's
 per-building colour variation (GFX-OBJ-2.2: a project model is never tinted
@@ -715,6 +717,113 @@ flags, border markers and buoys (player-coloured, the roads' and borders'
 sheet), the ruins of buildings (the buildings'), animals; a far version (one
 model at every distance: these are small and simple); alpha-tested leaves or
 grass blades.
+
+### A figure's own model
+
+A project draws a settler kind as a figure of its own, a binary glTF file
+(`.glb`) of **rigid parts that turn at their joints** (as a building's door
+turns), moved by **clips of its own** (hook W30d). Nothing of the original's
+skeleton, skin or clips is used. It is a trial: it is whole for the road
+carriers of every tribe; any other kind takes the same path (its own
+motions, see the clip table below) but has not been looked at. A kind keeps
+its rules; only its look changes, so a look changes no rule and no state:
+
+```rust
+use s2_viewer::{Extensions, FigureLook};
+
+let mut carrier = FigureLook::new("Carrier", "data/settlers/frontier/carrier.glb");
+carrier.far = Some("data/settlers/frontier/carrier_far.glb".into());
+let extensions = Extensions {
+    asset_folders: vec!["assets".into()],
+    figure_looks: vec![carrier],
+    ..Default::default()
+};
+```
+
+| Field | Meaning |
+|---|---|
+| `figure` | the kind drawn with it, by its name in the rules: `Carrier` for the road carriers (of every tribe, on land; the donkeys stay the original's); for the others the job's good name the settler list uses (`Woodcutter`, `Constructor` the builder, `Bulldozer` the leveller, `Private` .. the soldiers' ranks); a later look of the same kind wins |
+| `model` | the `.glb` file's path below the install (`data/...`, any case), an asset folder's first |
+| `far` | a lighter file with the same nodes, points and clips, drawn while the figure is small on the screen. Default none: the model at every size |
+| `far_below` | the far file is drawn while the figure's standing height on the screen is below this share of the view's height. Default `FIGURE_FAR_BELOW`, 0.04 (43 pixels of a 1080-pixel view: in the middle of the view a 2.15 figure is about 46 pixels high at the default zoom and 36 at the farthest, so the far file shows at the farthest zoom and along the far edge of the default's) |
+
+From the command line: `--figure-model <kind>=<file>[,far=<file>][,far-below=<share>]`
+(repeatable) with `--assets` for the folder. `s2-viewer --map-name
+MP_2P_Storm_Coast --3d --assets tests/models --figure-model
+Carrier=figure.glb,far=figure_far.glb` draws Storm Coast's carriers as the
+repository's box figure (`scripts/make-test-figure.py`);
+`crates/viewer/examples/extended.rs` does the same when `S2_NEXT_ASSETS` holds
+`figure.glb`.
+
+**A file that cannot be drawn stops the start**, with a line that starts with
+the file's name as the look gives it: one that cannot be found or read, has
+no mesh, more than 50 nodes, no clip `Stand` or `Walk`, or no point
+`attach_hand` (`data/settlers/carrier.glb: no clip Walk`).
+
+**What the file must hold.**
+
+| Item | Rule |
+|---|---|
+| Frame | glTF's own: +Y up, **facing +Z**, the origin on the ground between the feet; made in game units (a carrier 2.15 high). The settlers' scale of 1.2 is **not** applied to it. The engine turns it once, half round, into the settlers' facing; the game turns it to its heading |
+| Nodes | at most 50 (the shader's palette, as a building's); every mesh rigid on its own node, the nodes' tree the joints. The parts should overlap at the joints so that no gap opens in any motion. Empty nodes are points |
+| Points | `attach_hand` (required): where the carried ware hangs, its pose taken from the playing clip every frame with nothing added (GFX-OBJ-7.2). The ware is the install's item model as the view holds it: its up along the point's +Y, a plank's or log's length along the point's Z, its grip at the point's origin. `anchor_origin` is read but not used |
+| Clips | node animation (translation, rotation, scale; linear), **in real seconds**, named for the motions below. `Stand` and `Walk` are required; `Stand`, `Walk`, `StandCarry` and `WalkCarry` loop, the others play once. **One `Walk` (and `WalkCarry`) cycle covers 1.5 units of ground**: the feet planted on the ground travel back 1.5 units over the clip, whatever its length (the carrier's: 0.556 s, two steps) |
+| Colour | as a building's: `TEXCOORD_0` into the embedded palette image times `COLOR_0` (the face's occlusion), roughness and metallic from the second image. **The owner's colour**: the faces whose corners' middle lies on the palette's `team` swatch (palette version 2: column 4, row 4, u and v 0.5 .. 0.625 in glTF's coordinates) are multiplied by the owner's player colour, as a building's `teamcolour` part (the swatch is white, so they show the player colour, shaded by their occlusion). No `teamcolour` node is needed |
+| Far file | the same node names: each of its parts is moved by the model's node of its name, its vertices staying where the far file has them at rest. Its own points and clips are not read (the model's play for both) |
+
+**What the engine does with it.**
+
+- **The clip of the motion.** Each tick the game's clip choice
+  (GFX-ANIM-3.1) gives a motion; the figure plays its clip for it:
+
+  | The game asks | With a ware at the hand | Without |
+  |---|---|---|
+  | standing | `StandCarry` | `Stand` |
+  | walking (also in the water) | `WalkCarry` | `Walk` |
+  | taking up a ware | `Pickup` | `Pickup` |
+  | putting it down | `PutDown` | `PutDown` |
+  | another (a worker's `WorkLoop0` .. `2`, a soldier's `Hit`, a rowing carrier) | the base's name, once | the base's name, once |
+
+  A motion the file has no clip for falls back to the plain one
+  (`WalkCarry` to `Walk`, `StandCarry` to `Stand`), else to `Walk` while the
+  settler moves and `Stand` at rest, looping; the program logs it once by the
+  file's and the clip's name (`figure carrier.glb: no clip PutDown, drawn with
+  Stand (hook W30d)`). Never a rest pose, never a crash. The original's random
+  idle clips (GFX-ANIM-3.3) and the clips' sound events are not played for a
+  figure.
+- **The walk does not slide.** `Walk` and `WalkCarry` are not played by the
+  clock but by the ground the figure covers between two frames, one cycle
+  per 1.5 units, so a carrier slowed on a slope or on the slow free walk steps
+  slower in the same measure. The cycle is drawn in 32 phases (at the full
+  walk, 2.7 units a second, a phase lasts 17 ms, a frame at 60 frames a
+  second); each phase is one pose shared by every figure in it.
+- **What stays the engine's**: the place between ticks (GFX-ANIM-4.1), the
+  heading and its turn, the stepping aside (4.3), the in-water test, the
+  dying sink, the pick box (UI-GAME-9.3), the seen marks, "inside a building
+  nothing is drawn", the boat of a rowing carrier.
+- **Light**: the map objects' facet family (flat faces, the game's sun and
+  sky by day and night, shadows cast and received).
+- **Cost.** The engine merges a figure's parts into one mesh per version
+  (model, far) and kind (plain, owner's colour), each vertex bound with
+  weight 1 to its node's matrix: the trial's carrier is two drawn meshes,
+  880 triangles (its far file 244), against the original's one skinned mesh
+  of 1,700 to 2,400. Every figure in the same pose (a looping clip, a
+  walking phase) and of the same owner shares its meshes' materials, and
+  those poses are kept once made, so the renderer draws them in batches and a
+  walker moving from phase to phase makes no new material; the original's
+  settler has colours of its own (GFX-OBJ-3.2) and is drawn on its own. A
+  play-once clip (`Pickup`, `PutDown`) takes a pose of its own. Measured on
+  a late Storm Coast game (about 960 settlers, the frame benchmark's scene):
+  10.7 ms a frame with the carrier against 10.4 ms with the original's.
+- **Without any look**: nothing of it is read or computed; every settler is
+  drawn as before (the golden images unchanged).
+
+What it does not cover: a skinned figure (a skin bound to the original's
+skeleton and moved by its clips; the slot sheet's other way); the
+original's per-figure colour variety (every figure of a kind and owner is
+the same); the donkeys, ships and animals; clips' sound and particle events;
+the original's idle variants; any motion beyond the clip table above (the
+work, fight and dying motions of other kinds fall back as described).
 
 ### Deepening a mine
 

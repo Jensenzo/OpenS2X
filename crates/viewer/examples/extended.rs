@@ -20,8 +20,8 @@ use s2_viewer::extend::{
     CameraFollow, CurrentSettings, MapThings, MenuEntry, MusicSlot, PageWidget,
 };
 use s2_viewer::{
-    BuildingLook, Captions, EffectRule, Extensions, ObjectLook, ProjectEvent, RenderOptions,
-    SettingsOptions, TreeGrowth, TreeLook,
+    BuildingLook, Captions, EffectRule, Extensions, FigureLook, ObjectLook, ProjectEvent,
+    RenderOptions, SettingsOptions, TreeGrowth, TreeLook,
 };
 
 /// The woodcutter's hut costs one more stone: an overlay sees the
@@ -232,6 +232,17 @@ fn main() -> std::process::ExitCode {
             })
             .into_iter()
             .flatten()
+            .collect(),
+        // Hook W30d: the repository's test figure for the carriers, when
+        // the asset folder holds it (`S2_NEXT_ASSETS/figure.glb`).
+        figure_looks: std::env::var_os("S2_NEXT_ASSETS")
+            .filter(|dir| std::path::Path::new(dir).join("figure.glb").is_file())
+            .map(|_| {
+                let mut look = FigureLook::new("Carrier", "figure.glb");
+                look.far = Some("figure_far.glb".into());
+                look
+            })
+            .into_iter()
             .collect(),
     };
     s2_viewer::run_with(true, extensions)

@@ -5,6 +5,7 @@
 rock        #8C8573  the rock kinds: a warm grey (the neutral stone #9A9890 took the ambient's lilac)
 rock_dark   #645C4F  the dark rock kinds
 rock_light  #ADA48E  the pale rock kinds (stone ground, the harbour)
+sandstone   #997D4C  the MED red rock kinds (2026-11-22 pm; terracotta_dark #96432F drew them brick red): the original's lit slopes on Paradise Island, (193, 146, 88) and (204, 162, 96) in two places, matched by two pictures of the study
 snow        #9AA8B4  snow: lit planes stay below white (sun-facing 0.93 0.92 0.98; flat 0.79 0.79 0.85), the shade side blue-grey (0.36 0.33 0.43)
 turf        #5E6B3F  meadow: a step darker and less yellow than #72803F, below the crowns' leaf_light #6F9A48
 turf_dry    #7A7445  dry meadow: the same step from #948C4C

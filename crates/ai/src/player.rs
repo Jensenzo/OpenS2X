@@ -526,7 +526,7 @@ impl AiPlayer {
         let Some(rec) = self.records.remove(&at) else {
             return;
         };
-        // Its productions are detached from their needs (AI-CON-9.3); the
+        // Its productions are detached from their needs (AI-CON-9.3); those
         // needs stay and ask for a new producer.
         let gone: Vec<_> = self
             .plan
@@ -547,6 +547,19 @@ impl AiPlayer {
         }
         for id in gone {
             self.plan.remove_production(id);
+        }
+        // AI-CON-9.3 the building's own needs (T109): the needs whose
+        // consumer it is are deleted with it (off the need and waiting
+        // lists; a production linked to one loses it).
+        let own: Vec<_> = self
+            .plan
+            .needs
+            .iter()
+            .filter(|n| n.consumer == Some(at))
+            .map(|n| n.id)
+            .collect();
+        for id in own {
+            self.plan.remove_need(id);
         }
         if let Some(cell) = self.cells.get_mut(rec.cell) {
             cell.buildings.retain(|&p| p != at);

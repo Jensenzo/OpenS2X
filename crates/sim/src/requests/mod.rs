@@ -788,14 +788,16 @@ impl World {
     /// SHIP-4.1 (Q-063): the settler request at `index` of the queue found
     /// no warehouse able to send the settler: it is attached as a ware
     /// order is ([`World::harbour_for`] from the requester's flag), if it
-    /// is not attached yet.
+    /// is not attached yet. SHIP-4.1 (T27, Q-1079): "reachable over the
+    /// roads" is the ware network (the roads with a carrier or donkey
+    /// assigned) and its cost, for a settler request too.
     fn settler_harbour_step(&mut self, index: usize) {
         let request = self.queue[index];
         if request.harbour.is_some() || !self.has_harbour(request.player) {
             return;
         }
         let flag = self.request_destination(request.requester);
-        let costs = self.route_costs_to(request.player, flag, Search::Settler);
+        let costs = self.route_costs_to(request.player, flag, Search::Ware);
         if let Some(h) = self.harbour_for(request.player, request.profession, &costs) {
             self.queue[index].harbour = Some(h);
             self.attach_need(h, request.profession);
@@ -1285,8 +1287,9 @@ impl World {
     /// that harbour's need of the good. Attached: it stays while its
     /// harbour still accepts the good and is reachable over the roads from
     /// the order's flag, else it is detached (and may attach again at a
-    /// later pass).
-    fn harbour_step(&mut self, i: usize) {
+    /// later pass). SHIP-4.1 (T24): the choice asks the stored costs from
+    /// `representative`, the flag of the matching's representative order.
+    fn harbour_step(&mut self, i: usize, representative: Point) {
         let order = self.orders[i];
         if order.harbour.is_none() && !self.has_harbour(order.player) {
             return;
@@ -1306,7 +1309,9 @@ impl World {
                 }
             }
             None => {
-                if let Some(h) = self.harbour_for(order.player, order.good, &costs) {
+                if let Some(h) =
+                    self.harbour_for_stored(order.player, order.good, &costs, representative)
+                {
                     self.orders[i].harbour = Some(h);
                     self.attach_need(h, order.good);
                 }
@@ -1373,7 +1378,7 @@ impl World {
                 // No H: an order is chosen (and marked); nothing is sent.
                 // SHIP-4.1 (Q-063): then its harbour step.
                 if let Some(i) = self.choose_order(player, good, group) {
-                    self.harbour_step(i);
+                    self.harbour_step(i, flag);
                 }
                 None
             }
@@ -1498,10 +1503,14 @@ impl World {
         let warehouses = self.warehouses_of(player);
         let h = self.stocked_warehouse(player, warehouses, good, flag, &network);
         // TRN-CARRY-5.3a: the stored cost from D's flag to Wf's flag against
-        // H's stored cost.
-        let cost = self.stored_ware_cost(player, flag, at).unwrap_or(u32::MAX);
-        match h {
-            Some((h, hc)) if cost > hc => {
+        // H's stored cost. ECO-REQ-5.3 (a) (T44): without an H neither cost
+        // is asked, so nothing is stored for the pair then.
+        let from_h = h.and_then(|(h, hc)| {
+            let cost = self.stored_ware_cost(player, flag, at).unwrap_or(u32::MAX);
+            (cost > hc).then_some(h)
+        });
+        match from_h {
+            Some(h) => {
                 let sent = self.can_send(h);
                 if sent {
                     self.send_from(h, order, flag);

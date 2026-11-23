@@ -170,7 +170,8 @@ snap_enum!(crate::combat::DefendStep {
     Back,
     Ended,
     Held,
-    In
+    In,
+    Meeting
 });
 snap_struct!(crate::combat::AttackRecord {
     soldier,
@@ -474,7 +475,8 @@ snap_struct!(crate::navy::Harbour {
     expedition,
     expedition_counter,
     aside,
-    builder_aside
+    builder_aside,
+    fresh @ 97 = false
 });
 snap_enum!(crate::placement::BuildingSize {
     Small,
@@ -682,7 +684,7 @@ snap_struct!(crate::rules::Roles {
     coin,
     boat_carrier
 });
-snap_enum!(crate::settlers::SettlerJob { ToSite { target, builder }, ToBuilding { target }, Worker { target, work }, Home { target }, ToMilitary { target, health }, Garrison { target, health, heal }, Attack { home, health, step }, Defend { home, health, step, opponent, intercept, defends @ 75 = None }, Specialist { flag, spots_left, step }, CarryOut { warehouse, destination, target, order, step }, Dying { stand @ 86 = None }, Released { carrier, step }, Leaving { step, at, stand, health @ 70 = None } });
+snap_enum!(crate::settlers::SettlerJob { ToSite { target, builder }, ToBuilding { target }, Worker { target, work }, Home { target }, ToMilitary { target, health }, Garrison { target, health, heal }, Attack { home, health, step }, Defend { home, health, step, opponent, intercept, defends @ 75 = None, meeting @ 98 = None }, Specialist { flag, spots_left, step }, CarryOut { warehouse, destination, target, order, step }, Dying { stand @ 86 = None }, Released { carrier, step }, Leaving { step, at, stand, health @ 70 = None } });
 snap_enum!(crate::settlers::LeavingStep {
     Wait,
     Finish,

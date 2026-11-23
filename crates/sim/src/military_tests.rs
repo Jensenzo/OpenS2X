@@ -1671,3 +1671,62 @@ fn t45_a_soldier_whose_walk_ended_short_stays_linked_until_he_goes() {
     }
     assert_eq!(military_requests(&world, P0), 1);
 }
+
+// TRN-FREE T53 (TRN-FREE-6.4b, a work walk that ends in T, E-trn-044): a
+// removed site's builder whose work walk under way ends in the removal tick
+// T itself stands on its position in T; the line to his field's point is
+// ordered at progress 0 in T + 1 and he moves from T + 2. (A walk ending
+// after T orders the line in the tick he reaches it, T34.)
+// spec: TRN-FREE-6.4b (TRN-FREE T53)
+#[test]
+fn trn_free_t53_a_work_walk_ending_in_t_orders_the_line_in_t_plus_1() {
+    use crate::movement::LatticeWalk;
+    let mut world = quiet_game();
+    let field = (27, 22);
+    let point = grid::field_sample(field);
+    let speed = world.settings.settler_speed;
+    let (from, to) = ((point.0 - 4, point.1), (point.0 - 2, point.1));
+    let mut walk = LatticeWalk::new(&world.terrain, speed, from, to);
+    while walk.ticks_left(&world.terrain, speed) > 1 {
+        walk.advance(&world.terrain, speed);
+    }
+    let t = world.tick();
+    let through = |walk| SettlerJob::Leaving {
+        step: crate::LeavingStep::Through { walk, home: false },
+        at: t,
+        stand: Some(from),
+        health: None,
+    };
+    let id = world.add_settler(Settler {
+        number: 0,
+        player: P0,
+        profession: HELPER,
+        list: crate::SettlerList::Carriers,
+        walker: Walker::new(field),
+        job: through(walk),
+        timer: 0,
+        carrying: None,
+    });
+    let line = |w: &World| match w.settlers[id].as_ref().unwrap().job {
+        SettlerJob::Leaving {
+            step: crate::LeavingStep::Through { walk, home },
+            ..
+        } => (walk, home),
+        ref j => panic!("{j:?}"),
+    };
+    // T: he reaches his position; no line yet.
+    world.step();
+    let (walk, home) = line(&world);
+    assert!(walk.is_done(&world.terrain) && !home);
+    assert_eq!(walk.to, to);
+    // T + 1: the line to his field's point at progress 0.
+    world.step();
+    let (walk, home) = line(&world);
+    assert!(home);
+    assert_eq!((walk.from, walk.to, walk.done), (to, point, 0));
+    assert_eq!(walk.progress_bits, 0);
+    // T + 2: he moves.
+    world.step();
+    let (walk, _) = line(&world);
+    assert!(walk.done > 0 || walk.progress_bits != 0);
+}

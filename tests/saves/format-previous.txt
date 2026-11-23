@@ -1,4 +1,4 @@
-save format 2, world format 95
+save format 2, world format 98
 s2_ai::AiSystem
     counter: u64
     players: seq<Option<s2_ai::player::AiPlayer>>
@@ -417,6 +417,7 @@ s2_sim::combat::AttackRecord
     opponent: Option<usize>
     hit: bool
     offset @74: Option<s2_sim::combat::OffsetStep>
+    paired @96: u64
 s2_sim::combat::AttackStep
     0 Leaving
     1 Walking
@@ -753,6 +754,7 @@ s2_sim::navy::Harbour
     expedition_counter: u32
     aside: seq<(u32, u32)>
     builder_aside: bool
+    fresh @97: bool
 s2_sim::navy::Landing
     spot: (u32, u32)
     field: (u32, u32)
@@ -1023,7 +1025,7 @@ s2_sim::settlers::SettlerJob
     4 ToMilitary { target: s2_sim::requests::Target, health: u32 }
     5 Garrison { target: s2_sim::requests::Target, health: u32, heal: u32 }
     6 Attack { home: s2_sim::requests::Target, health: u32, step: s2_sim::combat::AttackStep }
-    7 Defend { home: s2_sim::requests::Target, health: u32, step: s2_sim::combat::DefendStep, opponent: Option<usize>, intercept: bool, defends @75: Option<s2_sim::requests::Target> }
+    7 Defend { home: s2_sim::requests::Target, health: u32, step: s2_sim::combat::DefendStep, opponent: Option<usize>, intercept: bool, defends @75: Option<s2_sim::requests::Target>, meeting @98: Option<(u32, u32)> }
     8 Specialist { flag: (u32, u32), spots_left: u8, step: s2_sim::specialists::SpecialistStep }
     9 CarryOut { warehouse: s2_sim::requests::Target, destination: Option<(u32, u32)>, target: Option<s2_sim::requests::Target>, order: Option<s2_sim::requests::Order>, step: s2_sim::settlers::CarryOutStep }
     10 Dying { stand @86: Option<(u32, u32)> }

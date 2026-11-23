@@ -8,6 +8,73 @@ the working name s2-reborn. The public repository starts with its first
 public release; the sections before it describe releases made in the
 maintainer's working repository, which have no tag or download there.
 
+## OpenS2X 0.14.0 (2026-11-23)
+
+The road carriers can be drawn with a project's own figure, the long
+two-player games play on tick for tick alike with the original for 99
+minutes (Weak; 94 in 0.13.0) and 90 minutes (Strong; 89), and the
+four-player war for its first 29 minutes (27). The game's rules change only
+where the original's own play showed a difference.
+
+### What is new
+
+- **A figure's own model, a trial** (for projects built on OpenS2X): the road
+  carriers can be drawn as a figure of the project's own, a binary glTF model
+  (`.glb`) of rigid parts that turn at their joints, with motions of its own
+  and a lighter version for the far zooms. The game picks the figure's motion
+  as it picks the original's (standing or walking, with a ware or without,
+  taking it up, putting it down); the walk follows the ground the carrier
+  covers, so his feet do not slide on a slope or on a slow walk; the ware
+  hangs at the figure's hand, and the tunic takes the owner's colour. Where
+  he stands, turns and steps aside stays the game's. What the file must hold:
+  docs/extending.md, "A figure's own model". The viewer's `--figure-model`
+  shows it without a project.
+- **The four-player war** follows the original for its first 28 minutes (27
+  in 0.13.0): buildings farther than twelve fields from an attacked one send
+  fewer soldiers out to meet the attackers, as in the original.
+- **The Strong computer player's long game** stays equal to the original's
+  for 90 minutes (89): a ware lying free at a flag goes to the building that
+  ordered it at once when no storehouse holds that good, without asking the
+  route's cost.
+- **Ships:** a ware that must go overseas picks its harbour by the same road
+  costs the original remembers (the Weak game's random numbers equal for a
+  further 259 ticks); a ship with nothing to do lies at its harbour until it
+  is needed, and makes room when another ship comes to unload or to load
+  there, as the original's ships do.
+- **The Weak computer player's long game**: its random numbers stay equal to
+  the original's for 99 minutes (94): an upgraded building orders its
+  materials one tick sooner, and a mine whose ore field another mine emptied
+  looks for a new field at its next try, as in the original.
+- **The Strong game recorded densely** is now equal to the original
+  throughout its 33 minutes: a worker held before his full flag shows his
+  walk again in the tick his ware is let on.
+- **The four-player war**: a computer player's torn-down building takes its
+  own orders for goods with it; an attacker takes a waiting interceptor of
+  another building that defends his target.
+- **Harbours** work on the original's beat: a new harbour's first pass is a
+  full pass after it is finished, a harbour asks overseas only for what it
+  does not hold, and a ship it calls is loaded in a later pass with what the
+  other island still needs then. Saves from 0.13.0 load as before.
+- **The four-player war** follows the original for 29 minutes now: an
+  attacker never waits on a field an interceptor was sent to meet him on;
+  an interceptor walks first to that field and takes up his fight there a
+  little later, and one whose duel has just ended can be taken by the next
+  attacker at once; duels at a building that is taken over go on. A builder
+  whose site is lost while he walks to a work position starts home a tick
+  later.
+- **Harbours:** a settler needed overseas is asked for over the roads that
+  have a carrier, as wares are (the Strong game's random numbers equal for a
+  further 104 ticks).
+- **For developers:** the viewer's `--shot-frames N` saves a shot as N frames
+  in a row, each a 60th of a second of game time (for motion strips).
+
+### For projects built on OpenS2X: breaking changes
+
+- `s2_viewer::Extensions` has a new field `figure_looks` (hook W30d); a
+  struct literal without `..Default::default()` needs `figure_looks:
+  Vec::new()`. New `s2_viewer::FigureLook` and `FIGURE_FAR_BELOW`. Without a
+  look every settler is drawn as before.
+
 ## OpenS2X 0.13.0 (2026-11-22)
 
 A map's own objects can be drawn with a project's models, the long
