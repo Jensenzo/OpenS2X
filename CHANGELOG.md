@@ -8,6 +8,46 @@ the working name s2-reborn. The public repository starts with its first
 public release; the sections before it describe releases made in the
 maintainer's working repository, which have no tag or download there.
 
+## Unreleased
+
+## OpenS2X 0.14.1 (2026-11-23)
+
+0.14.0 with the later rules of the day. 0.14.0 was made but not published:
+its 30-minute test game had one frame of 157 ms. That was the PC's, not the
+game's: Windows' licence service started in the same second and stalled the
+drawing, as a second test game showed (a stall of the same kind, 0.26 s after
+the same service started, with nothing of ours running; a third game with a
+heavy foreign load beside it had no slow frame). What 0.14.0 brings, among it
+the hook for a project's own figure, is listed under it below.
+
+### What is new
+
+- **The long two-player games** stay equal to the original's for longer: the
+  Weak computer player's random numbers for 101 minutes (99 in 0.14.0), the
+  Strong game for 96 minutes (90). The computer player's locksmith makes the
+  tool the original picks when several are missing; a harbour that supplies
+  another island orders what that island needs at the moment, does its work
+  in its own building's turn, and keeps what it owes overseas instead of
+  handing it to a building site next door.
+- **The four-player war** follows the original a little further (its
+  settlers for 29 minutes, its buildings for 31): a computer player's building lost with its
+  land leaves its place in the plan, so the replacement goes where the
+  original puts it; a computer player in the Normal and Aggressive modes asks
+  for as many soldiers as the original does, a few fewer than before.
+- **For developers:** the long play (`scripts/long-play.sh`) records the PC's
+  load beside the frames (`scripts/pc-load.ps1`) and Windows' own log, and its
+  check names a licence-service start in the 3 seconds before a frame over
+  100 ms; the viewer's log gets the wall clock of its start and a line when
+  the palette buffer grows. The limits are unchanged.
+
+### For projects built on OpenS2X: breaking changes
+
+- None since 0.14.0. From 0.14.0, which was not published: `s2_viewer::Extensions`
+  has a new field `figure_looks` (hook W30d); a struct literal without
+  `..Default::default()` needs `figure_looks: Vec::new()`. New
+  `s2_viewer::FigureLook` and `FIGURE_FAR_BELOW`. Without a look every settler
+  is drawn as before.
+
 ## OpenS2X 0.14.0 (2026-11-23)
 
 The road carriers can be drawn with a project's own figure, the long

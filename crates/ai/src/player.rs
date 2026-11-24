@@ -521,13 +521,39 @@ impl AiPlayer {
         }
     }
 
+    /// AI-CON-9.3 (T84, T111): the destruction run's step before its
+    /// demolish command: every need linked to one of the building's
+    /// productions and holding a square loses its cell and its square (the
+    /// square's slot is free again), so the next arrangement places it again
+    /// as a new need. The production stays linked until the building's
+    /// record goes.
+    pub(crate) fn tear_down_needs(&mut self, at: Point) {
+        let prods: Vec<_> = self
+            .plan
+            .prods
+            .iter()
+            .filter(|p| p.building == Some(at))
+            .map(|p| p.id)
+            .collect();
+        for n in &mut self.plan.needs {
+            if n.square.is_some() && n.production.is_some_and(|p| prods.contains(&p)) {
+                n.cell = None;
+                n.square = None;
+                n.again = true;
+            }
+        }
+    }
+
     /// AI-MISC-2.2: a building of the player is gone.
     fn remove_record(&mut self, at: Point, now: u64) {
         let Some(rec) = self.records.remove(&at) else {
             return;
         };
-        // Its productions are detached from their needs (AI-CON-9.3); those
-        // needs stay and ask for a new producer.
+        // Its productions are deleted (AI-CON-9.3); a need linked to one
+        // loses only the production and keeps its cell and its square
+        // ("which removals take the cell away", T111): the needs order of
+        // that cell places a new producer there. Only the computer player's
+        // own tear-down takes the cell away ([`Self::tear_down_needs`]).
         let gone: Vec<_> = self
             .plan
             .prods
@@ -535,16 +561,6 @@ impl AiPlayer {
             .filter(|p| p.building == Some(at))
             .map(|p| p.id)
             .collect();
-        // AI-CON-9.3 (T84): such a need loses its cell and its square too
-        // (the square's slot is free again): the next arrangement places
-        // it again as a new need.
-        for n in &mut self.plan.needs {
-            if n.production.is_some_and(|p| gone.contains(&p)) {
-                n.cell = None;
-                n.square = None;
-                n.again = true;
-            }
-        }
         for id in gone {
             self.plan.remove_production(id);
         }

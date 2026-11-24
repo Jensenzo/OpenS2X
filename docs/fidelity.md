@@ -7,15 +7,15 @@ map with the same set-up: every settler's place, every building and the
 game's random number generator, tick by tick (a tick is a tenth of a second
 of game time). The recordings belong to the investigation and are not in the
 public repository, so the numbers can be measured only in the working
-repository; this page keeps them. Measured on main after 0.13.0 (2026-11-22 night), on MP_2P_Storm_Coast:
+repository; this page keeps them. Measured on main after 0.14.0 (2026-11-23), on MP_2P_Storm_Coast:
 
 | Game | Equal up to tick | Game time |
 |---|---|---|
 | Two players, the computer player Weak: settlers and buildings | every compared tick to 40,000 | 67 minutes |
-| The same game: the random number generator | 59,529 | 99 minutes |
+| The same game: the random number generator | 60,837 | 101 minutes |
 | The same game recorded densely, each settler's animation compared too | every compared tick to 20,000 | 33 minutes |
 | You alone, no computer player: settlers and buildings | every compared tick to 30,000 | 50 minutes |
-| Two players, the computer player Strong: the generator; settlers; buildings | 54,411; 54,499; 55,699 | 90 minutes |
+| Two players, the computer player Strong: the generator; settlers; buildings | 58,114; 58,199; 58,399 | 96 minutes |
 | The Strong game recorded densely, with the animations | every compared tick to 20,000 | 33 minutes |
 
 Not a pair of this page, measured by hand on 0.12.2 (`s2-app trace` against the
@@ -27,7 +27,8 @@ and 13,449); after 0.12.3, 2026-11-21: the generator 14,798, the settlers
 and the buildings 16,849 (28 minutes); after 0.13.0, 2026-11-22: the generator 17,031, the settlers
 17,029 and the buildings 17,029 (28 minutes); that afternoon: the generator 17,082, the settlers 17,089 and
 the buildings 17,679 (28 minutes); that night: the generator 17,717, the settlers 17,689 and the
-buildings 17,679 (29 minutes). The recorder of the dense recordings shows a settler's new
+buildings 17,679 (29 minutes); after 0.14.0, 2026-11-23: the generator 18,002, the settlers 17,949
+and the buildings 18,929 (29 minutes). The recorder of the dense recordings shows a settler's new
 animation a tick late now and then, and the one-player recording's last
 ticks have no view; since 0.12.2 the comparison counts those
 (`TOOL-trace.md` TRACE-4.4, T16) instead of stopping at them.
@@ -184,8 +185,8 @@ ours.
 first-differing-tick = none
 settlers-first-differing-tick = none
 buildings-first-differing-tick = none
-generator-first-differing-tick = 59530
-generator-matching-ticks = 59664
+generator-first-differing-tick = 60838
+generator-matching-ticks = 60947
 generator-compared-ticks = 149987
 one-player-first-differing-tick = none
 one-player-generator-first-differing-tick = none
@@ -215,11 +216,11 @@ hard-20000-buildings-first-differing-tick = none
 hard-20000-generator-first-differing-tick = none
 hard-20000-generator-matching-ticks = 14950
 hard-20000-generator-compared-ticks = 14950
-hard-150000-first-differing-tick = 54400
-hard-150000-settlers-first-differing-tick = 54500
-hard-150000-buildings-first-differing-tick = 55700
-hard-150000-generator-first-differing-tick = 54412
-hard-150000-generator-matching-ticks = 54487
+hard-150000-first-differing-tick = 58200
+hard-150000-settlers-first-differing-tick = 58200
+hard-150000-buildings-first-differing-tick = 58400
+hard-150000-generator-first-differing-tick = 58115
+hard-150000-generator-matching-ticks = 58228
 hard-150000-generator-compared-ticks = 149993
 ```
 
@@ -543,3 +544,9 @@ and the words of the time. R3 and R4 in it are the recordings E-trace-013
 | 2026-11-22 | a work walk ending in T | none | none | none | 59530 | 59 656 of 149 987 | TRN-FREE-6.4b (T53, E-trn-044; 25324a5e): a removed site's builder whose work walk ends in the removal tick T gets the line home at progress 0 in T + 1. Not a pair of this page: the war settlers 17550 -> 17620. |
 | 2026-11-22 | fights at a taken target | none | none | none | 59530 | 59 656 of 149 987 | MIL-CON-2.2 step 1 corrected (T19, E-mil-038; 5ba677c3): a take-over unlinks no interceptor. Not a pair of this page: the war settlers 17620 -> 17690, generator 17611 -> 17718. |
 | 2026-11-22 | a settler request over the ware network | none | none | none | 59530 | 59 664 of 149 987 | SHIP-4.1 (T27, E-ship-019, Q-1079; 5c6433a0): a settler request's harbour is found over the roads with a carrier or donkey assigned, at that network's cost. The Hard 150 000 generator 54308 -> 54412 (54 383 -> 54 487 matching; the clone 54 511); the Weak generator's matching 59 656 -> 59 664 (the clone 59 637); every first difference else unchanged. |
+| 2026-11-23 | the last missing tool | none | none | none | 60768 | 60 904 of 149 987 | AI-CON-10.2 which one is next (T110, E-ai-083; e3181b82): the locksmith lists the missing tools in good-id order (signed) and takes the one after the last handled, or the last of the list when that one is not missing; the last handled is stored only with the sliders. The Weak 150 000 generator 59530 -> 60768 (the clone 60 853 matching); the Weak settlers by place: none to 60 000 (R5's end). |
+| 2026-11-23 | only the tear-down takes the cell | none | none | none | 60768 | 60 904 of 149 987 | AI-CON-9.3 which removals take the cell away (T111, E-ai-084, Q-1081; a2c0d22c): the computer player's own tear-down takes a need off its cell and square before the demolish command; a building lost otherwise only unlinks its production. Not a pair of this page: the war settlers 17690 -> 17950, buildings 17680 -> 18240, generator 17718 -> 17938. |
+| 2026-11-23 | what an order wants | none | none | none | 60838 | 60 947 of 149 987 | SHIP-4.3 (T28, E-ship-020; 9e56d133): a supplying harbour gathers the destination's need as it counts at the pass. The Weak generator 60768 -> 60838; the Hard 150 000 generator's matching 54 487 -> 54 590 (the clone 54 581). |
+| 2026-11-23 | the harbour's pass before the transport jobs | none | none | none | 60838 | 60 946 of 149 987 | SHIP-4.3 when the pass runs (T28, E-ship-020; 3c47eda3): the harbour's update is its building's own update, before the request queue and the transport jobs. The Hard 150 000 generator 54412 -> 56239, settlers 54500 -> 56300, buildings 55700 -> 57700. |
+| 2026-11-23 | the want per mode | none | none | none | 60838 | 60 946 of 149 987 | AI-MIL-5.4 the want corrected (T34, E-ai-085, Q-1085; d276f26b): Normal and Aggressive want x rounded, without the factor 1.5; Safe tests the unrounded x x 1.5 against its stock. Not a pair of this page: the war generator 17938 -> 18003, buildings 18240 -> 18930, settlers 17950. |
+| 2026-11-23 | a harbour as H | none | none | none | 60838 | 60 947 of 149 987 | ECO-REQ-5.3 (T45, E-ship-021; eff61c5b): a harbour serves a ware order only from what it does not owe to its transfer orders. The Hard 150 000 settlers 56300 -> 58200, buildings 57700 -> 58400, generator 56239 -> 58115 (58 228 matching; the clone 58 226). |

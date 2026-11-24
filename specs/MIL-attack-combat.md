@@ -123,6 +123,14 @@ health point off the other.
   truncating the exact rational `min(36 - e, 24) x (m - 1) x defendOutside / 24` gives the same
   `j`. So a building up to 12 fields from the target sends as before, a farther one fewer: with 6
   soldiers present and the setting 0.5, `j` is 2 up to `e = 16` and 1 from `e = 17` (T39).
+  **"Already out" (corrected 2026-11-23, E-mil-039: code reading and the war recording; high):** the
+  number D subtracts is the number of interceptors **out defending D** (sent for an attack on D,
+  from any building), not the number sent **from** D. So for every D other than the target it is
+  normally 0, and the target itself sends `j - (interceptors already out defending it)`: when the
+  buildings before it in the list have already sent `j` or more for this attack, the target sends
+  none. A target early in the list sends its own (the war's attack of counter 12168: the target
+  first, it sends one); a target last in the list after others sent 7 sends none (T44).
+  Confidence: high for the count (code); the war's recording shows the case.
 - **MIL-ATK-3.2 Pairing.** Each new interceptor is paired with the first
   attacker record (record order) for this target whose soldier still stands on
   its home building's door field and has no meeting field yet. If there is
@@ -585,6 +593,7 @@ health point off the other.
 | T41 | 4.3, 4.4 (the search at the wait's start): E-trace-019 (R6, the war), player 3's attack on player 2's (31, 21) of T39/T40: 19481 walks to the meeting field (33, 22) that the interceptor 18285 gave him; 18285 has been paired with 18814 since trace tick 17 060 and his record keeps (33, 22); 19481 arrives in trace tick 17 081 and is paired in 17 082 with the target's own soldier 17868 | 19481's next walk and the game draws | in 17 082 his wait job's search from (33, 22) finds (33, 22) taken (18285's meeting field) and chooses (33, 23); his walk there starts at progress 0 in 17 082 (recorded: progress 8 in 17 090 at (132 576, 89 152)); he is on (33, 23)'s point at about 17 110 and makes his offset step and its draw then; no draw for him in 17 083. Staying on (33, 22) and stepping off it (the draw in 17 083) puts the war's generator apart from 17 083 and its settlers from 17 090; with the rule (experiment build) generator 17 092, settlers 17 120 |
 | T42 | 5.3 (an interceptor's first walk): E-trace-019 (R6), interceptor 16608 of (47, 19), paired at the interception with 19304 (T39); his meeting field (32, 21) is 19304's waiting field, where 19304 already stands off its point | the duel's first round | 16608's walk ends on the point of (32, 21) in trace tick 17 091; defense wait then, his Defend job in 17 092, its walk's end seen in 17 093, his arrival and the first round's two draws in 17 094 (recorded: fight animations at progress 6 in 17 100). Counting his arrival as a defender's (T28) fights in 17 092: generator apart from 17 092; with the rule from 17 454 (settlers 17 460) |
 | T43 | 5.1, 6.6 (an interceptor whose duel has just ended): E-trace-019 (R6), 16608 fighting 19304 on (32, 21); 19304 falls (his last round in trace tick 17 451); 16608 is updated before him; 18814, waiting unpaired on (33, 20) for the same target, is updated after 16608 | the pairing and 16608's walk | 16608's fight job ends in 17 453 and 18814 takes him in that update (18814's offset step and its draw in 17 454; recorded: 18814 at progress 6 of his step in 17 460); 16608 turns to defense wait in 17 454 and walks to (33, 20) from progress 0 in 17 455 (recorded (130 450, 83 099) in 17 460). Taking only interceptors back in defense wait pairs them in 17 454 (generator apart from 17 454); walking in 17 454 puts the settlers apart from 17 460; with both rules generator 17 611, settlers 17 550 |
+| T44 | 3.1 "already out": E-trace-019 (R6, the war), player 2's attack order of counter 17937 on player 1's guard house (58, 45) (3 soldiers present, setting 0.5), 8 attackers from (58, 36); player 1's buildings in list order: (56, 50) j 4, (47, 62) j 1, (56, 57) j 2, (58, 64) j 0, then the target (58, 45) j 1 | interceptors per building | (56, 50) 4, (47, 62) 1, (56, 57) 2, the target **none** (7 already defend it); the target's three soldiers stay inside (recorded: still in at 17970). Counting the interceptors sent from the target instead, it sends one (19818) and pairs him with the eighth attacker. Experiment build (with AI-MIL-5.4's want of T34 already in): the war's settlers first differ at the same tick, but the generator earlier (18003 -> 17943), because the computer player 1 then answers at 17942 against (58, 36) with def counted as the soldiers present (1), where the original counts the soldier list (9, `AI-military.md` AI-MIL-5.4, Q-1076) and does not attack; see Q-1082 |
 
 ## Evidence
 
@@ -625,6 +634,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-035, E-trace-019 | code reading, recording, experiment build | (session 2026-11-22 pm): the attack wait job's start (the waiting-field search again, then the pairing) and the free test's records left out; R6's 19481 at (33, 22), trace ticks 17 060 .. 17 130 | 4.3 whose fields, 4.4 (T41) |
 | E-mil-036, E-trace-019 | code reading, recording, experiment build | (session 2026-11-22 pm): an interceptor's states from his walk to the meeting field to his Defend job's arrival; R6's 16608 on (32, 21), trace ticks 17 080 .. 17 110 | 5.3 an interceptor's first walk (T42) |
 | E-mil-037, E-trace-019 | code reading, recording, experiment build | (session 2026-11-22 pm): the opponent search's interceptor records against the soldier's state; a fight job's end, defense wait and the Defend job's start; R6's 16608 and 18814, trace ticks 17 440 .. 17 480 | 5.1 read from the records, 6.6 (T43) |
+| E-mil-039, E-trace-019 | code reading, recording, experiment build | (session 2026-11-23): the interception loop of the attack order, the defender record's building, R6's soldiers at counters 17930 .. 17970 | 3.1 "already out" (T44) |
 | data | script | `military.lua`, `ai.lua` | fighting time, AI profile values |
 
 ## Open questions

@@ -428,7 +428,7 @@ impl World {
             let has = if self.recipe_groups.contains_key(&good) {
                 self.group_member_at(player, at, good).is_some()
             } else {
-                self.warehouses[&at].count(good) > 0
+                self.spare_for_others(at, good) > 0
             };
             if !has || network.from(warehouse_flag).is_none() {
                 continue;
@@ -490,6 +490,8 @@ impl World {
                 }
             } else {
                 self.update_finished(at);
+                // SHIP-4.3 (T28): a harbour's own update follows.
+                self.update_harbour_at(at);
             }
             // TER-6.2: right after its own update a building not on its
             // owner's inner land is removed.

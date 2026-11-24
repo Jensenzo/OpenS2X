@@ -236,22 +236,22 @@ pub enum AttackDecision {
 }
 
 /// AI-MIL-5.4, 5.5 (T30): the candidates in 5.3's order, each with the
-/// soldiers wanted against it and those the player can send against it.
-/// In mode Safe one whose want is above the soldiers in stock is skipped
-/// and is no last candidate; every other reaches the need test (need =
+/// x of the want ([`soldiers_wanted`]) and the soldiers the player can send
+/// against it. In mode Safe one whose x x 1.5 is above the soldiers in stock
+/// is skipped and is no last candidate ([`want_of`], T34); every other reaches the need test (need =
 /// max(1, want) + C) and is attacked when [`attack_count`] allows; the
 /// first attack ends the run.
 pub fn decide_attack(
     mode: Mode,
-    candidates: &[(Point, u32, u32)],
+    candidates: &[(Point, f64, u32)],
     in_stock: u32,
     c: f32,
 ) -> AttackDecision {
     let mut last = None;
-    for &(at, want, available) in candidates {
-        if mode == Mode::Safe && want > in_stock {
+    for &(at, x, available) in candidates {
+        let Some(want) = want_of(mode, x, in_stock) else {
             continue;
-        }
+        };
         let need = want.max(1) as f32 + c;
         if let Some(count) = attack_count(mode, need, available) {
             return AttackDecision::Attack { at, count };
@@ -276,11 +276,25 @@ pub fn candidate_seen(explored: bool, enemy_distance: Option<i32>) -> bool {
     explored || enemy_distance.is_some_and(|d| d <= 12)
 }
 
-/// AI-MIL-5.4: the soldiers wanted against a building with `defenders`
-/// defenders for the strength ratio `ratio` and the owner's defend-outside
-/// factor.
-pub fn soldiers_wanted(ratio: f32, defenders: u32, defend_outside: f32) -> u32 {
-    (ratio.min(5.0) * defenders as f32 * (defend_outside * 0.5 + 1.0) * 1.5) as u32
+/// AI-MIL-5.4 "the want, corrected" (T34): x = r x def x (the owner's
+/// defend-outside setting x 0.5 + 1), unrounded, for a building with
+/// `defenders` defenders and the strength ratio `ratio` (capped at 5).
+pub fn soldiers_wanted(ratio: f32, defenders: u32, defend_outside: f32) -> f64 {
+    f64::from(ratio.min(5.0)) * f64::from(defenders) * (f64::from(defend_outside) * 0.5 + 1.0)
+}
+
+/// AI-MIL-5.4 "the want, corrected" (T34): the want from x by mode; `None`
+/// when mode Safe skips the candidate (the unrounded x x 1.5 above the
+/// soldiers in stock). Safe: trunc(x x 1.5 + 0.5); Normal and Aggressive:
+/// trunc(x + 0.5), no factor 1.5.
+pub fn want_of(mode: Mode, x: f64, in_stock: u32) -> Option<u32> {
+    match mode {
+        Mode::Safe => {
+            let x = x * 1.5;
+            (x <= f64::from(in_stock)).then_some((x + 0.5) as u32)
+        }
+        Mode::Normal | Mode::Aggressive => Some((x + 0.5) as u32),
+    }
 }
 
 /// AI-MIL-5.4: how many soldiers to send, by military mode (`None`: do not
@@ -999,7 +1013,7 @@ impl AiPlayer {
         let defend_outside = world.military_settings(owner).defenders();
         let c_value = self.territory.get(cell).result;
         let in_stock = self.soldiers_in_stock(ctx);
-        let tested: Vec<(Point, u32, u32)> = candidates
+        let tested: Vec<(Point, f64, u32)> = candidates
             .iter()
             .map(|(_, b)| {
                 let warehouse = world.warehouse(b.at).is_some();
@@ -1010,8 +1024,8 @@ impl AiPlayer {
                     // inside.
                     world.listed_soldiers(b.at) as u32
                 };
-                let want = soldiers_wanted(ratio, defenders, defend_outside);
-                (b.at, want, world.attack_available(self.id, b.at))
+                let x = soldiers_wanted(ratio, defenders, defend_outside);
+                (b.at, x, world.attack_available(self.id, b.at))
             })
             .collect();
         let last = match decide_attack(self.profile.mode, &tested, in_stock, c_value) {

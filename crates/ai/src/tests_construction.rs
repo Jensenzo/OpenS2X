@@ -733,7 +733,11 @@ fn t84_a_torn_down_producers_need_is_placed_again() {
     n.square = Some(square);
     n.production = Some(pa);
     p.plan.prods.iter_mut().find(|x| x.id == pa).unwrap().need = Some(need);
-    // The woodcutter on a goes.
+    // The destruction run's step before its demolish command (T111), then
+    // the woodcutter on a goes.
+    p.tear_down_needs(a);
+    let n = p.plan.need(need).unwrap().clone();
+    assert_eq!((n.cell, n.square, n.production), (None, None, Some(pa)));
     world.submit(Command::RemoveBuilding { player: P0, at: a });
     world.step();
     let snapshot = crate::snapshot::Snapshot::take(&world);
@@ -755,6 +759,92 @@ fn t84_a_torn_down_producers_need_is_placed_again() {
     let plain = p.plan.add_need(WOOD, None, 0.0);
     p.assign_cell(&config(), plain, cell_of(b), None);
     assert_eq!(p.plan.need(plain).unwrap().production, Some(pb));
+}
+
+// AI-CON T111 (AI-CON-9.3, which removals take the cell away): a need
+// linked to the production of a building removed otherwise than by the
+// computer player's tear-down (here a plain removal, as land lost) keeps its
+// cell and its square and loses only the production. The destruction run's
+// tear-down of a fisher without a catch takes its linked need (with a
+// square) off its cell and square before the demolish command; a need
+// without a square keeps its cell.
+// spec: AI-CON-9.3 (AI-CON T111), AI-CON-9.2
+#[test]
+fn t111_only_the_tear_down_takes_a_needs_cell() {
+    let mut world = world(&[0]);
+    let mut ai = start(&world, 2);
+    let a = (26, 22);
+    with_building(&mut world, WOODCUTTER, a);
+    let snapshot = crate::snapshot::Snapshot::take(&world);
+    ai.update_with(&world, P0, &snapshot);
+    let p = ai.player_mut(P0);
+    let pa = p
+        .plan
+        .prods
+        .iter()
+        .find(|x| x.building == Some(a))
+        .unwrap()
+        .id;
+    let need = p.plan.add_need(WOOD, None, 0.0);
+    let square = ((33, 14), 1);
+    let n = p.plan.need_mut(need).unwrap();
+    n.cell = Some(cell_of(a));
+    n.square = Some(square);
+    n.production = Some(pa);
+    world.submit(Command::RemoveBuilding { player: P0, at: a });
+    world.step();
+    let snapshot = crate::snapshot::Snapshot::take(&world);
+    ai.update_with(&world, P0, &snapshot);
+    let p = ai.player_mut(P0);
+    let n = p.plan.need(need).unwrap().clone();
+    assert_eq!(
+        (n.cell, n.square, n.production, n.again),
+        (Some(cell_of(a)), Some(square), None, false)
+    );
+    assert!(!p.plan.prods.iter().any(|x| x.id == pa));
+
+    // The destruction run's tear-down (the fisher of T9).
+    let fish: Vec<(u32, u32)> = (24..30).map(|x| (x, 24)).collect();
+    let mut world = world_with(
+        &[0],
+        &Extras {
+            fish,
+            ..Extras::default()
+        },
+    );
+    let mut ai = start(&world, 2);
+    with_building(&mut world, FISHER, a);
+    let snapshot = finished_snapshot(&world, a, 0);
+    ai.update_with(&world, P0, &snapshot);
+    let p = ai.player_mut(P0);
+    let pf = p
+        .plan
+        .prods
+        .iter()
+        .find(|x| x.building == Some(a))
+        .unwrap()
+        .id;
+    let with_square = p.plan.add_need(FISH, None, 0.0);
+    let n = p.plan.need_mut(with_square).unwrap();
+    n.cell = Some(cell_of(a));
+    n.square = Some(square);
+    n.production = Some(pf);
+    let without = p.plan.add_need(FISH, None, 0.0);
+    let n = p.plan.need_mut(without).unwrap();
+    n.cell = Some(cell_of(a));
+    n.production = Some(pf);
+    p.destruction_cursor = 1;
+    let (_, commands) =
+        ai.with_snapshot(&world, P0, &snapshot, |p, ctx| p.building_destruction(ctx));
+    assert!(removed(&commands), "{commands:?}");
+    let p = ai.player_mut(P0);
+    let n = p.plan.need(with_square).unwrap().clone();
+    assert_eq!(
+        (n.cell, n.square, n.production, n.again),
+        (None, None, Some(pf), true)
+    );
+    let n = p.plan.need(without).unwrap().clone();
+    assert_eq!((n.cell, n.again), (Some(cell_of(a)), false));
 }
 
 // AI-CON T109 (AI-CON-9.3, the building's own needs): a sawmill's wood
@@ -1079,13 +1169,17 @@ fn t12_production_control() {
 // spec: AI-CON-10.2 (T13)
 #[test]
 fn t13_locksmith() {
+    let (world, mut ai) = locksmith_ready(config(), &[(AXE, 3)]);
+    assert_eq!(chosen_slot(&mut ai, &world), [(0, 1000), (1, 1)]);
+}
+
+/// A player with a finished locksmithery linked to the tools need, its stock
+/// `stock`; the run that made the tools need has passed.
+fn locksmith_ready(config: crate::AiConfig, stock: &[(u32, u32)]) -> (World, AiSystem) {
     let mut world = world(&[0]);
-    let mut ai = start(&world, 2);
+    let mut ai = start_with(&world, config, 2);
     ai.player_mut(P0).need_stage = 4;
-    {
-        let p = ai.player_mut(P0);
-        p.econ = Economy::from_counts(&[(AXE, 3)], &[]);
-    }
+    ai.player_mut(P0).econ = Economy::from_counts(stock, &[]);
     ai.with_ctx(&world, P0, |p, ctx| p.locksmith(ctx));
     assert_eq!(count(&mut ai, &world, TOOLS), 1);
     // Build the producer and link it to the need.
@@ -1121,8 +1215,13 @@ fn t13_locksmith() {
         let need = p.plan.needs.iter().find(|n| n.good == TOOLS).unwrap().id;
         p.plan.need_mut(need).unwrap().production = Some(prod);
     }
-    let (_, commands) = ai.with_ctx(&world, P0, |p, ctx| p.locksmith(ctx));
-    let weights: Vec<(u8, u32)> = commands
+    (world, ai)
+}
+
+/// One locksmith run: the slider commands sent, (slot, per mille).
+fn chosen_slot(ai: &mut AiSystem, world: &World) -> Vec<(u8, u32)> {
+    let (_, commands) = ai.with_ctx(world, P0, |p, ctx| p.locksmith(ctx));
+    commands
         .iter()
         .filter_map(|c| match c {
             Command::ToolWeight {
@@ -1130,8 +1229,41 @@ fn t13_locksmith() {
             } => Some((*slot, *per_mille)),
             _ => None,
         })
-        .collect();
-    assert_eq!(weights, [(0, 1000), (1, 1)]);
+        .collect()
+}
+
+// T110: the missing tools in good-id order, the id read as signed. Slots
+// rolling pin (in stock), pot, fishing rod, and a tool whose id is negative
+// as a signed number, all three missing. The run that made the tools need
+// stores no last tool; with none handled (or the last handled not missing)
+// the last of the list is chosen: the fishing rod, not the pot (the first
+// after the rolling pin by slot) nor the negative id (the last unsigned).
+// The rod is then the last handled; while it is still missing the next run
+// goes on cyclically to the first of the list, the negative id.
+// spec: AI-CON-10.2 (T110)
+#[test]
+fn t110_the_locksmith_takes_the_last_missing_tool() {
+    const PIN: u32 = 40;
+    const POT: u32 = 41;
+    const ROD: u32 = 42;
+    const NEG: u32 = 0x8000_0000;
+    let mut config = config();
+    config.tool_slots = vec![PIN, POT, ROD, NEG];
+    let (world, mut ai) = locksmith_ready(config, &[(PIN, 1)]);
+    assert_eq!(ai.player_mut(P0).locksmith_last, usize::MAX, "not stored");
+    let rod = chosen_slot(&mut ai, &world);
+    assert!(rod.contains(&(2, 1000)), "the fishing rod: {rod:?}");
+    assert_eq!(ai.player_mut(P0).locksmith_last, 2);
+    let next = chosen_slot(&mut ai, &world);
+    assert!(
+        next.contains(&(3, 1000)),
+        "after the rod, the first: {next:?}"
+    );
+    assert_eq!(ai.player_mut(P0).locksmith_last, 3);
+    // The last handled (the pin) in stock again: the last of the list.
+    ai.player_mut(P0).locksmith_last = 0;
+    let again = chosen_slot(&mut ai, &world);
+    assert!(again.contains(&(2, 1000)), "{again:?}");
 }
 
 // AI-CON-10.2, 8.3 b (AI-CON T54): the tools need is made without a
@@ -1398,8 +1530,14 @@ fn t102a_a_need_given_its_cell_again_goes_to_the_end() {
         assert_eq!(p.plan.need(young).unwrap().production, None);
         (old, young)
     };
-    // The woodcutter goes: the old need loses its cell and is given it
-    // again, behind the young one.
+    // The woodcutter is torn down (AI-CON-9.3, T111: the old need holds a
+    // square): the old need loses its cell and is given it again, behind
+    // the young one.
+    {
+        let p = ai.player_mut(P0);
+        p.plan.need_mut(old).unwrap().square = Some(((33, 14), 1));
+        p.tear_down_needs(first);
+    }
     world.submit(Command::RemoveBuilding {
         player: P0,
         at: first,

@@ -139,13 +139,15 @@ impl AiPlayer {
             }
             return;
         }
-        // The next missing tool after the last one handled (cyclic).
-        let chosen = missing
-            .iter()
-            .copied()
-            .find(|&i| i > self.locksmith_last)
-            .unwrap_or(missing[0]);
-        self.locksmith_last = chosen;
+        // AI-CON-10.2 "which one is next" (T110): the missing tools in good-id
+        // order (the id read as signed); the one after the last handled when
+        // that is in the list (cyclic), else the last of the list.
+        let mut missing = missing;
+        missing.sort_by_key(|&i| tools[i] as i32);
+        let chosen = match missing.iter().position(|&i| i == self.locksmith_last) {
+            Some(k) => missing[(k + 1) % missing.len()],
+            None => missing[missing.len() - 1],
+        };
         if tools_need.is_none() {
             // AI-CON-10.2 (T54): the tools need has no consumer building and
             // is not tied to the headquarters.
@@ -165,7 +167,9 @@ impl AiPlayer {
                 });
             }
             // The sliders: 1.0 for the chosen tool, the floor for the others
-            // (only what differs from the current setting is sent).
+            // (only what differs from the current setting is sent). Only now
+            // the chosen tool becomes the last handled (AI-CON-10.2, T110).
+            self.locksmith_last = chosen;
             let current = ctx.world.tool_priorities(self.id);
             for slot in 0..tools.len() {
                 let wanted: f32 = if slot == chosen { 1.0 } else { 0.001 };

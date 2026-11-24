@@ -44,8 +44,67 @@
 # profile at the start, `s2-app profile-seed`),
 # never the player's; the run fails when the player's files changed their
 # modified time during it (scripts/player-files-guard.sh).
+#
+# The PC's load is recorded beside the frames (scripts/pc-load.ps1: a line a
+# second in pc-load.txt with the whole machine's CPU, disks, the graphics
+# card's 3D engine and the busiest processes not ours), and the check prints
+# it for every frame over 100 ms and for the whole run: a slow frame stays a
+# failure, but the report says whether the PC was plainly busy with
+# something else at it. LOAD_HEAVY_CORE (100, % of one core) and
+# LOAD_BUSY_CPU (25, % of the machine) set what it calls heavy and busy.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# A process not ours using this many % of one core in a second is "heavy",
+# and a second with the whole machine at this % is "busy" (pc_load).
+LOAD_HEAVY_CORE=${LOAD_HEAVY_CORE:-100}
+LOAD_BUSY_CPU=${LOAD_BUSY_CPU:-25}
+
+# The PC's load beside the frames (scripts/pc-load.ps1, a line a second in
+# pc-load.txt; the viewer's log says the wall clock of its 0 s, "T"): for
+# each frame over 100 ms the samples around it, and over the whole run the
+# seconds a process not ours was heavy. Information beside the limits, not a
+# limit: a slow frame stays a failure, and the report says whether the PC
+# was plainly busy with something else at it (2026-11-23: one frame of
+# 157 ms and no record of what else ran).
+pc_load() {
+  local dir=$1 load=$1/pc-load.txt t0
+  if [[ ! -s "$load" ]]; then
+    echo "long-play: PC load: not recorded"
+    return 0
+  fi
+  t0=$(awk '$1 == "T" { print $2; exit }' "$dir/log.txt")
+  tr -d '\r' <"$load" | awk -v heavy="$LOAD_HEAVY_CORE" -v busy="$LOAD_BUSY_CPU" '
+    $1 == "L" { n++; cpu = $4 + 0
+      if (cpu >= busy) busy_s++
+      for (i = 1; i <= NF; i++) if ($i == "top") break
+      for (i = i + 1; i + 2 <= NF; i += 3) if ($(i + 2) + 0 >= heavy) { heavy_s[$i]++; seen = 1 }
+      self += $11; cpu_sum += cpu
+      if (cpu > cpu_max) cpu_max = cpu }
+    END {
+      if (!n) { print "long-play: PC load: no samples"; exit }
+      printf "long-play: PC load: %d samples, mean CPU %.0f %%, highest %.0f %%, %d s at %d %% or more, sampler %.0f %% of a core\n", n, cpu_sum / n, cpu_max, busy_s, busy, self / n
+      line = ""
+      for (p in heavy_s) line = line sprintf(" %s %d s,", p, heavy_s[p])
+      if (seen) print "long-play: PC load: processes not ours at a core or more:" line
+      else print "long-play: PC load: no process not ours at a core or more" }'
+  [[ -n "$t0" ]] || { echo "long-play: PC load: the log has no start time (T)"; return 0; }
+  local at
+  while read -r at; do
+    tr -d '\r' <"$load" | awk -v w="$(awk -v t="$t0" -v a="$at" 'BEGIN { printf "%.0f", t + a * 1000 }')" -v at="$at" '
+      $1 == "L" || $1 == "G" { if ($2 + 0 >= w && !after) { after = $0; next_t = $2 }
+                               else if ($2 + 0 < w) { if ($1 == "L") before = $0; else gbefore = $0 }
+                               if ($1 == "G" && $2 == next_t) gafter = $0 }
+      END {
+        print "long-play: PC at the frame at " at " s (samples end before and after it):"
+        if (before) print "long-play:   " before; if (gbefore) print "long-play:   " gbefore
+        if (after) print "long-play:   " after; if (gafter) print "long-play:   " gafter
+        if (!before && !after) print "long-play:   no sample" }'
+    if [[ -s "$dir/windows-events.txt" ]]; then
+      awk -v w="$(awk -v t="$t0" -v a="$at" 'BEGIN { printf "%.0f", t + a * 1000 }')" '
+        $1 + 0 <= w && w - $1 <= 3000 { $1 = sprintf("%.2f s before it:", (w - $1) / 1000); print "long-play:   Windows: " $0 }' "$dir/windows-events.txt"
+    fi
+  done < <(tr -d '\r' <"$dir/report.txt" | { grep '^stall F ' || true; } | awk '{ print $3 }')
+}
 
 # The limits on a run's report and log; prints each with its value.
 check() {
@@ -87,11 +146,13 @@ check() {
   # object of a first-use stall (0.12.2: 107 ms when the first well's site
   # appeared).
   echo "long-play: first uses during play: $(value first-uses-in-play)"
-  local line uses
+  local line uses grew
   while read -r line; do
     uses=$(grep -o '\[first use: [^]]*\]' <<<"$line" | sed 's/^\[first use: //; s/\]$//' | paste -sd, - || true)
-    echo "long-play: frame over 100 ms at $(sed 's/^stall F //; s/ ms:.*/ ms/' <<<"$line"); first use near it: ${uses:-none}"
+    grew=$(grep -o '\[palette buffer grew [^]]*\]' <<<"$line" | tr -d '[]' || true)
+    echo "long-play: frame over 100 ms at $(sed 's/^stall F //; s/ ms:.*/ ms/' <<<"$line"); first use near it: ${uses:-none}${grew:+; $grew}"
   done < <(tr -d '\r' <"$report" | { grep '^stall ' || true; })
+  pc_load "$dir"
   limit "palette buffer at the end (MB)" "${palettes:-999}" "<=" 12.5
   limit "palette slots of no owner (most)" "${other:-0}" "<=" 0
   return $fail
@@ -144,7 +205,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$PWD/scri
   -StopFile "$(wslpath -w "$PWD/$hold_stop")" -Seconds $((seconds + 900)) \
   </dev/null >"$out/display-hold.log" 2>&1 &
 hold_pid=$!
-release_display() { touch "$hold_stop"; wait "$hold_pid" 2>/dev/null || true; }
+release_display() {
+  touch "$hold_stop" "$out/pc-load.stop"
+  wait "$hold_pid" 2>/dev/null || true
+}
 trap release_display EXIT
 for _ in $(seq 60); do
   grep -q "display-hold: \(held\|the request\)" "$out/display-hold.log" 2>/dev/null && break
@@ -155,6 +219,14 @@ grep -q "display-hold: held" "$out/display-hold.log" || { echo "long-play: the d
 # The display on for good before the window opens (the keeper's STAY_MS).
 sleep 5
 started=$(date +%s)
+# The PC's load a second beside the frames (scripts/pc-load.ps1): what else
+# ran is in the report next to any slow frame.
+load_stop="$out/pc-load.stop"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$PWD/scripts/pc-load.ps1")" \
+  -Out "$(wslpath -w "$PWD/$out/pc-load.txt")" -StopFile "$(wslpath -w "$PWD/$load_stop")" \
+  -Seconds $((seconds + 900)) -Ours "$(basename "$copy" .exe)" \
+  </dev/null >"$out/pc-load.log" 2>&1 &
+load_pid=$!
 "$copy" --game-dir "$(wslpath -w "$game")" \
   --profile-dir "$(wslpath -w "$PWD/$out/profile")" \
   --save-dir "$(wslpath -w "$PWD/$out/profile/saves")" \
@@ -163,9 +235,18 @@ started=$(date +%s)
   --bench-report "$(wslpath -w "$PWD/$out/report.txt")" \
   --bench-log "$(wslpath -w "$PWD/$out/log.txt")" \
   </dev/null >"$out/viewer.log" 2>&1 || true
+touch "$load_stop"
+wait "$load_pid" 2>/dev/null || true
 # Windows' display session changes in the run's time (see the limits).
 powershell.exe -NoProfile -Command "Get-WinEvent -FilterHashtable @{LogName='System'; Id=566; StartTime=[DateTimeOffset]::FromUnixTimeSeconds($started).LocalDateTime; EndTime=[DateTimeOffset]::FromUnixTimeSeconds($(date +%s)).LocalDateTime} -ErrorAction SilentlyContinue | ForEach-Object { '{0:o} {1}' -f \$_.TimeCreated.ToUniversalTime(), (\$_.Message -replace '\s+', ' ') }" \
   2>/dev/null | tr -d '\r' | grep . >"$out/display-events.txt" || true
+# Windows' licence service started in the run's time (ClipSVC, trigger-
+# started by the Store's licence poll every 15 minutes): 0.14.0's run and a
+# quiet run of 2026-11-23 each had a cluster of render-prepare frames of
+# 150..280 ms starting 0.26 s after one (two of the eight such starts in
+# four runs). The check names one that came just before a frame over 100 ms.
+powershell.exe -NoProfile -Command "Get-WinEvent -FilterHashtable @{LogName='Microsoft-Client-Licensing-Platform/Admin'; Id=100; StartTime=[DateTimeOffset]::FromUnixTimeSeconds($started).LocalDateTime; EndTime=[DateTimeOffset]::FromUnixTimeSeconds($(date +%s)).LocalDateTime} -ErrorAction SilentlyContinue | ForEach-Object { '{0} {1}' -f ([DateTimeOffset]\$_.TimeCreated).ToUnixTimeMilliseconds(), (\$_.Message -replace '\s+', ' ') }" \
+  2>/dev/null | tr -d '\r' | grep . >"$out/windows-events.txt" || true
 release_display
 player_files_check || exit 1
 check "$out"

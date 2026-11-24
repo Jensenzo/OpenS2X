@@ -10,7 +10,7 @@ use crate::expansion::{Kind, Source, Target};
 use crate::maps::{mcell_of, morigin};
 use crate::military::{
     allocation, attack_count, attack_target, building_for, candidate_seen, castle_reserve,
-    decide_attack, level, order_candidates, soldiers_wanted, target_value, AttackDecision,
+    decide_attack, level, order_candidates, soldiers_wanted, target_value, want_of, AttackDecision,
 };
 use crate::sites::Area;
 use crate::testutil::*;
@@ -318,18 +318,22 @@ fn t30_halving_the_counters_drops_the_remainder() {
 
 // AI-MIL T30 (b) to (d) (AI-MIL-5.5, the last candidate): candidates g1
 // (want 6), g2 (want 2), g3 (want 7), 4 soldiers in stock, 1 available
-// against each, C = 0. (b) Safe: g1 and g3 are skipped (want above the
-// stock), g2 reaches the need test (need 2 > 1) and is not attacked: the
-// last candidate, the expansion's position, is g2, not g3. (c) Normal:
-// all three are tested, none attacked: g3. (d) No candidate, or none
-// that reached the test: no last candidate (A still rises by 1).
+// against each, C = 0 (given as x of AI-MIL-5.4: x x 1.5 for Safe, x for
+// Normal, T34). (b) Safe: g1 and g3 are skipped (above the stock), g2
+// reaches the need test (need 2 > 1) and is not attacked: the last
+// candidate, the expansion's position, is g2, not g3. (c) Normal: all three
+// are tested, none attacked: g3. (d) No candidate, or none that reached the
+// test: no last candidate (A still rises by 1).
 // spec: AI-MIL-5.5 (T30), AI-MIL-5.4
 #[test]
 fn t30_the_last_candidate_is_the_last_one_tested() {
     let (g1, g2, g3) = ((10, 10), (12, 10), (14, 10));
-    let list = [(g1, 6, 1), (g2, 2, 1), (g3, 7, 1)];
+    let safe = |list: &[(Point, f64, u32)]| -> Vec<(Point, f64, u32)> {
+        list.iter().map(|&(at, w, a)| (at, w / 1.5, a)).collect()
+    };
+    let list = [(g1, 6.0, 1), (g2, 2.0, 1), (g3, 7.0, 1)];
     assert_eq!(
-        decide_attack(Mode::Safe, &list, 4, 0.0),
+        decide_attack(Mode::Safe, &safe(&list), 4, 0.0),
         AttackDecision::NotAttacked { last: Some(g2) }
     );
     assert_eq!(
@@ -341,14 +345,14 @@ fn t30_the_last_candidate_is_the_last_one_tested() {
         AttackDecision::NotAttacked { last: None }
     );
     assert_eq!(
-        decide_attack(Mode::Safe, &[(g1, 6, 1), (g3, 7, 1)], 4, 0.0),
+        decide_attack(Mode::Safe, &safe(&[(g1, 6.0, 1), (g3, 7.0, 1)]), 4, 0.0),
         AttackDecision::NotAttacked { last: None }
     );
     // With 2 available against g2 it is attacked in Safe mode, min(need,
     // available) soldiers; in Normal min(2 need, available).
-    let list = [(g1, 6, 1), (g2, 2, 2), (g3, 7, 1)];
+    let list = [(g1, 6.0, 1), (g2, 2.0, 2), (g3, 7.0, 1)];
     assert_eq!(
-        decide_attack(Mode::Safe, &list, 4, 0.0),
+        decide_attack(Mode::Safe, &safe(&list), 4, 0.0),
         AttackDecision::Attack { at: g2, count: 2 }
     );
     assert_eq!(
@@ -361,12 +365,16 @@ fn t30_the_last_candidate_is_the_last_one_tested() {
 // spec: AI-MIL-5.4 (T8 to T10)
 #[test]
 fn t8_to_t10_attack_counts() {
-    // T8: Safe, a guard house with 2 soldiers, r = 1, defend outside 1.0, 4
-    // soldiers in stock, 5 available: want = trunc(1 x 2 x 1.5 x 1.5) = 4.
-    let want = soldiers_wanted(1.0, 2, 1.0);
-    assert_eq!(want, 4);
-    assert!(want <= 4);
-    assert_eq!(attack_count(Mode::Safe, want as f32, 5), Some(4));
+    // T8: Safe, a guard house with 2 soldiers, r = 1, defend outside 1.0:
+    // x = 3, x x 1.5 = 4.5. Corrected by T34 (the stock test on the
+    // unrounded x x 1.5; Q-1085): with 4 soldiers in stock it is skipped,
+    // with 5 want = trunc(4.5 + 0.5) = 5, attack with min(5, 5).
+    let x = soldiers_wanted(1.0, 2, 1.0);
+    assert_eq!(x, 3.0);
+    assert_eq!(want_of(Mode::Safe, x, 4), None);
+    let want = want_of(Mode::Safe, x, 5).unwrap();
+    assert_eq!(want, 5);
+    assert_eq!(attack_count(Mode::Safe, want as f32, 5), Some(5));
     // Safe does not go when it has fewer than needed available.
     assert_eq!(attack_count(Mode::Safe, 6.0, 5), None);
     // T9: Aggressive attacks with all it has even with fewer than needed.
@@ -377,7 +385,41 @@ fn t8_to_t10_attack_counts() {
     assert_eq!(attack_count(Mode::Normal, 8.0, 10), Some(10));
     assert_eq!(attack_count(Mode::Normal, 11.0, 10), None);
     // The strength ratio is capped at 5.
-    assert_eq!(soldiers_wanted(9.0, 1, 0.0), 7);
+    assert_eq!(soldiers_wanted(9.0, 1, 0.0), 5.0);
+}
+
+// AI-MIL T34 (AI-MIL-5.4, the want corrected): the war's attack run of
+// counter 17937: r = 52 / 49, def 3, the owner's setting 0.5, C = 0, mode
+// Normal, 10 available: x = 3.98, want 4 (no factor 1.5; it gave 5), need
+// 4, count min(8, 10) = 8. Safe: x x 1.5 = 5.97: skipped with 5 in stock;
+// with 6 want trunc(6.47) = 6. A half rounds up in Normal. T33 unchanged
+// (r = 47 / 52, def 2, setting 0.5: want 2, need 2, count min(4, 3) = 3).
+// spec: AI-MIL-5.4 (T34, T33)
+#[test]
+fn t34_the_want_per_mode() {
+    let x = soldiers_wanted(52.0 / 49.0, 3, 0.5);
+    assert!((x - 3.98).abs() < 0.01, "{x}");
+    assert_eq!(want_of(Mode::Normal, x, 0), Some(4));
+    assert_eq!(want_of(Mode::Aggressive, x, 0), Some(4));
+    assert_eq!(
+        decide_attack(Mode::Normal, &[((58, 45), x, 10)], 0, 0.0),
+        AttackDecision::Attack {
+            at: (58, 45),
+            count: 8
+        }
+    );
+    assert_eq!(want_of(Mode::Safe, x, 5), None);
+    assert_eq!(want_of(Mode::Safe, x, 6), Some(6));
+    assert_eq!(want_of(Mode::Normal, 2.5, 0), Some(3));
+    let x = soldiers_wanted(47.0 / 52.0, 2, 0.5);
+    assert_eq!(want_of(Mode::Normal, x, 0), Some(2));
+    assert_eq!(
+        decide_attack(Mode::Normal, &[((21, 20), x, 3)], 0, 0.0),
+        AttackDecision::Attack {
+            at: (21, 20),
+            count: 3
+        }
+    );
 }
 
 /// Smithies and their inputs.

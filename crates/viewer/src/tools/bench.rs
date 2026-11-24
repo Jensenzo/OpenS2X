@@ -121,6 +121,12 @@ struct LongRun {
     loads_seen: usize,
     /// The first uses during play: the frame each came in and what.
     first_uses: Vec<(usize, String)>,
+    /// The bone-palette buffer's matrices last frame (`Palettes::capacity`).
+    palette_matrices: usize,
+    /// The frames the palette buffer grew in, and to what: a new size is a
+    /// new graphics buffer and every object material's bind group built
+    /// again in one frame (render prepare), named beside a slow frame.
+    growths: Vec<(usize, String)>,
 }
 
 /// The frames before a slow frame whose first uses it names: the render
@@ -138,6 +144,14 @@ pub(crate) fn first_uses_near(first_uses: &[(usize, String)], frame: usize) -> V
         .filter(|(f, _)| *f <= frame && frame - *f <= FIRST_USE_FRAMES)
         .map(|(_, what)| what.as_str())
         .collect()
+}
+
+/// The palette buffer's growth between two frames, as a slow frame's line
+/// names it (`None` when the size stayed).
+pub(crate) fn palette_growth(before: usize, now: usize) -> Option<String> {
+    let mb = |m: usize| (m * 64) as f64 / (1024.0 * 1024.0);
+    (before != 0 && now != before)
+        .then(|| format!("palette buffer grew {:.1} -> {:.1} MB", mb(before), mb(now)))
 }
 
 /// The parts of the map's update, between consecutive marks.
@@ -266,6 +280,8 @@ impl Bench {
                 slots_at: 0.0,
                 loads_seen: 0,
                 first_uses: Vec::new(),
+                palette_matrices: 0,
+                growths: Vec::new(),
             },
             pan: (pan || drag.is_some()).then(|| Pan::new(drag)),
             placements_at_start: 0,
@@ -322,6 +338,7 @@ pub(crate) fn bench_frame(
             bench.frame_ms.push(ms);
             let tick = viewer.world.as_ref().map_or(0, |w| w.tick());
             log_first_uses(&mut bench, &library.loads, tick);
+            log_palette_growth(&mut bench, library.palettes.capacity(), tick);
             log_frame(
                 &mut bench,
                 ms,
@@ -355,6 +372,16 @@ pub(crate) fn bench_frame(
         bench.ticks_at_start = viewer.world.as_ref().map_or(0, |w| w.tick());
         bench.long.row_tick = bench.ticks_at_start;
         bench.long.started = Some(now);
+        bench.long.palette_matrices = library.palettes.capacity();
+        // The wall clock at the first timed frame, so a run's script can
+        // put what else the PC did beside each frame (scripts/pc-load.ps1).
+        if let Some(log) = bench.long.log.as_mut() {
+            use std::io::Write;
+            let unix_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis());
+            let _ = writeln!(log, "T {unix_ms} unix ms at 0 s");
+        }
         *sounds = default();
         bench.placements_at_start = placements.full_placements;
         // What the warm-up's frames read is not play (the timed frames).
@@ -609,6 +636,9 @@ fn log_frame(
     for what in first_uses_near(&bench.long.first_uses, i) {
         line += &format!(" [first use: {what}],");
     }
+    for what in first_uses_near(&bench.long.growths, i) {
+        line += &format!(" [{what}],");
+    }
     if ms > 100.0 {
         bench.long.stalls.push(line.clone());
     }
@@ -616,6 +646,25 @@ fn log_frame(
         use std::io::Write;
         let _ = writeln!(log, "{line}");
     }
+}
+
+/// The palette buffer's size against last frame's: a line (`B`) and an
+/// entry for the slow frames' lines when it grew.
+fn log_palette_growth(bench: &mut Bench, matrices: usize, tick: u64) {
+    let before = std::mem::replace(&mut bench.long.palette_matrices, matrices);
+    let Some(what) = palette_growth(before, matrices) else {
+        return;
+    };
+    let frame = bench.frame_ms.len().saturating_sub(1);
+    let at = bench
+        .long
+        .started
+        .map_or(0.0, |s| (Instant::now() - s).as_secs_f64());
+    if let Some(log) = bench.long.log.as_mut() {
+        use std::io::Write;
+        let _ = writeln!(log, "B {at:.2} s, frame {frame}, tick {tick}: {what}");
+    }
+    bench.long.growths.push((frame, what));
 }
 
 /// The models and clips the library read since the last frame, while the
@@ -923,5 +972,28 @@ mod tests {
         assert!(first_uses_near(&uses, 9).is_empty());
         assert!(first_uses_near(&uses, 29).is_empty());
         assert_eq!(first_uses_near(&uses, 30), ["clip data/animations/x.gr2"]);
+    }
+
+    /// The long play names the palette buffer's growth beside a slow frame
+    /// (2026-11-23: the 157 ms frame came in the second the buffer went from
+    /// 3.1 to 6.2 MB; a new size is a new graphics buffer and every object
+    /// material's bind group built again in render prepare).
+    // spec: none (the long play's log: a slow frame's palette growth)
+    #[test]
+    fn a_slow_frame_names_the_palette_buffers_growth() {
+        let m = 64 * crate::animation::anim::MAX_BONES;
+        assert_eq!(palette_growth(16 * m, 16 * m), None);
+        // The first frame timed has nothing before it.
+        assert_eq!(palette_growth(0, 16 * m), None);
+        assert_eq!(
+            palette_growth(16 * m, 32 * m).as_deref(),
+            Some("palette buffer grew 3.1 -> 6.2 MB")
+        );
+        let growths = vec![(97_871, palette_growth(16 * m, 32 * m).unwrap())];
+        assert_eq!(
+            first_uses_near(&growths, 97_872),
+            ["palette buffer grew 3.1 -> 6.2 MB"]
+        );
+        assert!(first_uses_near(&growths, 97_870).is_empty());
     }
 }

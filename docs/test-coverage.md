@@ -177,6 +177,28 @@ minutes and the frames went from 16.6 to 45..59 ms. The unit test
 (`crates/viewer/src/animation/animate3d.rs`) holds the mechanism without a
 desktop.
 
+The run records the PC's load beside the frames (`scripts/pc-load.ps1`, a
+line a second in `pc-load.txt`: the whole machine's CPU, the disks, the
+graphics card's 3D engine, the run's own CPU and page faults, and the five
+busiest processes that are not the run's), and the viewer's log says the wall
+clock of its 0 s (`T`) and each growth of the palette buffer (`B`; a slow
+frame's line names a growth in it or the eight frames before). `--check`
+prints the load over the run and the samples either side of every frame over
+100 ms. That is information beside the limits, which stay as they are: a
+slow frame still fails the run, and the report says what else the PC did in
+its second. 0.14.0's run failed on a cluster of render-prepare frames
+(157 ms the worst) 0.27 s after Windows' licence service (ClipSVC) was
+trigger-started by the Store's 15-minute licence poll; a quiet run on
+2026-11-23 failed the same way (283 ms) 0.26 s after the same poll, with the
+machine's CPU at 58 % for that second and no process not ours at a full
+core. Not every poll stalls the game (two of the eight in four runs did,
+both late in a run, 1380 and 1634 s in), and a run with a foreign load of
+CPU bursts, process starts and disk writes beside it (WSL at a core or more
+for 421 s) had no frame over 100 ms, only scattered frames of 35..50 ms. The
+run therefore also lists the licence service's starts in its time
+(`windows-events.txt`), and `--check` names one that came in the 3 s before
+a frame over 100 ms.
+
 ## Lessons 2 to 4
 
 `tutorial_two`, `tutorial_three` and `tutorial_four` (`crates/viewer/tests/play.rs`)

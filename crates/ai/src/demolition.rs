@@ -111,7 +111,9 @@ impl AiPlayer {
                 }
             }
         }
-        // AI-CON-9.3: torn down with remains (T41).
+        // AI-CON-9.3: torn down with remains (T41); first its needs lose
+        // their cells (T84, T111).
+        self.tear_down_needs(rec.at);
         ctx.out.push(Command::TearDown {
             player: self.id,
             at: rec.at,

@@ -1128,6 +1128,103 @@ fn ship_t26_passes_held_goods_and_the_call() {
     );
 }
 
+/// SHIP-4.3: the planks H1 has gathered or ordered: in stock, on their way
+/// for an order, and the open orders.
+fn gathered(w: &World) -> u32 {
+    count(w, WEST_HARBOUR, PLANK)
+        + w.on_the_way(WEST_HARBOUR, PLANK)
+        + w.open_orders(WEST_HARBOUR, PLANK)
+}
+
+// T28 (SHIP-4.3 what an order wants): H2 asks H1 for 2 planks in its first
+// pass (tick 102, after H1's pass in the list order: nothing gathered yet).
+// H2's plank need then grows to 4 (H2 is not asked again, SHIP-4.2 (a)); at
+// its next pass H1 gathers for the need as it counts then: 4 (the order's
+// own count would gather 2).
+// spec: SHIP-4.3 (T28)
+#[test]
+fn ship_t28_an_order_wants_the_destinations_need_now() {
+    let mut w = t19_world();
+    ship(&mut w, P0, (20, 10));
+    run(&mut w, 102);
+    let t = &w.harbour_at(WEST_HARBOUR).unwrap().transfers;
+    assert_eq!((t.len(), t[0].count), (1, 2));
+    assert_eq!(gathered(&w), 0);
+    w.attach_need(EAST_HARBOUR, PLANK);
+    w.attach_need(EAST_HARBOUR, PLANK);
+    assert_eq!(need(&w, PLANK), 4);
+    step_until(&mut w, 102, |w| gathered(w) > 0);
+    assert_eq!(w.harbour_at(WEST_HARBOUR).unwrap().counter, 0, "H1's pass");
+    assert_eq!(gathered(&w), 4);
+    assert_eq!(w.harbour_at(WEST_HARBOUR).unwrap().transfers[0].count, 2);
+}
+
+// T28 (SHIP-4.3 when the pass runs within the tick): the harbour's pass is
+// its building's own update, before the tick's transport jobs. H1's pass
+// is put on tick 110, a matching tick (ECO-REQ-5.1, t mod 11 = 0): the
+// plank orders it files there are matched in that same tick (one leaves the
+// open orders at once); a pass after the transport jobs would leave both
+// open until tick 121.
+// spec: SHIP-4.3 (T28), ECO-REQ-0.2, ECO-REQ-5.1
+#[test]
+fn ship_t28_the_pass_comes_before_the_transport_jobs() {
+    let mut w = t19_world();
+    ship(&mut w, P0, (20, 10));
+    step_until(&mut w, 200, |w| {
+        !w.harbour_at(WEST_HARBOUR).unwrap().transfers.is_empty()
+    });
+    assert_eq!(w.tick(), 102);
+    // Updates 102 .. 109 raise the counter to 100; 110 is the pass.
+    w.harbours
+        .iter_mut()
+        .find(|h| h.at == WEST_HARBOUR)
+        .unwrap()
+        .counter = 92;
+    run(&mut w, 8);
+    assert_eq!(gathered(&w), 0);
+    w.step();
+    assert_eq!(w.harbour_at(WEST_HARBOUR).unwrap().counter, 0, "the pass");
+    assert_eq!(gathered(&w), 2);
+    assert!(
+        w.open_orders(WEST_HARBOUR, PLANK) < 2,
+        "matched in the pass's tick"
+    );
+}
+
+// T45 (ECO-REQ-5.3 a harbour as H): H1 holds a transfer order of planks for
+// H2, whose plank need is 2. H1 can spare for other users only min(A,
+// max(0, A + B - 2)): none of 2 planks in stock, one of 3. Owing all it
+// holds, H1 is no H for an order at its own flag; the warehouse of island A
+// is (it counts its stock as before).
+// spec: ECO-REQ-5.3 (T45), SHIP-4.3
+#[test]
+fn ship_t45_a_harbour_spares_what_it_does_not_owe() {
+    let mut w = t19_world();
+    ship(&mut w, P0, (20, 10));
+    step_until(&mut w, 200, |w| {
+        !w.harbour_at(WEST_HARBOUR).unwrap().transfers.is_empty()
+    });
+    assert_eq!(need(&w, PLANK), 2);
+    let store = (4, 10);
+    let h_of = |w: &mut World| {
+        let flag = w.flag_of(WEST_HARBOUR);
+        let costs = w.route_costs_to(P0, flag, crate::transport::Search::Ware);
+        w.stocked_warehouse(P0, vec![WEST_HARBOUR, store], PLANK, flag, &costs)
+            .map(|(h, _)| h)
+    };
+    stock(&mut w, WEST_HARBOUR, PLANK, 2);
+    assert_eq!(w.spare_for_others(WEST_HARBOUR, PLANK), 0);
+    assert_eq!(w.spare_for_others(store, PLANK), count(&w, store, PLANK));
+    assert_eq!(h_of(&mut w), Some(store));
+    stock(&mut w, WEST_HARBOUR, PLANK, 1);
+    assert_eq!(w.spare_for_others(WEST_HARBOUR, PLANK), 1);
+    assert_eq!(
+        h_of(&mut w),
+        Some(WEST_HARBOUR),
+        "the nearer, with one to spare"
+    );
+}
+
 // T19 (SHIP-4.1, Q-063): each of the hut's plank orders finds no warehouse
 // with planks over island B's roads and, at its turn in the ware order pass
 // (every 11 ticks, one order chosen per pass), is attached to H2 (reachable

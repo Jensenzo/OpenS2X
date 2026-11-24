@@ -679,7 +679,20 @@ impl World {
                 self.update_ship(i);
             }
         }
-        for h in 0..self.harbours.len() {
+        // SHIP-4 the passes' ticks (T26): a harbour finished in this tick
+        // has its first update in the next one. Its update itself is part
+        // of its building's (SHIP-4.3, T28: [`Self::update_harbour_at`]).
+        for h in &mut self.harbours {
+            h.fresh = false;
+        }
+    }
+
+    /// SHIP-4.3 "when the pass runs within the tick" (T28): the harbour's
+    /// update (its expedition step and the 101-tick pass) is its building's
+    /// own update in the buildings' part of the tick, before the request
+    /// queue and the transport jobs.
+    pub(crate) fn update_harbour_at(&mut self, at: Point) {
+        if let Some(h) = self.harbours.iter().position(|h| h.at == at) {
             self.update_harbour(h);
         }
     }
@@ -1068,7 +1081,7 @@ impl World {
 
     fn update_harbour(&mut self, h: usize) {
         // SHIP-4 the passes' ticks (T26): no update in the finishing tick.
-        if std::mem::take(&mut self.harbours[h].fresh) {
+        if self.harbours[h].fresh {
             return;
         }
         self.expedition_step(h);
@@ -1087,7 +1100,7 @@ impl World {
     /// SHIP-5.2 (T14, Q-297): the harbour's served orders of `good` not yet
     /// delivered: the wares on their way to it for an order (not storage
     /// trips, which are no order of it), in a warehouse helper's hands too.
-    fn on_the_way(&self, at: Point, good: u32) -> u32 {
+    pub(crate) fn on_the_way(&self, at: Point, good: u32) -> u32 {
         let ordered = |t: &Option<crate::Target>| t.is_some_and(|t| t.at == at && !t.storage);
         let wares = self
             .wares()
@@ -1201,11 +1214,14 @@ impl World {
         let Some(owner) = self.harbour_owner(at) else {
             return;
         };
+        // SHIP-4.3 "what an order wants" (T28): the destination's need for
+        // the good as it counts at this pass, not the order's count.
         let mut wanted: Vec<(u32, u32)> = Vec::new();
         for t in &self.harbours[h].transfers {
+            let count = self.destination_need(t.destination, t.good);
             match wanted.iter_mut().find(|(g, _)| *g == t.good) {
-                Some((_, n)) => *n += t.count,
-                None => wanted.push((t.good, t.count)),
+                Some((_, n)) => *n += count,
+                None => wanted.push((t.good, count)),
             }
         }
         for (good, count) in wanted {
@@ -1231,6 +1247,36 @@ impl World {
                 }
             }
         }
+    }
+
+    /// SHIP-4.3, 4.4: the need of the harbour at `destination` for `good` as
+    /// it counts now (0 without an entry).
+    fn destination_need(&self, destination: Point, good: u32) -> u32 {
+        self.harbours
+            .iter()
+            .find(|x| x.at == destination)
+            .and_then(|x| x.needs.iter().find(|e| e.good == good))
+            .map_or(0, |e| e.count)
+    }
+
+    /// ECO-REQ-5.3 "a harbour as H" (T45): what the warehouse on `at` can
+    /// spare of `good` for other users. A harbour: min(A, max(0, A + B -
+    /// N)), A its stock, B the wares on their way to it, N the sum over its
+    /// transfer orders for the good of each destination's need now
+    /// (SHIP-4.3). Any other warehouse: its stock.
+    pub(crate) fn spare_for_others(&self, at: Point, good: u32) -> u32 {
+        let stock = self.warehouses.get(&at).map_or(0, |w| w.count(good));
+        let Some(h) = self.harbours.iter().find(|h| h.at == at) else {
+            return stock;
+        };
+        let owed: u32 = h
+            .transfers
+            .iter()
+            .filter(|t| t.good == good)
+            .map(|t| self.destination_need(t.destination, good))
+            .sum();
+        let coming = self.wares_inbound(at, good);
+        stock.min((stock + coming).saturating_sub(owed))
     }
 
     /// SHIP-4.4, 4.5
@@ -1279,12 +1325,7 @@ impl World {
                 {
                     // SHIP-4.4 corrections (T26): as many as the
                     // destination's need counts now, at most the stock.
-                    let need = self
-                        .harbours
-                        .iter()
-                        .find(|x| x.at == t.destination)
-                        .and_then(|x| x.needs.iter().find(|e| e.good == t.good))
-                        .map_or(0, |e| e.count);
+                    let need = self.destination_need(t.destination, t.good);
                     let count = need.min(stock);
                     if count > 0 {
                         let w = self.warehouses.get_mut(&at).expect("a warehouse");

@@ -312,6 +312,16 @@ AI-construction (AI-CON-1.8).
   (Safe), min(2 need, avail) (Normal), avail (Aggressive), strong soldiers
   first; the first attack ends the run and b becomes the current target.
   Confidence: high.
+  **The want, corrected (2026-11-23, E-ai-085: code reading and an experiment build; high).** The
+  factor 1.5 and the truncation above hold only in mode **Safe**. Let
+  `x = r x def x (owner's defend-outside setting x 0.5 + 1)`. In modes **Normal** and **Aggressive**
+  `want = trunc(x + 0.5)` (x rounded to the nearest whole number, halves up; **no factor 1.5**). In
+  mode **Safe** the stock test compares the unrounded `x x 1.5` with the soldiers in stock (the
+  candidate is skipped when `x x 1.5` is greater), and then `want = trunc(x x 1.5 + 0.5)`. need =
+  max(1, want) + C as before. Example (T34): r = 52 / 49, def 3, setting 0.5: x = 3.98, want 4 (not
+  trunc(5.97) = 5), need 4, count min(8, avail 10) = 8. T33 is unchanged by it (def 2: x = 2.26, want
+  2, need 2, count min(4, 3) = 3; with def 3, the soldier list of E-ai-078, x = 3.39, want 3, need 3
+  <= 3, count 3 as well).
   **"The soldiers present" (2026-11-21 day, E-ai-077: the war recording, its heap dump and an
   experiment build; high for the measured case):** def counts, besides the soldiers inside, a
   soldier of the building's list who is on his step in from the building's flag (the last walk of
@@ -501,6 +511,7 @@ AI-construction (AI-CON-1.8).
 | T31 | AI-MIL-5.2 (the neighbour gate, column order), 5.3 (the headquarters' enemy distance -1), 5.5: E-trace-019 (R6, Keyhole `MP_4P_Fight`, players 1 to 3 Hard), player 2 (headquarters (52, 24)) | its attack runs (every 641 ticks) and its expansion target | no cell passes the gate at the runs of counters 630 .. 7681 (no target, no expansion); at the run of counter 8322 (trace 8323) the best cell is (4, 2) of player 3 with value -10; its only candidate is player 3's headquarters (26, 24) (enemy distance -1, not explored), not attacked (need far above the soldiers available), so A + 1 and the expansion target "towards a position" (26, 24) (the original's heap at counters 8500 and 9000: current kind 1 (26, 24) since game time 832.14 s, the attack source); the guard house (12e67603) then placed on (42, 23) at counter 8573 as in the original. Experiment: the fight game's first generator difference 8884 -> 9311; the MP_2P_Storm_Coast pairs unchanged |
 | T32 | AI-MIL-4.4a: E-trace-019 (R6, Keyhole `MP_4P_Fight`, players 1 to 3 Hard), player 2; its military order for the cell (3, 1) (fields x 48 .. 63, y 16 .. 31) taken at counter 11639 fails with no site at 11669 with attempts 0; the level worked out anew at the cell's origin (48, 16) is 0 (enemy distance 19, nothing added), so 0 - 1 < 0; in the cell stands its guard house 16515 on (51, 17), finished long before (a guard house, level 1), with stock(planks) 6 and stock(stones) 36 | the failure at 11669 | the upgrade instead: the guard house is ordered up to a tower (the first qualifying field row by row; costs 3 planks + 5 stones, once); its leveller request is filed in its next update, counter 11670 (object number 18159), and the target counts as done (P halved); each 21-tick pass then cancels that request and the next update files it again (11676, 11697, ..., 11928; MIL-SOL-4.4 step 1) until a leveller takes it at 11933; the building is a tower from counter 15674 (the recording's tables). With the 37-tick run's tests here (level below the upgrade level, twice the costs) nothing is upgraded at 11669, the request queue's phase moves by one and player 1's leveller for (49, 60) leaves the headquarters at 11685 instead of 11778. Experiment build (the rule switched on, every other rule as before): the war's settlers (animation aside) first differ at 11862 instead of 11672, buildings 12225 instead of 12067, generator 12169 instead of 11964 |
 | T33 | AI-MIL-5.4, def: E-trace-019 (R6, the war), player 2's attack run of counter 14091 against player 3's guard house on (21, 20): one soldier inside (18865), 18867 on his step in from the flag (21, 19) since 14075 (inside at 14103), 18874 still walking to the flag; r = 47 / 52; C = 0 (heap dump 14000); 3 soldiers available | def, want, the count sent | def 2, want trunc(0.904 x 2 x 1.25 x 1.5) = 3, need 3, count min(6, 3) = 3: 16592 and 16600 of (31, 21), 18218 of (42, 23) (recorded; 16592 intercepted at once by player 3's 16156). Counting only the soldier inside (def 1): count 2, the war's generator first differs at trace tick 14092, settlers 14100, buildings 14320; with the rule generator 14799, settlers 14110, buildings 14860 (experiment build on 0.12.3 with the other rules of 2026-11-21; every Storm Coast pair unchanged). Counting the whole list (def 3): want 5 > 3, no attack |
+| T34 | AI-MIL-5.4, the want (E-ai-085): E-trace-019 (R6, the war), player 2's attack run of counter 17937 against player 1's guard house on (58, 45): soldier list 3, r = 52 / 49 (strengths), player 1's defend-outside setting 0.5, C = 0, mode Normal; sendable (MIL-ATK-1.1): (58, 36) 8 (d 9, 9 soldiers), (57, 29) 1, (56, 22) 1, (52, 24) 0: avail 10 | want, need, count, who goes | x = 1.0612 x 3 x 1.25 = 3.98, want 4, need 4, count min(8, 10) = 8: the 8 of (58, 36) only (nearest level first, MIL-ATK-2.1), as recorded. With the factor 1.5 (want 5, count 10) (57, 29) and (56, 22) send one each and the war's generator first differs at trace tick 17938; with the rule 18003, buildings 18240 -> 18930 (experiment build on top of the rules of 2026-11-22 night; every Storm Coast pair unchanged) |
 
 ## Evidence
 
@@ -536,6 +547,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-trace-013 | live read of the running game | 2026-10-27 01:18 .. 04:15, player 1 Hard, every tick from 0 to 150011 with about 12 % snapshot gaps, heap dumps every 500 | T23 |
 | E-ai-077, E-trace-019 | recording, heap dump, saves, experiment build | (session 2026-11-21 day): R6's settlers, stocks and heap dump 14000 (player 2's territory records), the Keyhole fight saves' player military records | 5.4 def counts a soldier on his step in (T33) |
 | E-ai-078 | code reading | (session 2026-11-21 pm) | 5.4 def: the soldier list's size; the presence test of the other rules (Q-1076) |
+| E-ai-085, E-trace-019 | code reading, recording, experiment build | (session 2026-11-23): the attack execution's want per mode; R6's settlers around counter 17937 | 5.4 the want (T34) |
 
 ## Open questions
 
