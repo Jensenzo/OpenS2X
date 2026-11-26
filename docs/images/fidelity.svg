@@ -37,8 +37,8 @@ text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Ar
 <text class="value" x="650" y="159">20,000 of 20,000</text>
 <text class="measure" x="12" y="189">the random generator</text>
 <rect class="track" x="310" y="178" width="330" height="14" rx="3"/>
-<rect class="bar" x="310" y="178" width="133.8" height="14" rx="3"/>
-<text class="value" x="650" y="189">60,837 of 150,000</text>
+<rect class="bar" x="310" y="178" width="138.9" height="14" rx="3"/>
+<text class="value" x="650" y="189">63,126 of 150,000</text>
 <text class="game" x="0" y="222">One player, no computer player</text>
 <text class="measure" x="12" y="253">every settler and building</text>
 <rect class="track" x="310" y="242" width="330" height="14" rx="3"/>

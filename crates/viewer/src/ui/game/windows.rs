@@ -69,17 +69,46 @@ pub(crate) fn slot(p: &mut Panel, ctx: &Ctx, at: [f32; 2], good: Option<u32>, co
     }
 }
 
-/// A gauge (0..1) of `size`: its art is not named (Q-184): two bars.
-pub(crate) fn gauge_box(p: &mut Panel, at: [f32; 2], size: [f32; 2], value: f32) {
-    p.widgets.push(Widget::Fill {
-        at,
-        size,
-        rgba: [0.05, 0.12, 0.12, 0.9],
-    });
-    p.widgets.push(Widget::Fill {
-        at: [at[0] + 1.0, at[1] + 1.0],
-        size: [(size[0] - 2.0) * value.clamp(0.0, 1.0), size[1] - 2.0],
-        rgba: [0.25, 0.85, 0.75, 1.0],
+/// UI-GAME-6.6: the gauge's size, 312 x 24, and where the building and
+/// site windows put its top-left.
+pub const GAUGE_SIZE: [f32; 2] = [312.0, 24.0];
+pub const GAUGE_AT: [f32; 2] = [136.0, 112.0];
+/// UI-GAME-6.6: the track and the fill, both of `uiElements3`.
+pub const GAUGE_TRACK: Rect = [0, 384, 312, 24];
+pub const GAUGE_FILL_Y: u32 = 408;
+
+/// UI-GAME-6.6 (T62): the gauge at value `v` (kept to 0 .. 1): the fill's
+/// rectangle of `uiElements3`, cut (not stretched) to 312 v pixels, and the
+/// label trunc(100 v + 0.5) `%`. The fill is cut at whole texels (ours: a
+/// sprite's rectangle is whole pixels; the original draws 312 v exactly, a
+/// difference under one pixel). None for an empty fill.
+pub fn gauge_parts(v: f32) -> (Option<Rect>, String) {
+    let v = if v.is_nan() { 0.0 } else { v.clamp(0.0, 1.0) };
+    let width = (GAUGE_SIZE[0] * v) as u32;
+    let label = format!("{}%", (100.0 * v + 0.5) as u32);
+    let fill = (width > 0).then_some([0, GAUGE_FILL_Y, width, 24]);
+    (fill, label)
+}
+
+/// UI-GAME-6.6 (T62): the productivity or completion gauge, 312 x 24 at
+/// `at`: the track `uiElements3` (0, 384, 312 x 24), the fill (0, 408,
+/// 312 v x 24) from its left edge, and the percent in `light_system`
+/// centred on it, its centre 3 px above the gauge's middle.
+pub(crate) fn gauge(p: &mut Panel, at: [f32; 2], v: f32) {
+    let (fill, label) = gauge_parts(v);
+    p.sprite(Atlas::Elements3, GAUGE_TRACK, at);
+    if let Some(rect) = fill {
+        p.sprite(Atlas::Elements3, rect, at);
+    }
+    p.widgets.push(Widget::Text {
+        text: label,
+        font: Font::Body,
+        at: [
+            at[0] + GAUGE_SIZE[0] / 2.0,
+            at[1] + GAUGE_SIZE[1] / 2.0 - 3.0,
+        ],
+        colour: WHITE,
+        align: crate::ui::widgets::Align::Centre,
     });
 }
 
@@ -177,8 +206,10 @@ pub(crate) fn title_of(ctx: &Ctx, building: u32) -> String {
     ctx.texts.name(&name).to_owned()
 }
 
-/// The portrait frame with the building (its icon stands in for the
-/// model, Q-184).
+/// UI-GAME-4.3: the portrait frame (344, 216, 88 x 88) at (22, 43) with
+/// the building. The original shows the 3D model (80 x 80 at (26, 47),
+/// the portrait camera of 4.5 a); its picture's size and what a site's
+/// portrait shows are not given (Q-1091): the type's icon is a stand-in.
 pub(crate) fn portrait(p: &mut Panel, ctx: &Ctx, building: u32) {
     p.sprite(Atlas::Elements3, [344, 216, 88, 88], [22.0, 43.0]);
     building_icon(p, ctx, building, [26.0, 47.0], 80.0);
@@ -239,17 +270,8 @@ pub fn production_window(ctx: &Ctx, at: Point) -> Panel {
             [136.0, 106.0],
             HEADING,
         );
-        // UI-GAME-4.1a (e), (g): the gauge is the site window's (4.2), from
-        // (137, 112) to (443, 128), its value `100%` centred in it (the font
-        // is not given: the body text's).
-        let value = b.productivity as f32 / 100.0;
-        gauge_box(&mut p, [137.0, 112.0], [306.0, 16.0], value);
-        p.centred_text(
-            format!("{}%", b.productivity),
-            Font::Body,
-            [137.0 + 153.0, 120.0],
-            WHITE,
-        );
+        // UI-GAME-4.1a (e), (g), 6.6: the gauge is the site window's (4.2).
+        gauge(&mut p, GAUGE_AT, b.productivity as f32 / 100.0);
         // UI-GAME-4.1a (f) (E-trace-028): a type whose worker needs no tool
         // shows no TOOL caption, slot or separator after it (the well).
         if tool.is_some() {
@@ -480,17 +502,10 @@ pub fn site_window(ctx: &Ctx, at: Point) -> Panel {
     );
     portrait(&mut p, ctx, b.building_type);
     if let Some(site) = world.site(at) {
-        // UI-GAME-4.2 (E-trace-028): the completion gauge from (137, 112) to
-        // (443, 128) with its percent centred in it; status line 1 reads
-        // `!Construction in progress...`.
+        // UI-GAME-4.2, 6.6 (E-trace-028): the completion gauge; status line
+        // 1 reads `!Construction in progress...`.
         let done = site.progress_permille(world.bulldoze_ticks()) as f32 / 1000.0;
-        gauge_box(&mut p, [137.0, 112.0], [306.0, 16.0], done);
-        p.centred_text(
-            format!("{}%", (done * 100.0).floor() as u32),
-            Font::Body,
-            [137.0 + 153.0, 120.0],
-            WHITE,
-        );
+        gauge(&mut p, GAUGE_AT, done);
         p.text(
             ctx.t("!Construction in progress..."),
             Font::Body,
@@ -969,9 +984,8 @@ pub(crate) fn nearest_expedition(world: &World, player: PlayerId, at: Point) -> 
         .map(|(i, _)| i)
 }
 
-/// UI-GAME-5.1: the attack dialog. The number sent is the share of the
-/// available soldiers, rounded (the label's rule is Q-184); the presets set
-/// the share to their counts.
+/// UI-GAME-5.1: the attack dialog. The number shown and sent follows the
+/// slider's value by 5.2 ([`attack_count`]); the presets set the value.
 pub fn attack_dialog(ctx: &Ctx, target: Point, share: f32, strong: bool) -> Panel {
     let size = [466.0, 220.0];
     let mut p = Panel::new(PanelId::Context, context_origin(ctx, size));
@@ -1073,7 +1087,18 @@ pub fn attack_dialog(ctx: &Ctx, target: Point, share: f32, strong: bool) -> Pane
     p
 }
 
-/// UI-GAME-5.1, T12: the soldiers a share of the available ones sends.
+/// UI-GAME-5.2, MIL-ATK-1.4: the slider value each count button sets.
+pub const ATTACK_PRESETS: [f32; 4] = [0.25, 0.5, 0.75, 1.0];
+
+/// UI-GAME-5.2 (T63, T12): the soldiers the slider's value v sends, of A
+/// available: n = trunc(v (A - 1) + 1 + 0.5), in single precision in that
+/// order, so the left end is one soldier, the right end all A, and a half
+/// rounds up. A = 0 sends none (5.1 shows the line instead).
 pub fn attack_count(available: u32, share: f32) -> u32 {
-    ((available as f32) * share.clamp(0.0, 1.0)).round() as u32
+    if available == 0 {
+        return 0;
+    }
+    let v = share.clamp(0.0, 1.0);
+    let a = available as f32 - 1.0;
+    ((v * a + 1.0) + 0.5) as u32
 }

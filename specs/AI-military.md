@@ -285,6 +285,13 @@ AI-construction (AI-CON-1.8).
   (x from 0, and for each x every y from 0), and for each cell the players 0 to 7 in order (alive,
   an enemy, and score in the cell not 0); a value replaces the best only when strictly greater, so
   of equal values the first visited stays. Test T31.
+  **The value's second score is the attacker's own (corrected 2026-11-25 a, E-ai-088: code reading, the war
+  recording E-trace-019 with its heap dumps of counters 24 000 and 24 500, an experiment build; high).**
+  The value is (threat of p's buildings under construction in the cell + **p's score** in the cell + **the
+  attacking player's own score** in the cell - threat balance) / (C + 1 + A), not twice p's score. The two
+  scores are read from the two players' military maps (p's, then the player's own). For a cell where the
+  player has no score of its own (most enemy cells) the value is therefore lower than "2 x p's score"
+  gave, by p's score, which changes which cell wins. Test T37.
 - **AI-MIL-5.3 Candidates.** Enemy buildings of p within distance 12 of the
   cell's top-left field that can be attacked (headquarters, or soldier limit
   above 0 and occupied) and are either in the player's explored map or have
@@ -337,6 +344,20 @@ AI-construction (AI-CON-1.8).
   no attack or fight; the soldier on his step in does not count there. Confidence: high (code)
   for the list and for the other rules' test; medium for the moment he joins the list (from the
   recording: counted while on his step in, not while walking to the flag).
+  **def as built, restated (2026-11-23 b, Q-1082, E-ai-086: code reading, the war recording and an
+  experiment build; high):** def is the **whole soldier list** of the building, nothing else:
+  every soldier assigned to it, **those still walking to it from a warehouse included** (they are
+  on the list from the moment they are sent, not from their arrival at the flag), and the
+  building's soldiers out on an attack or out intercepting (they stay on it). In the war at counter
+  17942 the guard house (58, 36), 8 of its 9 soldiers out attacking, has def 9, not 1 (T35); at
+  counter 19224 the same building, 1 soldier out attacking, 5 inside and 3 on their way from a
+  warehouse 10 or more fields off, has def 9, not 6 (T36). The moment of joining stated above ("from
+  his arrival at the flag", from T33's recording) is withdrawn: with the corrected want T33 gives
+  the same attack for def 2 and def 3, so it does not decide it, and T36 shows the walking soldiers
+  counted. Counting only the soldiers present is wrong as soon as a building has soldiers out. The
+  earlier worry that the list breaks the island game (Hard, settlers from 23 500) does not hold on
+  the current rules: with def as the list every Storm Coast, one-player and dense comparison is
+  unchanged (experiment build on top of the forty-four rules).
 - **AI-MIL-5.5 Results.** While the current target still exists, is not
   ours and has attackers on the way, the system waits. Target gone or taken:
   C and A of the cell are halved; attackers gone but target still enemy: C +
@@ -487,7 +508,7 @@ AI-construction (AI-CON-1.8).
 | T14 | candidates with surrounding scores 30, 50, 50, 10 | ordering | visited 50, 30, 10; the second 50 is dropped |
 | T6 | HQ with enemy distance 20 | castle settings | reserve 9 per rank; distance 60: 0 |
 | T7 | target cell: enemy score 40, construction threat 0, balance 10, C = 1, A = 2 | selection | value (0 + 80 - 10) / 4 = 17.5 |
-| T8 | mode Safe, target guard house with 2 soldiers, r = 1, owner defend-outside 1.0, 4 soldiers in stock, avail 5, C = 0 | execution | want = trunc(2 x 1.5 x 1.5) = 4 <= 4; need 4 <= 5: attack with 4 |
+| T8 | mode Safe, target guard house with 2 soldiers, r = 1, owner defend-outside 1.0, 4 soldiers in stock, avail 5, C = 0 | execution | x = 1 x 2 x (1.0 x 0.5 + 1) = 3; the stock test compares the unrounded x x 1.5 = 4.5 with the stock: 4.5 > 4, the candidate is **skipped** (no attack). With 5 in stock: 4.5 <= 5, want = trunc(4.5 + 0.5) = 5, need 5 <= avail 5: attack with min(5, 5) = 5. With exactly x x 1.5 equal to the stock (e.g. x = 4, stock 6) the candidate is not skipped (restated 2026-11-23 b, Q-1085, E-ai-086) |
 | T9 | mode Aggressive, same but 1 soldier in stock, avail 2 | execution | attack with 2 |
 | T10 | mode Normal, need 3, avail 10 | execution | attack with 6 |
 | T11 | smithy productivity 0.05, iron stock 0 | weapon run | an iron need attached to the smithy, no sword need |
@@ -512,6 +533,9 @@ AI-construction (AI-CON-1.8).
 | T32 | AI-MIL-4.4a: E-trace-019 (R6, Keyhole `MP_4P_Fight`, players 1 to 3 Hard), player 2; its military order for the cell (3, 1) (fields x 48 .. 63, y 16 .. 31) taken at counter 11639 fails with no site at 11669 with attempts 0; the level worked out anew at the cell's origin (48, 16) is 0 (enemy distance 19, nothing added), so 0 - 1 < 0; in the cell stands its guard house 16515 on (51, 17), finished long before (a guard house, level 1), with stock(planks) 6 and stock(stones) 36 | the failure at 11669 | the upgrade instead: the guard house is ordered up to a tower (the first qualifying field row by row; costs 3 planks + 5 stones, once); its leveller request is filed in its next update, counter 11670 (object number 18159), and the target counts as done (P halved); each 21-tick pass then cancels that request and the next update files it again (11676, 11697, ..., 11928; MIL-SOL-4.4 step 1) until a leveller takes it at 11933; the building is a tower from counter 15674 (the recording's tables). With the 37-tick run's tests here (level below the upgrade level, twice the costs) nothing is upgraded at 11669, the request queue's phase moves by one and player 1's leveller for (49, 60) leaves the headquarters at 11685 instead of 11778. Experiment build (the rule switched on, every other rule as before): the war's settlers (animation aside) first differ at 11862 instead of 11672, buildings 12225 instead of 12067, generator 12169 instead of 11964 |
 | T33 | AI-MIL-5.4, def: E-trace-019 (R6, the war), player 2's attack run of counter 14091 against player 3's guard house on (21, 20): one soldier inside (18865), 18867 on his step in from the flag (21, 19) since 14075 (inside at 14103), 18874 still walking to the flag; r = 47 / 52; C = 0 (heap dump 14000); 3 soldiers available | def, want, the count sent | def 2, want trunc(0.904 x 2 x 1.25 x 1.5) = 3, need 3, count min(6, 3) = 3: 16592 and 16600 of (31, 21), 18218 of (42, 23) (recorded; 16592 intercepted at once by player 3's 16156). Counting only the soldier inside (def 1): count 2, the war's generator first differs at trace tick 14092, settlers 14100, buildings 14320; with the rule generator 14799, settlers 14110, buildings 14860 (experiment build on 0.12.3 with the other rules of 2026-11-21; every Storm Coast pair unchanged). Counting the whole list (def 3): want 5 > 3, no attack |
 | T34 | AI-MIL-5.4, the want (E-ai-085): E-trace-019 (R6, the war), player 2's attack run of counter 17937 against player 1's guard house on (58, 45): soldier list 3, r = 52 / 49 (strengths), player 1's defend-outside setting 0.5, C = 0, mode Normal; sendable (MIL-ATK-1.1): (58, 36) 8 (d 9, 9 soldiers), (57, 29) 1, (56, 22) 1, (52, 24) 0: avail 10 | want, need, count, who goes | x = 1.0612 x 3 x 1.25 = 3.98, want 4, need 4, count min(8, 10) = 8: the 8 of (58, 36) only (nearest level first, MIL-ATK-2.1), as recorded. With the factor 1.5 (want 5, count 10) (57, 29) and (56, 22) send one each and the war's generator first differs at trace tick 17938; with the rule 18003, buildings 18240 -> 18930 (experiment build on top of the rules of 2026-11-22 night; every Storm Coast pair unchanged) |
+| T35 | AI-MIL-5.4 def with MIL-ATK-1.1 item 3 (E-ai-086, E-mil-040): E-trace-019 (R6, the war), the computer player 1's attack run of counter 17942 against player 2's guard house (58, 36): 9 soldiers on its list, 8 of them out attacking player 1's guard house (58, 45) since 17937, 1 inside; r = 49 / 52 = 0.9423, player 2's defend-outside 0.5, C = 0, mode Normal; player 1's (56, 50) and (56, 57) have 4 and 2 interceptors out defending (58, 45) and may send 3 and 1 (MIL-ATK-1.1 item 3: nobody attacks them), (58, 45) is attacked and sends none: avail 4 | def, want, decision | def = 9 (the attackers out count), x = 0.9423 x 9 x 1.25 = 10.6, want 11, need 11 > avail 4: **no attack** (recorded: no soldier of player 1 leaves at 17942 .. 17970). With def = the soldiers present (1): want 1, need 1 <= 4, player 1 attacks (58, 36) with 2 and the war's generator first differs at trace tick 17943 |
+| T36 | AI-MIL-5.4 def counts soldiers on their way (E-ai-086): E-trace-019 (R6, the war), the computer player 1's attack run of counter 19224 against player 2's guard house (58, 36): its list holds 9 soldiers: 1 out attacking, 5 inside, 3 walking to it from a warehouse (recorded at 19223 on (55, 26), (54, 24), (52, 23), still walking); r = 43 / 45 = 0.9556, setting 0.5, C = 0, mode Normal, avail 9 | def, want, decision | def = 9, x = 0.9556 x 9 x 1.25 = 10.75, want 11 > avail 9: **no attack** (recorded: no soldier of player 1 leaves then). Counting only the soldiers on the list from their arrival at the flag (def 6): want 7 <= 9, player 1 attacks with 9 and the war's settlers first differ at trace tick 19230, generator 19225; with the rule settlers 19320, generator 19319 (experiment build on top of the forty-four rules and rules 45 .. 49) |
+| T37 | AI-MIL-5.2 'the second score is the attacker's own' (E-ai-088): E-trace-019 (the war), computer player 3's attack run of counter 24 342; cell (5, 1): player 2's threat under construction 20, score 220, player 3's own score 0, balance 205, C 0, A 0; cell (5, 2) (holding player 2's guard house (42, 23)): under construction 0, score 510, own score 0, balance 185, C 1, A 2 (the counters and map values read from the original's heap at 24 000 and 24 500, equal to ours) | the target cell | (5, 1): (20 + 220 + 0 - 205) / 1 = 35; (5, 2): (0 + 510 + 0 - 185) / 4 = 81.25: **(5, 2)**, so player 3 attacks (42, 23) with two soldiers, from (21, 20) and (31, 21) (recorded: they leave at counter 24 343; the two attacker draws of counter 24 342). Twice the enemy's score gives (5, 1) 255 against (5, 2) 208.75, an attack on nothing (its only candidate (44, 14) has no soldier free), and the war's generator first differs at trace tick 24 343. Experiment build: the war S 24 350 -> 25 290, B 24 890 -> 26 590, G 24 343 -> 26 132; every MP_2P_Storm_Coast pair unchanged |
 
 ## Evidence
 
@@ -548,6 +572,8 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ai-077, E-trace-019 | recording, heap dump, saves, experiment build | (session 2026-11-21 day): R6's settlers, stocks and heap dump 14000 (player 2's territory records), the Keyhole fight saves' player military records | 5.4 def counts a soldier on his step in (T33) |
 | E-ai-078 | code reading | (session 2026-11-21 pm) | 5.4 def: the soldier list's size; the presence test of the other rules (Q-1076) |
 | E-ai-085, E-trace-019 | code reading, recording, experiment build | (session 2026-11-23): the attack execution's want per mode; R6's settlers around counter 17937 | 5.4 the want (T34) |
+| E-ai-086, E-trace-019 | code reading, recording, experiment build | (session 2026-11-23 b): the Safe stock test's comparison; def as the whole list on the current rules; R6 around counters 17942 and 19224 | 5.4 def restated (T35, T36), T8 restated (Q-1082, Q-1085) |
+| E-ai-088, E-trace-019 | code reading, recording, heap dumps, experiment build | (session 2026-11-25 a): the target selection's two score reads (the enemy's map, then the player's own); player 3's run of counter 24 342 and its cells' counters and map values | AI-MIL-5.2 'the second score is the attacker's own' (T37) |
 
 ## Open questions
 

@@ -632,6 +632,8 @@ impl Material for ObjectMaterial {
         ])?;
         descriptor.vertex.buffers = vec![vertex_layout];
         descriptor.primitive.cull_mode = None;
+        // A development switch: the look study's looks of the materials.
+        crate::render::look_materials::add_defs(descriptor);
         Ok(())
     }
 }

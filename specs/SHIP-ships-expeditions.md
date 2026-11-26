@@ -325,11 +325,39 @@ tick early. Test T26.
   (ECO-REQ-5.1, `t mod 11 = 0`), and a settler request it files is tried in the same tick's
   request queue. Running the harbours after the transport jobs (as a separate navy update)
   delays such an order to the next matching, 11 ticks later. Test T28.
+  **What is "already on the way" (2026-11-25, Q-1084; E-ship-024: the Weak recording E-trace-034 and an
+  experiment build; high for the measured case):** the supplying harbour's **open orders** of the good
+  plus its **served orders whose ware has not arrived yet**: every ware of the good on its way to the
+  harbour for one of its orders (lying at a flag, in a carrier's hands, or still in the hands of a
+  warehouse's helper carrying it out to the warehouse's flag). This is the same count as the
+  expedition's (SHIP-5.2, T14). A ware on a **storage trip** to the harbour (an unordered ware sent there
+  only to be stored, `ECO-requests-dispatch.md` ECO-REQ-5.5) does **not** count, although it will arrive;
+  once an order of the harbour takes it over (it stays a free ware, ECO-REQ-5.4a, and the matching's
+  free-ware step may give it to that order), it counts like any ordered ware. So the shortfall is
+  wanted - stock - (open orders + ordered wares on the way), at least 0, and that many orders are filed.
+  Test T30.
+  **Settlers (2026-11-25 a, E-ship-025: code reading, E-trace-034 and an experiment build; high for
+  the measured case):** for a settler good (a builder, a soldier rank, any job) "already on the way"
+  is the harbour's **open settler requests of that job** (each counts, not only "one is open") plus
+  the **settlers of that job already sent to it and walking there** (including a builder who left as
+  a builder for the harbour and was turned home to it, SHIP-5.2a); soldiers: all five ranks
+  summed. The shortfall is filed as **one request per missing settler**, like the ware orders. Test
+  T31.
 - **SHIP-4.4 Calling and loading a ship.** For each transfer order:
   - if the harbour has **no ship called** and the order's goods are ready in
     stock: the nearest free ship (finished, not on an expedition, not moving,
     no assignment, empty) that is on a sea which also reaches one of the
     destination harbour's docking places is **called**; one ship per pass;
+    **which ship, exactly (2026-11-25 a, E-ship-025: code reading, E-trace-034, an experiment
+    build; high for the measured case):** the harbour's docking places are tried **in their
+    order** (SHIP-1), skipping a place whose sea is not the sea of one of the destination's
+    docking places; for a place, the candidates are every ship **linked to this harbour** (lying
+    at it or sailing to one of its places, whatever else it does) and every ship of the owner that
+    is free as above **and linked to no harbour**, on that place's sea; the one nearest to **that
+    docking place** (straight-line field distance, the first in the ship list on ties) is called,
+    and the first place that has a candidate decides. Calling a ship already linked to this
+    harbour only marks it called: it keeps lying there or keeps sailing there (no new route, no
+    draw); any other called ship goes to the harbour as before. Test T32;
   - if the called ship is **docked here** and holds fewer than the ship
     stock limit (12, `sh_setStockLimit`) cargo entries: the order's goods are
     moved from the stock into the ship as a cargo entry for the destination
@@ -363,6 +391,42 @@ tick early. Test T26.
   ordered overseas is taken into the supplying harbour's stock, shipped as a
   count and comes out of the destination harbour's stock like any warehouse
   settler (`ECO-requests-dispatch.md`). Confidence: medium.
+
+- **SHIP-4.8 A harbour removed; a defeated player's ships (2026-11-24 b, Q-066 partly answered;
+  E-ship-022, code reading).**
+  1. **No capture.** A harbour cannot be attacked (`MIL-attack-combat.md` MIL-ATK-1.3: the attack
+     dialog opens on nothing but the headquarters and occupied military buildings), so it never
+     changes hands. It only goes: torn down by its owner or lost with its land, both with remains
+     (`MIL-conquest.md` MIL-CON-4.1, 4.3: settlers in its stock walk out, wares in it are lost).
+     Confidence: high.
+  2. **What goes with it.** Its own records are deleted with the building: its need list and the
+     orders attached to it (4.1, end of order item 4), its transfer orders (4.2 to 4.4), its
+     docking-place records and its expedition with everything set aside for it (SHIP-5.1a: the
+     set-aside goods are outside the stock, so they are not part of 4.3's walk-out; they are lost).
+     The removal itself does **not** visit any ship: no ship is told, re-routed or emptied at that
+     moment. Confidence: high for "no ship visited" (the building's teardown read whole); medium
+     that the expedition's builder and goods are lost rather than walked out.
+  3. **Ships.** A ship refers to a harbour only by a link, which reads "gone" from the removal on.
+     So, by the existing rules: a ship lying idle at it (2.3 correction) has no harbour link any
+     more and turns to search in its next update, keeping its counter; a docked one (2.6) goes to
+     search; one sailing to it (2.5) finds the link gone when it stops and goes Idle, then
+     search. A search finds the nearest harbour of the owner with a free docking place on its sea
+     (2.4); with none, it keeps searching every 101 ticks for the rest of the game (making room on
+     its way as 2.4 says). Confidence: high (the ship's update read; the states as in 2.3 to 2.6).
+  4. **Cargo for a removed harbour.** Not settled: a ship's first cargo entry whose destination
+     harbour is gone is neither unloaded (4.6's dock test needs the harbour) nor dropped by the
+     removal (item 2); the unloading step then tries to send the ship to the gone harbour, and
+     that call has no test for a missing harbour, so unless the entry's own link drops the entry when
+     the harbour goes (its callback not identified), the original would fail there (Q-1089). Until answered:
+     ours' stand-in (the entry is lost, the ship goes on with the next entry) stays.
+  5. **A defeated player's ships.** A player is never taken out of the game (`AI-overview.md`
+     AI-2.1: the slot keeps its player object; nothing clears it on defeat), so his ships stay on
+     the water and go on by these rules: with no harbour of his left, every ship searches every
+     101 ticks without end; a ship in expedition mode keeps waiting for orders (SHIP-6.3). They
+     are not removed, not handed to the winner and not sunk. Confidence: medium-high (no code
+     path that removes a ship other than its own end was found; the defeat itself has no step that
+     visits ships).
+  Test T29.
 
 ### SHIP-5 Preparing an expedition (harbour side)
 
@@ -413,6 +477,26 @@ tick early. Test T26.
   is set aside at once, never counting as its stock; (b) a harbour's own request is never served
   from that harbour. Either gives the Hard pair's settlers 53 900 (was 53 200) and its generator
   53 726 (was 53 194); (a) keeps 30 more matching generator ticks after it. Test T23.
+- **SHIP-5.2a The builder step of a pass, in order (2026-11-24 c; E-ship-023, code reading, high).**
+  After the materials, in the same pass:
+  1. If a builder is **already set aside** (from an earlier pass): if no material was missing in
+     this pass, the expedition goes to **Getting ship**; otherwise nothing more.
+  2. Else, if the harbour's stock holds a builder: one is taken from the stock and set aside, and
+     the harbour's **first open builder request** (in the order its open settler requests were
+     filed) is **cancelled**; only that one, and the pass ends there. **Getting ship is not
+     entered in this pass** even when nothing is missing: it waits for the next pass, 101 ticks
+     later (step 1).
+  3. Else, if the harbour has no open builder request, one builder is requested; with one open,
+     nothing.
+  So an expedition whose last thing to come is its builder leaves Gathering one pass after he is
+  set aside, and of several builder requests open at that pass (SHIP-5.2's way: one per pass
+  while he walks) one is cancelled per set-aside; a request already served is not.
+  **"No material was missing in this pass" (2026-11-25 a, E-ship-026: the Weak recording E-trace-034,
+  its heap dumps and an experiment build; medium-high, measured):** a material counts as missing
+  when, at the start of the pass's material step, fewer of it are set aside than the expedition
+  needs, **even if the harbour's stock covers the rest and this pass sets it aside**. So the pass
+  that sets aside the last materials from the stock stays in Gathering, and Getting ship comes one
+  pass later (as for the builder, step 2), not in the same pass. Test T33.
 - **SHIP-5.3 Getting ship.** Every 101 ticks: for each docking place of the
   harbour, in order, the nearest free ship (as in SHIP-4.4) on that docking
   place's sea; the first found is called to this harbour: **Waiting for
@@ -605,6 +689,12 @@ tick early. Test T26.
 | T26 | SHIP-4 the pass's tick, 4.2 a good held, 4.4 the call ending the pass and the load's count: E-trace-013 (the Hard game), player 1's harbour (144, 47) (finished in counter 6734; ship 94738 lying idle and linked there since 51 180) and the new harbour (147, 136) founded by the expedition, finished in counter 54 100; on its island two builder requests (sites (147, 134), (144, 135)) and two helper requests (roads) wait for it; the founding's builder walks into it in 54 149 and is sent out to (147, 134) in 54 154 | the passes of both harbours, what is asked and loaded | (147, 136)'s passes in 54 201, 54 302, 54 403 (each with a new helper there); no helper transfer is ever asked (the heap dump of 54 500 holds the builder and plank needs only); ship 94738 is loaded in 54 507 (pass of (144, 47)) with **1 builder**, no helpers (the call itself, in an earlier pass, does not show in the ships table: the ship lies idle through 54 506). Ours before the rules: passes one tick early (54 200, 54 203), both helpers asked in 54 200, the ship called and loaded with 1 builder and 2 helpers in one pass (54 203): the Hard 150 000 generator apart at trace tick 54 206. With the four rules (experiment build with every rule of 2026-11-21): 1 builder only, loaded in 54 305 (called 54 204); Hard 150 000 generator 54 206 -> 54 308 (matching 54 256 -> 54 408), settlers 54 400 -> 54 500, buildings 55 700; Weak generator 56 729 (matching 56 854 -> 56 805); the war and every other pair unchanged. The two passes still between ours' load (54 305) and the recorded one (54 507) are Q-1079 |
 | T27 | 4.1 (the network a settler request is attached over): E-trace-013 (the Hard game), player 1's new harbour (147, 136) (flag (147, 135), finished in counter 54 100, passes 54 201, 54 302, 54 403); the guard house site (144, 135) (flag (145, 134)) has a builder request no warehouse can serve; the road (145, 134)-(147, 135) stands from trace tick 53 502 without a carrier; its carrier is made by the new harbour from the helper of its pass of 54 302 and sent out in trace tick 54 305 (on the flag in 54 328); harbour (144, 47) holds 3 builders, its ship 94738 idle at its docks | the builder request's harbour and the transfer | the request is not attached before 54 305 (heap dumps: the two flags in different networks of the carrier roads at 54 000, in one at 54 500); attached at its first turn after (54 309); the harbour asks in its pass of 54 403; the builder is loaded at (144, 47) in 54 507 (recorded). Attaching over every road attaches it in 54 103, asks in 54 201 and loads in 54 305 (the Hard generator apart from 54 308); with the rule (experiment build) from 54 412 |
 | T28 | SHIP-4.3 what an order wants and when the pass runs: E-trace-013 (the Hard game), player 1's harbour (144, 47) (finished in counter 6734) supplying the new harbour (147, 136) on the island with planks for the guard house site (144, 135); (147, 136)'s pass of counter 54 302 asks (144, 47) for planks (need 2); its pass of 54 403 counts 4; (144, 47)'s passes at 54 305 and 54 406 (6734 + 471 / 472 x 101); counters 54 406 and 54 307 are matching ticks | the castle's plank sends to (144, 47) | two planks from the castle (139, 51) for the first two (helpers out of its door at 54 307 and 54 340), then two more for the grown need: the first at **54 406, the tick of (144, 47)'s pass**, the second at 54 439. The castle's door is then busy at the take-out of 54 411 (ECO-DIST-1.7: no draw for it), so an animal's target that tick comes from the 7th draw: deer 89915 on (44, 65) walks to (46, 65) (start draw) in the tick of trace 54 412. Wanting the order's first count (2) sends no more planks; running the pass after the transport jobs sends the third plank at 54 417 (the next matching): the Hard 150 000 generator then differs from trace tick 54 412 (the deer walks to the neighbour (44, 66)) |
+| T29a | 5.2a: a harbour gathering with every material set aside, no builder set aside, one builder in its stock and two open builder requests (filed at the two passes before) | its passes P and P + 101 | P: the stock builder set aside, the earlier-filed open builder request cancelled, the other kept, the state stays Gathering; P + 101: Getting ship (and nothing requested). With no builder in stock at P and one request open: nothing requested at P |
+| T29 | 4.8: player 1 has harbours H1 and H2 on one sea and ship S idle at H1 (docked earlier, harbour link to H1, search counter 37); H1 is torn down in tick t | S from t + 1 | in t nothing happens to S; in t + 1 S has no harbour link and turns to search with counter 37 (2.3 correction, 2.4), and when the counter reaches its try it finds H2 (free place) and sails there. With H2 gone too: S searches every 101 ticks forever, stays on the water, never removed; H1's expedition goods (if it was preparing one) are gone, its stock's settlers (not helpers) walk out of its door (MIL-CON-4.3) |
+| T30 | 4.3 'already on the way' (Q-1084): E-trace-034 (the Weak game, `MP_2P_Storm_Coast`, player 1 Weak), the harbour (144, 47) at its pass of counter 60 695: transfer orders for the harbour (147, 136) (finished at 60 433) wanting 4 planks; no plank in stock; no open plank order; plank 97328 (made at 60 145) on a storage trip to (144, 47) since 60 180 (at 60 695 in a carrier's hands on the road to flag (142, 43), where it lies from 60 702); no ordered plank on its way | the pass | **4** plank orders are filed (the storage trip does not count; counting it gives 3). The matching then serves them from the castle at 60 698, by 97328 itself at 60 709 (the free-ware step; in the experiment build its cost 11 against the castle's 22), from the castle at 60 731 and 60 764 (helpers 97390, 97394, 97396). At the next pass (60 796): wanted 4, stock 0, four ordered planks on their way (97328 and the three castle planks): nothing is filed, so the castle's door is free for the water helper 97401 at 60 797 and the builder 97403 (to the harbour) at 60 832, and the castle makes no take-out draw at 60 837 (6 draws, not 7). Experiment build: the Weak game's generator first differs at trace tick 60 901 instead of 60 838; Hard 150 000 (58 115) and the war (S 24 350, B 24 890, G 24 343) unchanged; `s2-app fidelity`: Weak generator matching ticks 60 947 -> 60 969, every other pair unchanged |
+| T31 | 4.3 'already on the way', settlers (E-ship-025): E-trace-034 (the Weak game, player 1 Weak), the harbour (144, 47) supplying the harbour (147, 136) with one builder; at its pass of counter 60 796 one builder request is filed and served from the castle at 60 832 (builder 97403, walking to the harbour until 61 082) | the pass of counter 60 897 | wanted 1, stock 0, open requests 0, one builder of the job walking to it: **nothing** is filed (recorded: no builder leaves the storehouse (133, 39) at counter 60 900; the next new settler is the carrier 97415 at (119, 59)). Counting only "a request is open" files a second request, served from (133, 39) at 60 900. Experiment build: the Weak generator 60 901 -> 60 928 on top of main's equivalent; Hard 150 000 (58 115) and the war (24 343) unchanged |
+| T32 | 4.4 'which ship' (E-ship-025): E-trace-034, the harbour (144, 47) with docking places (146, 50), (147, 48), (147, 46) in this order; ship 94308 lying at (146, 50) linked to (144, 47) since its return (57 519), ship 96085 idle at (146, 46) linked to no harbour; at the pass of counter 60 998 a transfer to (147, 136) is ready (one plank in stock) | that pass and the next | 60 998: 94308 is called (distance 0 to the first docking place) and stays where it is, no draw; 60 998 + 101 = 61 099: 94308 is docked here, so one plank and the builder go aboard (two cargo entries) and it sails at 61 100 (recorded). Calling the ship nearest to the harbour's own field (96085, distance 2 against 3) sends 96085 to the harbour (two route draws at 60 998). A ship sailing to this harbour when it is called (the Hard game, ship 94308 at counter 55 113) keeps its route. Experiment build: the Weak generator 60 999 -> 61 931 (with T31 and ECO-OUT T29 on); Hard 150 000 58 115 unchanged (calling with a new route there moves it to 55 114) |
+| T33 | 5.2a 'no material was missing' (E-ship-026): E-trace-034 (the Weak game), the harbour (144, 47) gathering an expedition (builder set aside earlier; 6 stones needed, 4 set aside); the last two stones reach its stock at counters 61 729 and 61 808; its expedition passes at 61 728, 61 829, 61 930, 62 031 | the passes | 61 829: both stones are taken from the stock and set aside (recorded: the harbour's stock of stones 2 -> 0 at 61 829), the expedition stays in Gathering; 61 930: nothing to set aside, Getting ship; 62 031: the ship 94308 (lying at (147, 139)) is called (recorded: the ship has not moved by counter 62 000; the heap dump read over 61 999 .. 62 073 holds the expedition waiting for ship 94308 with 11 goods set aside). Going to Getting ship already at 61 829 calls the ship at 61 930 (the Weak generator's first difference there, 61 931). Experiment build: Weak generator 61 931 -> 63 127 (on top of T31, T32, ECO-OUT T29); Hard 150 000 (58 115) and the war (24 343) unchanged |
 
 ## Evidence
 
@@ -637,6 +727,11 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-ship-018, E-trace-013 | code reading, memory reads of the running game, recording, experiment build | (session 2026-11-22 day): the harbour's pass, its asking, gathering and loading steps, the harbour's count for other users; the need entries, transfer orders and settler requests in R3's heap dumps of 54 000 and 54 500; the buildings, stocks and settlers tables around counter 54 100 .. 54 510 | SHIP-4 the passes' ticks, SHIP-4.2 a held good, SHIP-4.4 corrections (T26), Q-1079 |
 | E-ship-019, E-trace-013 | code reading, recording, experiment build | (session 2026-11-22 pm): the harbour finder's tests (finished, road network of the carrier roads, stock settings, a docking place on a sea with a finished ship); the flags' network ids in the heap dumps of 54 000 and 54 500; the roads table's carrier of the road (145, 134)-(147, 135) | 4.1 the network (T27) |
 | E-ship-020, E-trace-013 | code reading, recording, experiment build | (session 2026-11-22 night): the gathering step (what each transfer order wants), the place of the harbour's update in the tick; the recording's helpers, wares and animals around counter 54 406; the experiment build with both (T28) |
+| E-ship-022 | code reading | | SHIP-4.8: the building teardown visits no ship; the harbour part deletes transfers, expedition, docks; ship states with gone links (Q-066) |
+| E-ship-023 | code reading | (session 2026-11-24 c): the expedition's gathering pass, its builder branch (set aside from the stock, the cancel of the first open builder request, the request only with none open, Getting ship only from a pass that began with the builder set aside) | SHIP-5.2a, T29a (Q-1077 narrowed) |
+| E-ship-024, E-trace-034 | recording, experiment build | (session 2026-11-24 night): the Weak game recorded again with every table from counter 59 800 to 62 000; the harbour's plank orders and wares, the castle's helpers 60 698 .. 60 832 | SHIP-4.3 'already on the way' (T30), Q-1084 |
+| E-ship-025, E-trace-034 | code reading, recording, experiment build | (session 2026-11-25 a): the harbour's count of settlers on their way (requests of the job plus walking settlers); the call's ship choice per docking place; the Weak game 60 901 .. 61 931 | SHIP-4.3 settlers (T31), SHIP-4.4 'which ship' (T32) |
+| E-ship-026, E-trace-034 | recording, heap dumps, experiment build | (session 2026-11-25 a): the expedition of (144, 47): its stones' stock 61 729 .. 61 829, its state and count in the dumps of 61 000, 61 500, 62 000; the ship 94308 not moving before 62 000 | SHIP-5.2a 'no material was missing' (T33) |
 | E-ship-008 | code reading | (2026-11-16 day) | SHIP-7.2: the order of the harbour founding: site, builder made on its field, the load into its store, its orders cancelled (Q-157) |
 | E-ship-005 | code reading and map data | `tutorial04.s2m` continents and state layer (2026-11-16) | SHIP-2.5, 2.7, 6.4, 7.1, T16 to T18 |
 | data | script | `ship.lua`, `buildings.lua` (harbor, shipYard), `dialogs.txt` dialog3_3 / dialog32_0, `tutorial.txt` T04_* | values and the player's view |

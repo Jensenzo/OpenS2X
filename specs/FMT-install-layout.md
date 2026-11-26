@@ -111,6 +111,18 @@ get their own `FMT-*` specs.
   `fonts/F_00.tga`: the game appends `_00.tga` to the font name. Confidence: high
   (shipped files; `_00.tga` in the executable). Covers (inventory): *UI texture* from
   `data/language/gb/fonts/*_00.tga`.
+- **FMT-3.8b Glyph lookup (2026-11-24 b, Q-1088 a; E-ui-044, code reading, high).** A font holds
+  256 glyph slots, one per byte value. Each `char` line of the `.fnt` file fills the slot of its
+  `id` (its `x`, `y`, `width`, `height`, `xoffset`, `yoffset`, `xadvance`; `page` is read and
+  ignored) and marks it present; ids are not checked against 255. To measure or draw a text, each
+  byte of the text, taken as an unsigned number 0 to 255, selects the slot of that number: there
+  is no other mapping (no code page conversion, no fallback glyph). A byte whose slot is not
+  present is skipped: nothing is drawn and it adds no width. A present glyph adds its `xadvance`
+  plus one font-wide spacing value to the width. So a Windows-1252 text byte 0x96 draws glyph 150,
+  and a byte with no glyph in that font simply vanishes from the line. (A second path draws with a
+  system font instead of the page when a global switch is on and the font's size reaches a limit,
+  not followed here.) Not read: the
+  byte stored for a typed key (Q-1088 b).
 - **FMT-3.9 Graphics.** Models and animations are Granny `.gr2`; textures are
   `.dds` and `.tga`; shaders are Direct3D 9 effect files in `gfx/fx_20/`. Building
   art is per tribe and type in `buildings/PB_<R|N|C>_<Name>01/` (Roman, Nubian,
@@ -172,6 +184,7 @@ get their own `FMT-*` specs.
 | T4 | `data/settings/network.ini` | Parse as INI without decoding | `Basics.gamePort` = 5479 |
 | T5 | `data/maps/campaignMaps` | Enumerate maps | 10 maps, each with `.s2m`, `.lua`, `.bmp` |
 | T6 | Open `data\settings\ENGINE.INI` | Case-insensitive lookup | Resolves to `data/settings/engine.ini` |
+| T7 | 3.8b: the two `credits.txt` (gb) lines holding the byte 0x96 (`cr170` "Hey – once again…" and `cr501` "Mathieu Mariolle – Bug Tracker", once each; corrected 2026-11-24 c), drawn in a font whose `.fnt` has `char id=150`; and the same lines in `mini` (glyphs stop at 126) | glyphs drawn and the lines' widths | first font: glyph 150 in each line, each adding its `xadvance` plus the font's spacing; `mini`: the byte draws nothing and add no width |
 
 ## Evidence
 
@@ -183,6 +196,7 @@ get their own `FMT-*` specs.
 | E-install-004 | data file observation | directory listing of `data/` | Counts and naming patterns |
 | E-install-005 | data file observation | `data/settings/network.ini` | Plain text values |
 | E-install-006 | the program's metadata | import tables and version resources in `bin/` | Module roles in FMT-5 |
+| E-ui-044 | code reading | | 3.8b: 256 glyph slots filled by `char id`, lookup by the unsigned byte, missing glyph skipped with no width (Q-1088 a) |
 
 ## Open questions
 

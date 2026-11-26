@@ -544,6 +544,20 @@ impl AiPlayer {
         }
     }
 
+    /// AI-CON-1.1: one step of the validity scan; AI-CON-1.1d (T112): a
+    /// need whose cell the step removed loses it, so the next arrangement
+    /// places it again as a new one; a cell made again later for the same
+    /// place starts with no needs.
+    pub(crate) fn cell_scan(&mut self, world: &World) {
+        self.cells.scan(world, self.id, world.tick());
+        let cells = &self.cells;
+        for n in &mut self.plan.needs {
+            if n.cell.is_some_and(|c| cells.get(c).is_none()) {
+                n.cell = None;
+            }
+        }
+    }
+
     /// AI-MISC-2.2: a building of the player is gone.
     fn remove_record(&mut self, at: Point, now: u64) {
         let Some(rec) = self.records.remove(&at) else {
@@ -808,7 +822,7 @@ impl AiPlayer {
             // AI-CON-1.6: marks that ran out are cleared in this check.
             Part::FullMarkExpiry => self.cells.expire_full(ctx.world.game_seconds()),
             // AI-CON-1.1: one cell index of the grid per run.
-            Part::CellScan => self.cells.scan(ctx.world, self.id, ctx.world.tick()),
+            Part::CellScan => self.cell_scan(ctx.world),
             Part::CellSystem => self.expansion_for_waiting(ctx),
             // AI-2.4a: the run's parts and its last step are run by
             // `construction_run`.

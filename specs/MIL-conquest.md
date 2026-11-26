@@ -30,6 +30,11 @@ one soldier and a building with no soldier left burns down.
      or gone;
   2. no opponent is available (MIL-ATK-5.1).
   Confidence: high.
+  **Condition 2 measured (2026-11-23 b, E-mil-043: the war recording and an experiment build; high):**
+  an interceptor waiting outside for the target (one MIL-ATK-5.1 would give the attacker) keeps
+  the building from being taken even when every soldier on its list is only on his way in: the
+  attacker is paired with him instead (T20). Leaving condition 2 out lets the attacker walk to the
+  door.
 - **MIL-CON-1.2** The check is made by a waiting attacker every tick
   (MIL-ATK-4.4), and again when it arrives at the target's door; the first
   attacker (in settler update order) for whom it holds walks to the door
@@ -219,6 +224,25 @@ one soldier and a building with no soldier left burns down.
   the step goes on (next search 301 updates later). Target found: the shot
   (5.4) runs, then the operator idles again (and the next search comes 301
   updates after the search step restarts). Confidence: high.
+- **MIL-CON-5.2a The rhythm in detail (Q-149, answered 2026-11-24 b; E-mil-046, code reading,
+  high).**
+  1. The idle check (stone in stock and production on) runs in every operator update while idle.
+     In the update where it passes, the search step starts with its counter at 0 and nothing else
+     happens in that update. From the next update on, each update adds 1 first and then tests: at
+     the 301st update after the start (counter 301 > 300) the counter goes back to 0 and the target
+     search of 5.3 runs in that same update. So with the check passing in update u, searches come
+     in u + 301, u + 602, ... until one finds a target. The shot starts in the update of the
+     successful search.
+  2. **During the search step nothing else is tested**: not the stone, not the production switch,
+     not the worker. Switching production off during the step does not stop it: the search goes
+     on and a target found is shot at. The switch is looked at again only in the idle check after
+     the shot.
+  3. **Stones.** Only the shot takes a stone, when its flight starts (after the aiming turn), so
+     the stock cannot run empty during the search step. Taking a stone from an empty stock would
+     take nothing and the shot would fly anyway (not reachable in play). After the shot the
+     operator is idle and the next idle check decides.
+  4. The update in which the shot reports its end sets the operator idle and does nothing else;
+     the idle check runs from the next update on.
 - **MIL-CON-5.3 Target.** Among all military buildings of players that are
   enemies of the catapult's owner (world list order): not a headquarters;
   occupied (territory applied); not having interceptors out for it while
@@ -301,6 +325,8 @@ Confidence: high for texts and recipients.
 | T17a | 4.1b (Q-150): the human player demolishes their finished woodcutter's hut (frame cost 1 plank, main cost 1 plank) through the building window; separately, a woodcutter's site whose frame is done (frame share 1, main share 0) with its main plank delivered and not yet used is destroyed through the site window | wares, ruin, flag | the hut: 1 plank on its flag (frame 1 plus main 1 = 2, halved rounded up), then a ruin on the hut's field burning 333 ticks; the site: 1 plank for the frame (1 halved rounded up) plus the unused plank in full = 2 planks on its flag, no ruin; in both cases the flag and its roads stay, and carriers take the planks off |
 | T18 | 1.2, 2.3 (the take-over's ticks): E-trace-019 (R6, the war), player 3's guard house 15251 on (31, 21), flag (32, 20); attacker 16592 of player 2 walking to that door, the condition holding | his rows and the building's (counters) | on the flag (32, 20) and capturing (state 15) in counter 13447, the building still player 3's 15251; in 13448 the building is player 2's new 18699 and he stands on the flag (state 16, the walk in); the step (32, 20) -> (31, 21) at progress 0 in 13449, 0.045 in 13450. The next two attackers of the same target arrive at a building of their own and turn to capturing likewise (16600 in 13457, 17868 in 13470). Taking it in the arrival update and walking in at once is one and two ticks early; with the rule: not yet measured (no experiment build on 2026-11-19 night) |
 | T19 | 2.2 step 1 (fights at a taken target): E-trace-019 (R6, the war), player 2's guard house (31, 21) taken by 19481 (player 3) in trace tick 17 608, while the interceptor 16608 of (47, 19), who defends it, fights 18814 on (33, 20) (both at 1 health) | 16608 and 18814 | the duel goes on: 16608 falls (dying from about 17 616, recorded), 18814 survives and then steps back to his field's point (recorded at (132 000, 80 639) in 17 620). Unpairing the pair at the take-over sends 16608 home on a free walk with its draws in 17 611 (the war's generator apart from 17 611, settlers from 17 620); with the rule (experiment build) from 17 718 and 17 690 |
+| T20 | 1.1 condition 2 (E-mil-043): E-trace-019 (R6, the war): player 2's attacker 18186 waits on (61, 46) against player 1's guard house (58, 45); his opponent, the target's soldier 19836, starts dying at counter 19318; the target's list then holds only soldiers on their way in (one stepping in from its flag (59, 44), one walking); player 1's interceptors 16750 (waiting on (60, 45)) and 17280 (on (58, 50)) wait outside for (58, 45), unpaired | 18186's check at 19318 | not takeable (an interceptor is available): he is paired with 16750 (sent first), stays on (61, 46) and steps off at 19319; 16750 walks to him from 19319 (recorded). Taking condition 1 alone: 18186 walks to the door at 19318 and the war's settlers first differ at trace tick 19320, generator 19319; with the rule settlers 19510, generator 19500, buildings 20210 -> 20920 (experiment build on top of the forty-four rules and rules 45 .. 49; every Storm Coast pair unchanged) |
+| T21 | 5.2a: a catapult with 2 stones, production on, its operator idle, an enemy occupied guard house at distance 8 placed at update u + 400 | operator updates | the idle check passes in u; searches at u + 301 (none found, step goes on) and u + 602 (found): the shot starts in u + 602. Switch production off at u + 500: the same (the search goes on and shoots at u + 602); after the shot one stone is left and the idle check fails while production is off |
 
 ## Evidence
 
@@ -321,6 +347,8 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-013 | code reading | (session 2026-11-15 night) | 2.3: the taking soldier's job after the takeover: walk to the flag, walk in (ECO-WORK-3.8), or stay out as the defender when paired |
 | E-mil-014 | code reading | (session 2026-11-15 day) | 4.1b: the remove-building command's handler removes with remains; the senders (building and site windows, the destroy action); the remains switch cleared only at shutdown; the flag not removed |
 | E-mil-028, E-trace-019 | code reading, recording | (session 2026-11-19 night): the attacker's arrival at the door (capture state only) and the capture state's own update (the test again, the take-over, the walk in); R6's first capture at counter 13447 | 1.2, 2.3 the take-over's ticks (T18) |
+| E-mil-043, E-trace-019 | recording, experiment build | (session 2026-11-23 b): R6's attacker 18186 and interceptor 16750 at counters 19316 .. 19342 | 1.1 condition 2 (T20) |
+| E-mil-046 | code reading | | 5.2a: idle check, search step counter (start 0, +1 then > 300), no tests during the step, stone taken at the flight's start (Q-149) |
 | E-mil-038, E-trace-019 | code reading, recording, experiment build | (session 2026-11-22 pm): the conquest's steps re-read (the attackers collected and re-linked; no interceptor unlinked); R6's duel of 16608 and 18814 across the take-over of (31, 21), trace ticks 17 590 .. 17 650 | 2.2 step 1 corrected (T19) |
 | data | script | `buildings.lua` (catapult), `config.lua` | radius, stock, time factors |
 

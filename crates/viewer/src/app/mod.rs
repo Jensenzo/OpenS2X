@@ -3,7 +3,7 @@
 
 pub(crate) mod options;
 pub(crate) use options::*;
-mod version;
+pub(crate) mod version;
 
 use crate::game::{
     advance_world, building_list, building_names, cycle_maps, find_maps, good_names, load_map,
@@ -99,6 +99,22 @@ pub(crate) fn tell(text: &str) {
     eprintln!("{text}");
 }
 
+/// The log: the game's log file beside the console (and in the
+/// investigation build, `--features frame-trace`, the span log's layer).
+fn log_plugin() -> bevy::log::LogPlugin {
+    #[cfg(feature = "frame-trace")]
+    return bevy::log::LogPlugin {
+        custom_layer: crate::tools::span_log::layers,
+        filter: crate::tools::span_log::filter(),
+        ..default()
+    };
+    #[cfg(not(feature = "frame-trace"))]
+    bevy::log::LogPlugin {
+        custom_layer: version::file_layer,
+        ..default()
+    }
+}
+
 /// Run the program: the viewer, or with `game` the game: it opens at the
 /// main menu in the 3D view (unless a map is named) and finds the game
 /// folder by `--game-dir`, `S2_GAME_DIR`, the settings, or by asking.
@@ -144,6 +160,19 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
                 version::use_parent_console();
                 println!("{}", version::line(crate::extend::window_title()));
                 return std::process::ExitCode::SUCCESS;
+            }
+            // `--probe-window`: the probe beside a timed run, nothing else.
+            if let Some(log) = options.probe_window.clone() {
+                return crate::tools::probe_window::run(
+                    log,
+                    options.bench_seconds,
+                    options.probe_at,
+                );
+            }
+            // The investigation build's span log (tools/span_log.rs).
+            #[cfg(feature = "frame-trace")]
+            if let Some(log) = &options.bench_log {
+                crate::tools::span_log::open(log);
             }
             // `--profile-dir` before anything reads the settings: the first
             // run's look for the game folder (and the folder question's
@@ -256,8 +285,14 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
             return std::process::ExitCode::FAILURE;
         }
     }
-    // A development switch: the ground study (none by default).
-    crate::render::ground_study::install(options.ground_study.clone());
+    // A development switch: the look study (none by default).
+    crate::render::look_study::install(options.look_study);
+    // A development switch: the ground study (none by default); a look of
+    // the materials brings its own ground.
+    let ground_study = options.ground_study.clone().or_else(|| {
+        crate::render::look_materials::active().map(crate::render::look_materials::ground)
+    });
+    crate::render::ground_study::install(ground_study);
     crate::extend::install(
         asset_folders,
         render,
@@ -384,8 +419,10 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         real_game: false,
         saved_game: false,
         own_save: false,
+        loaded_at: None,
         ahead_marks: None,
         ahead_slots: None,
+        ahead_fall_axes: Default::default(),
         setup_terrain: None,
         no_fog: options.no_fog,
         start_fog_off: false,
@@ -509,10 +546,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
     app.add_plugins(
         DefaultPlugins
             // The game's log file gets the console's messages too.
-            .set(bevy::log::LogPlugin {
-                custom_layer: version::file_layer,
-                ..default()
-            })
+            .set(log_plugin())
             .set(WindowPlugin {
                 primary_window: Some(Window {
                     title: if game {
@@ -580,6 +614,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
     .init_resource::<crate::render::view3d::ShipHover>()
     .init_resource::<crate::extend::CameraFollow>()
     .add_plugins(crate::render::stored::StoredColoursPlugin)
+    .add_plugins(crate::render::look_study::LookStudyPlugin)
     .add_plugins(crate::render::view3d::View3dPlugin)
     .add_plugins(crate::render::scene_clock::SceneClockPlugin)
     .add_plugins(crate::render::ship_view::ShipViewPlugin)
@@ -771,6 +806,54 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
                             .after(S::PrepareBindGroups)
                             .before(S::Render),
                         render_mark::<6>.after(S::Render).before(S::Cleanup),
+                    ),
+                );
+            // The long play's render steps (tools/frame_steps.rs): mark N
+            // before step N, prepare's six sets apart, and the render
+            // system's graph, submit and present.
+            use crate::tools::bench::step_mark;
+            use bevy::render::renderer::{RenderGraph, RenderGraphSystems as G};
+            render_app
+                .add_systems(
+                    Render,
+                    (
+                        step_mark::<0>.before(S::ExtractCommands),
+                        step_mark::<1>
+                            .after(S::PrepareMeshes)
+                            .before(S::CreateViews),
+                        step_mark::<2>.after(S::PrepareViews).before(S::Queue),
+                        step_mark::<3>.after(S::PhaseSort).before(S::Prepare),
+                        step_mark::<4>
+                            .in_set(S::Prepare)
+                            .after(S::PrepareResources)
+                            .before(S::PrepareResourcesBatchPhases),
+                        step_mark::<5>
+                            .in_set(S::Prepare)
+                            .after(S::PrepareResourcesBatchPhases)
+                            .before(S::PrepareResourcesWritePhaseBuffers),
+                        step_mark::<6>
+                            .in_set(S::Prepare)
+                            .after(S::PrepareResourcesWritePhaseBuffers)
+                            .before(S::PrepareResourcesCollectPhaseBuffers),
+                        step_mark::<7>
+                            .in_set(S::Prepare)
+                            .after(S::PrepareResourcesCollectPhaseBuffers)
+                            .before(S::PrepareResourcesFlush),
+                        step_mark::<8>
+                            .in_set(S::Prepare)
+                            .after(S::PrepareResourcesFlush)
+                            .before(S::PrepareBindGroups),
+                        step_mark::<9>.after(S::PrepareBindGroups).before(S::Render),
+                        step_mark::<13>.after(S::Render).before(S::Cleanup),
+                        step_mark::<14>.after(S::PostCleanup),
+                    ),
+                )
+                .add_systems(
+                    RenderGraph,
+                    (
+                        step_mark::<10>.before(G::Begin),
+                        step_mark::<11>.after(G::Render).before(G::Submit),
+                        step_mark::<12>.after(G::Submit).before(G::Finish),
                     ),
                 );
         }

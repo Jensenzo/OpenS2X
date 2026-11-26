@@ -954,9 +954,14 @@ pub fn select_map() -> Vec<Step> {
                     .iter()
                     .flat_map(|p| p.widgets.iter())
                     .filter(|w| {
+                        // UI-MENU-2.1 (T22): a row is a bar button with its
+                        // name drawn over it (before: a text button).
                         matches!(
                             w,
                             Widget::TextButton {
+                                action: Action::Menu(MenuAction::SelectMap(_)),
+                                ..
+                            } | Widget::Button {
                                 action: Action::Menu(MenuAction::SelectMap(_)),
                                 ..
                             }
@@ -1567,7 +1572,7 @@ pub fn tutorial_one() -> Vec<Step> {
             0x31,
         ),
         click_button(
-            "T01_StoneMason_SelectFlag: the road menu's flag (CAM-5.3, TRN-ROAD-4)",
+            "T01_StoneMason_SelectFlag: the place-flag menu's Create Flag (CAM-5.3c, TRN-ROAD-4)",
             0x32,
             "the flag button",
             |_, _, a, _| matches!(a, Action::Command(Command::PlaceFlag { .. })),

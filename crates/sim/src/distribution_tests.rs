@@ -407,6 +407,55 @@ fn t24_list_0_orders_by_the_plain_rule() {
     assert_eq!(w.pick_order(P0, PLANK, &group), Some(group[0]));
 }
 
+// ECO-DIST T26 (2.3a, E-eco-056): a list-1 plank order whose building type
+// has no entry in the planks table is never chosen: the pick is tried once
+// per entry (three here), each try adding every weight and zeroing the
+// first entry, and then no order is chosen and no stamp moves. A site's
+// plank order in the same group is chosen on the first try.
+// spec: ECO-DIST-2.3a (ECO-DIST T26), ECO-DIST-2.3
+#[test]
+fn t26_a_keyless_order_is_never_chosen() {
+    let mut w = game(&[(HELPER, 26)]);
+    // The planks table as shipped: construction 1.0, metalworks 0.4,
+    // shipyard 0.2 (the smelter and the mint stand in for the last two).
+    let plank = w.table_of(PLANK).unwrap();
+    w.distribution[plank].entries = vec![(CONSTRUCTION, 1000), (SMELTER, 400), (MINT, 200)];
+    // A finished mill has no entry in the planks table: its order is keyless.
+    consumer(&mut w, MILL, (14, 10), PLANK);
+    w.step();
+    let keyless = (0..w.orders.len())
+        .find(|&i| w.orders[i].good == PLANK)
+        .unwrap();
+    let stamp = w.orders[keyless].stamp;
+    w.step();
+    assert_eq!(w.pick_by_table(P0, plank, &[keyless]), None);
+    assert_eq!(w.orders[keyless].stamp, stamp);
+    let acc = |w: &World| -> Vec<u32> {
+        w.distribution(P0)[plank]
+            .iter()
+            .map(|e| e.accumulator().to_bits())
+            .collect()
+    };
+    // Three tries in float32: 0.4 + 0.4 + 0.4 (1.2000000477) and
+    // 0.2 + 0.2 + 0.2 (0.6000000238).
+    let thrice = |x: f32| ((x + x) + x).to_bits();
+    assert_eq!(acc(&w), [0f32.to_bits(), thrice(0.4), thrice(0.2)]);
+    assert_eq!(f32::from_bits(thrice(0.4)) as f64, 1.2000000476837158);
+    // A site's plank order joins the group: construction 1.0 against the
+    // absent metalworks 1.6 and shipyard 0.8 wins on the first try.
+    apply_all(&mut w, vec![place(HUT, (6, 10))]);
+    w.orders.retain(|o| o.target.at != (6, 10));
+    w.order((6, 10), PLANK);
+    let site = w.orders.len() - 1;
+    let chosen = w.pick_by_table(P0, plank, &[keyless, site]);
+    assert_eq!(chosen, Some(site));
+    assert_eq!(w.orders[keyless].stamp, stamp);
+    assert_eq!(
+        acc(&w),
+        [0f32.to_bits(), 1.6f32.to_bits(), 0.8f32.to_bits()]
+    );
+}
+
 // ECO-DIST T23 (3.1, 3.3a): list 0 is matched before list 1: a site's
 // older plank order and a finished storehouse's newer one, one plank in
 // the headquarters: the storehouse is served, the site's order waits.
@@ -1188,4 +1237,48 @@ fn a_carrier_stands_on_the_flag_after_a_delivery() {
         }
     }
     assert!(stood, "the plank was delivered");
+}
+
+// ECO-DIST T25 (ECO-DIST-1.7e, E-eco-055): the take-out job goes over one
+// list of every player's warehouses together, in the order they were made,
+// not player by player: player 0's second warehouse, made after player 1's
+// headquarters, draws after it (R6, counter 20475: player 3's headquarters
+// draws before player 2's storehouse).
+// spec: ECO-DIST-1.7e (T25), ECO-DIST-1.7
+#[test]
+fn t25_one_warehouse_list_for_all_players() {
+    use crate::military_tests as mil;
+    let mut w = mil::game(80, 50, &[(P0, (22, 20)), (PlayerId(1), (50, 20))]);
+    let second = (22, 32);
+    mil::finished(&mut w, P0, mil::CASTLE, second);
+    let serial = |w: &World, at| w.building_at(at).unwrap().serial;
+    assert!(serial(&w, (22, 20)) < serial(&w, (50, 20)));
+    assert!(serial(&w, (50, 20)) < serial(&w, second));
+    // One "out" record each, on a settler good in stock, in player 1's
+    // headquarters and player 0's second warehouse.
+    for at in [(50, 20), second] {
+        let house = w.warehouses.get_mut(&at).unwrap();
+        house.add(mil::WOODCUTTER, 1);
+        house.cooldown = 0;
+        house.flags.insert(
+            mil::WOODCUTTER as i32,
+            crate::distribution::GoodFlags {
+                stop: false,
+                out: true,
+            },
+        );
+    }
+    let before: Vec<u32> = w.settlers().map(|(_, s)| s.number).collect();
+    w.take_out();
+    let mut sent: Vec<(u32, PlayerId)> = w
+        .settlers()
+        .filter(|(_, s)| !before.contains(&s.number))
+        .map(|(_, s)| (s.number, s.player))
+        .collect();
+    sent.sort_unstable();
+    assert_eq!(
+        sent.iter().map(|&(_, p)| p).collect::<Vec<_>>(),
+        vec![PlayerId(1), P0],
+        "player 1's headquarters sends first"
+    );
 }

@@ -548,6 +548,54 @@ fn a_page_step_takes_only_the_medium_tab() {
     assert_eq!(wrong_click_error(0x05), "T01_ERROR_SelectStreetIcon");
 }
 
+/// CAM-5.3c (Q-100 b, E-cam-011; stand-ins row 6): every step takes its one
+/// control by its number: the flag menu's build-road button at the
+/// SelectCreateStreet steps, its call-geologist button at 0x3c (no other
+/// command, no closing), the bar's construction-view button at 0x1e and
+/// 0x33 and its economy button at 0x19 (not another dialog), the button's
+/// click and not its key (SPACE, L).
+// spec: CAM-5.3c (T19, T19b)
+#[test]
+fn each_step_takes_its_one_control_by_its_number() {
+    use crate::menus::campaign::{expects, Tutorial};
+    use crate::ui::widgets::{Action, Global};
+    let p = PlayerId(0);
+    let at = (10, 10);
+    let road = Action::StartRoad(at);
+    for step in [0x12, 0x22, 0x2a, 0x2f, 0x39, 0x40, 0x45, 0x4e] {
+        assert_eq!(expects(step, &road), Some(true), "{step:#x}");
+        assert_eq!(expects(step, &Action::CloseContext), Some(false));
+    }
+    let geologist = Action::Command(Command::OrderGeologist { player: p, at });
+    let scout = Action::Command(Command::OrderScout { player: p, at });
+    assert_eq!(expects(0x3c, &geologist), Some(true));
+    assert_eq!(expects(0x3c, &scout), Some(false));
+    assert_eq!(expects(0x3c, &Action::CloseContext), Some(false));
+    assert_eq!(expects(0x3c, &road), Some(false));
+    for step in [0x1e, 0x33] {
+        assert_eq!(expects(step, &Action::Hud(3)), Some(true));
+        assert_eq!(expects(step, &Action::Hud(6)), Some(false));
+    }
+    assert_eq!(expects(0x19, &Action::Hud(6)), Some(true));
+    assert_eq!(
+        expects(0x19, &Action::OpenGlobal(Global::Tools)),
+        Some(false)
+    );
+    assert_eq!(expects(0x19, &Action::Hud(4)), Some(false));
+    // The explaining steps take no control.
+    for step in [0x00, 0x0e, 0x1d, 0x35] {
+        assert_eq!(expects(step, &Action::None), None, "{step:#x}");
+    }
+    // A key does what its button does but no step sees it.
+    let (action, key) = crate::ui::by_key(Action::HudKey(3));
+    assert_eq!((action, key), (Action::Hud(3), true));
+    assert_eq!(crate::ui::by_key(Action::Hud(3)), (Action::Hud(3), false));
+    let mut t = Tutorial::new(1);
+    t.step = 0x1e;
+    t.action(&Action::Hud(3));
+    assert_eq!(t.step, 0x1f);
+}
+
 /// CAM-5.2a (E-trace-028): an explaining step's window is the game menu's
 /// frame at the top near the middle with Cancel (190, 376) and Continue
 /// (190, 401); a step that waits for a click is the production window's

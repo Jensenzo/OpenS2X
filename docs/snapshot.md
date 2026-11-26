@@ -125,6 +125,7 @@ What an older game shows, by format:
 
 | Saved in | What it shows when loaded |
 |---|---|
+| 99 (before 2026-11-24) | The interceptors out at the save have no send order (a defender's `sent` is 0): among them an attacker arriving on his meeting field takes the first in settler order (MIL-ATK-3.2 T47); every one sent after the load comes after them. |
 | 90 (before 2026-11-19 evening, exact f) | Nothing differs in what loads (format 91 adds the attack step `Capturing`, MIL-CON-1.2 T18): before it an attacker took the building in the update he reached the door, so none is capturing at the save. |
 | 89 (before 2026-11-19 evening, exact e) | A soldier who had stepped into his building on the update of the save is idle at once (MIL-ATK-4.4 before T33, T33a); after the load each soldier's return ends one update after his step in, at a castle when his walk on to the door field ends (format 90 adds the steps `In`). |
 | 88 (before 2026-11-19 evening, exact d) | A target's soldier paired with an attacker at the save, still inside waiting to leave, leaves as he was sent (MIL-ATK-5.3 before T34: without waiting for his attacker to stand on the flag field or arrive); one paired after the load waits (format 89 adds the step `Held`). |

@@ -646,6 +646,31 @@ fn food_t31_animals_choose_and_draw_as_the_original() {
     assert_eq!(draws, DRAWS, "draws per counter tick");
 }
 
+// ECO-FOOD T65 (5.14a, E-eco-058): sp02_the_river's walking animals hold
+// the start clock 0.0 in their records, so at a new game their walks count
+// from the game's start, the clock's value then.
+// spec: ECO-FOOD-5.14a (ECO-FOOD T65), FMT-S2M-5.4
+#[test]
+fn food_t65_the_rivers_walking_animals_start_at_zero() {
+    let Some((world, _, map)) = game("data/maps/freeGameMaps/sp02_the_river.s2m", 1) else {
+        return;
+    };
+    let walking: Vec<_> = map.animals.iter().filter(|a| a.counters[0] == 2).collect();
+    assert!(!walking.is_empty(), "walking animals in the map");
+    assert!(walking.iter().all(|a| a.walk_start == 0.0));
+    let walks = world
+        .animals()
+        .filter(|(_, a)| matches!(a.state, s2_sim::AnimalState::Walking { .. }))
+        .inspect(|(_, a)| {
+            assert!(matches!(
+                a.state,
+                s2_sim::AnimalState::Walking { since: 0, .. }
+            ))
+        })
+        .count();
+    assert_eq!(walks, walking.len());
+}
+
 // FMT-S2M-4.9: a new game keeps the map file's continent index of every
 // field as loaded (-1 none), not one recomputed from the field states: on
 // MP_2P_Storm_Coast the mountains west of the castle are -1 and a recomputed

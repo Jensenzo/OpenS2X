@@ -14,9 +14,59 @@ pub fn free_maps(maps: &[PathBuf]) -> Vec<PathBuf> {
         })
         .cloned()
         .collect();
-    out.sort();
+    out.sort_by_key(|p| map_sort_key(p));
     out
 }
+
+/// UI-MENU-2.1 (Q-211 f, T20): a map's place in Select Map's list: its
+/// file name cut at the first `.`, `a`..`z` turned into `A`..`Z`, compared
+/// byte by byte, shorter first when one is the start of the other (so `_`
+/// sorts after every letter: `AB` before `A_B`).
+pub fn map_sort_key(p: &Path) -> Vec<u8> {
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let cut = name.split('.').next().unwrap_or_default();
+    cut.bytes().map(|b| b.to_ascii_uppercase()).collect()
+}
+
+/// UI-MENU-2.1 "How the rows look" (T22): a row's text colour by the
+/// map's kind. Ours lists the free game folder only: a file name starting
+/// with `MP_` (case as written) is tan, `sp` and a digit pale pink-grey,
+/// any other (253, 139, 107); a file that is gone red.
+pub fn map_row_colour(p: &Path) -> [u8; 3] {
+    if !p.as_os_str().is_empty() && p.is_absolute() && !p.exists() {
+        return MAP_ROW_MISSING;
+    }
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let b = name.as_bytes();
+    if name.starts_with("MP_") {
+        MAP_ROW_MP
+    } else if b.len() > 2 && b.starts_with(b"sp") && b[2].is_ascii_digit() {
+        MAP_ROW_SP
+    } else {
+        MAP_ROW_OTHER
+    }
+}
+
+/// UI-MENU-2.1: the rows' text colours by kind.
+pub const MAP_ROW_MP: [u8; 3] = [238, 189, 115];
+pub const MAP_ROW_SP: [u8; 3] = [219, 199, 186];
+pub const MAP_ROW_OTHER: [u8; 3] = [253, 139, 107];
+pub const MAP_ROW_MISSING: [u8; 3] = [255, 0, 0];
+/// UI-MENU-2.1: a row's bar, `uiElements0` (8, 8, 248 x 20), and under the
+/// pointer (8, 32).
+pub const MAP_ROW_BAR: [u32; 4] = [8, 8, 248, 20];
+pub const MAP_ROW_BAR_HOVER: [u32; 2] = [8, 32];
+/// UI-MENU-2.1: the text's left edge in the bar ("about 9 px").
+pub const MAP_ROW_TEXT_X: f32 = 9.0;
+/// UI-MENU-2.1, 1.8 b: the text's line top in the bar: the bar's middle
+/// (10) less half of `light_system`'s 16 px line.
+pub const MAP_ROW_TEXT_DROP: f32 = 2.0;
 
 pub(crate) fn stem(p: &Path) -> String {
     p.file_stem()
@@ -244,14 +294,13 @@ pub(crate) fn menu_close(p: &mut Panel, texts: &Texts, o: [f32; 2]) {
     );
 }
 
-/// The settings pages' and the projects' pages' panel size (the XXL
-/// panel's art): UI-MENU-1.9 gives the game settings `uiDepot` (8, 8, 376 x
-/// 464), but their rows (UI-MENU-4.1, 4.2) do not fit it and where their
-/// choices go is not given (Q-1047): a stand-in.
+/// A project's page's panel size (the XXL panel's art; ours: the
+/// original has no such page, `docs/extending.md`). The game's own
+/// settings pages are on `uiDepot` (8, 8, 376 x 464) (UI-MENU-4.0).
 pub const SETTINGS_DIALOG: [f32; 2] = [506.0, 540.0];
 
-/// A settings or project page over the parchment: the XXL dialog art
-/// centred, with its title (Q-1047).
+/// A project's page over the parchment: the XXL dialog art centred, with
+/// its title (ours, `docs/extending.md`).
 pub(crate) fn settings_dialog(screen: [f32; 2], title: &str) -> (Panel, [f32; 2]) {
     let mut p = desktop(screen);
     let size = SETTINGS_DIALOG;
@@ -833,7 +882,11 @@ pub const MAP_PREVIEW: [f32; 2] = [195.0, 315.0];
 /// bar's close button leaves. The list's rows are 21 px apart, its
 /// vertical scroll bar right of them ("The scroll bar"); a rule
 /// `uiElements3` (0, 432, 336 x 8) at (12, 300). The frame, title and close
-/// button of UI-MENU-1.9 ([`menu_dialog`]). The rows' bars are stand-ins.
+/// button of UI-MENU-1.9 ([`menu_dialog`]). "How the rows look" (T22): each
+/// row is the bar `uiElements0` (8, 8, 248 x 20) at its corner, (8, 32)
+/// under the pointer, with the map's shown name left about 9 px into it,
+/// centred on the bar's height, in its kind's colour; nothing else marks
+/// the chosen map.
 pub fn select_map(menu: &MenuState, texts: &Texts, screen: [f32; 2]) -> Panel {
     let (mut p, o) = menu_dialog(screen, texts.get("!Select Map"));
     menu_close(&mut p, texts, o);
@@ -846,18 +899,30 @@ pub fn select_map(menu: &MenuState, texts: &Texts, screen: [f32; 2]) -> Panel {
         .take(MAP_ROWS)
         .enumerate()
     {
-        p.widgets.push(Widget::TextButton {
-            text: name,
-            font: Font::Body,
-            at: at(50.0, 50.0 + MAP_ROW_STEP * row as f32),
-            // White, the chosen map yellow; by validity is not given (Q-256 a).
-            colour: if i == menu.map_choice {
-                [255, 220, 0]
-            } else {
-                WHITE
-            },
+        let corner = at(50.0, 50.0 + MAP_ROW_STEP * row as f32);
+        p.widgets.push(Widget::Button {
+            atlas: Atlas::Elements0,
+            rect: MAP_ROW_BAR,
+            hover: Hover::Swap(MAP_ROW_BAR_HOVER),
+            pressed: Hover::None,
+            at: corner,
+            size: None,
+            tooltip: None,
             action: Action::Menu(MenuAction::SelectMap(i)),
             enabled: true,
+            selected: false,
+        });
+        let colour = menu
+            .maps
+            .get(i)
+            .map_or(MAP_ROW_OTHER, |m| map_row_colour(m));
+        p.widgets.push(Widget::Text {
+            text: name,
+            font: Font::Body,
+            // UI-MENU-1.8 b: the line box (16 px) centred on the bar.
+            at: [corner[0] + MAP_ROW_TEXT_X, corner[1] + MAP_ROW_TEXT_DROP],
+            colour,
+            align: crate::ui::widgets::Align::TopLeft,
         });
     }
     map_scroll_bar(&mut p, menu, at(50.0, 50.0));

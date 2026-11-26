@@ -466,7 +466,8 @@ pub fn page_parts(rows: &[crate::extend::menu::Row]) -> Vec<Vec<usize>> {
 /// headings' font and colour, a toggle's Off and On and a choice's options
 /// as text buttons (three to a line 100 px apart, lines 24 px apart, a row
 /// of 32 px per line), the chosen one yellow; a button is the 152 x 22 bar
-/// at the row. BACK at (50, 480) as on the settings pages. Hook W22: a page
+/// at the row. BACK at (50, 480) (ours: the settings pages have none,
+/// UI-MENU-4.0). Hook W22: a page
 /// longer than [`PAGE_BOTTOM`], or with a `PageBreak`, is shown a part at a
 /// time ([`page_parts`]), with the switch `<`, `n/m`, `>` at
 /// [`PAGE_SWITCH_Y`] (the body font's text buttons at x 168, 218 and 268;

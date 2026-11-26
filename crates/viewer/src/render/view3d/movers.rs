@@ -197,6 +197,10 @@ pub struct PlayAhead {
     /// GFX-OBJ-2.2a: the house slots of the ticks played, one view update
     /// a tick (a tick's frame time each), as the original's view ran.
     pub slots: crate::world::scene3d::HouseSlots,
+    /// GFX-ANIM-3.8a, 3.8c: the fall axes of the trees felled in the ticks
+    /// played: the woodcutter's view object ticks for every settler, seen
+    /// or not, so a tree felled while the tool played falls toward him.
+    pub fall_axes: std::collections::HashMap<s2_sim::grid::Point, f32>,
     frame: Frame,
     pub(crate) clip_from_world: Mat4,
     /// Every field counts as explored (fog of war off or not drawn).
@@ -218,6 +222,7 @@ impl PlayAhead {
         Self {
             marks: MarkState::default(),
             slots: crate::world::scene3d::HouseSlots::default(),
+            fall_axes: Default::default(),
             frame,
             clip_from_world: clip_from_world(eye, aspect),
             all_explored,
@@ -236,6 +241,7 @@ impl PlayAhead {
         let houses = crate::world::scene3d::houses(world);
         self.slots
             .update(Some((world.tick(), &houses)), crate::game::TICK_SECONDS);
+        crate::world::scene3d::update_fall_axes(world, &self.frame, &mut self.fall_axes);
         let points = crate::world::scene3d::seen_points(world, &self.frame);
         let (frame, clip, all) = (self.frame, self.clip_from_world, self.all_explored);
         let (width, height) = (world.terrain().width, world.terrain().height);

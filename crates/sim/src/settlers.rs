@@ -81,6 +81,11 @@ pub enum SettlerJob {
         /// attacker's free test. None for a defender of the target (and an
         /// older game's interceptor).
         meeting: Option<Point>,
+        /// MIL-ATK-3.2, 5.1 (T47, E-mil-042): when an interceptor was sent,
+        /// in the order interceptors are sent (larger is later; 0 for a
+        /// defender of the target and an older game's interceptor, then the
+        /// settler order decides).
+        sent: u64,
     },
     /// ECO-SPC-2: a geologist or scout sent to the flag `flag`, with the
     /// spots he still has to visit.
@@ -984,7 +989,13 @@ impl World {
         if self.skeletons.contains_key(&sample) {
             return;
         }
-        let field = stand.map_or(settler.walker.at, grid::sample_field_truncating);
+        // T62 (Q-1072, E-trn-045): it belongs to the nearest field of its
+        // sample (MAP-GRID-4.4), not the truncated one. ("Already there"
+        // counts every doodad on the sample; the map's own decorations are
+        // not in the simulation, so only skeletons are tested.)
+        let field = stand.map_or(settler.walker.at, |s| {
+            grid::sample_field_nearest(s, self.terrain.width, self.terrain.height)
+        });
         let number = self.new_number();
         self.skeletons.insert(
             sample,
@@ -1137,9 +1148,18 @@ impl World {
                         && settler.walker.road_to.is_none()
                         && settler.walker.next.is_some();
                     let path = free_walk.then(|| settler.walker.path.clone());
+                    // T55 (E-trn-047): a walk ordered but not yet begun (its
+                    // first step set, at progress 0) counts as moving: he
+                    // finishes that first step, and only that step.
+                    let ordered = matches!(settler.job, SettlerJob::Worker { .. })
+                        .then(|| settler.walker.first_step())
+                        .flatten()
+                        .map(|(_, first)| first);
                     self.start_leaving(&mut settler);
                     if let Some(path) = path {
                         settler.walker.path = path;
+                    } else if let Some(first) = ordered {
+                        settler.walker.path.push_back(first);
                     }
                     if let SettlerJob::Leaving { at, .. } = &mut settler.job {
                         if !lost {
@@ -1451,24 +1471,14 @@ impl World {
                 // as done where the settler stands, and the job checks the
                 // place below (a worker's routine too, corrected 2026-11-15:
                 // he goes home unless he stands on his building's field).
-                SettlerJob::ToSite { .. }
-                | SettlerJob::ToMilitary { .. }
-                | SettlerJob::ToBuilding { .. } => {
+                // ECO-SPC-2.1a (T9): a geologist's or scout's walk to the
+                // order's flag too; his arrival check sends him home.
+                _ => {
                     let walker = &mut settler.walker;
                     walker.path.clear();
                     walker.pauses.clear();
                     walker.held = false;
                     walker.road_to = None;
-                }
-                // Any other walker (a specialist): stand-in (Q-272), it
-                // waits on the flag and searches again each tick.
-                _ => {
-                    let to = settler.walker.road_to.expect("a road walk");
-                    let route = self.road_walk(settler.player, settler.walker.at, to);
-                    if route.is_some() {
-                        settler.walker.reroute(route);
-                    }
-                    return true;
                 }
             }
         }

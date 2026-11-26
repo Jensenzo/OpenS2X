@@ -1164,6 +1164,218 @@ fn woodcutter_walks_home_without_a_jump() {
     }
 }
 
+/// GFX-ANIM T10a (stand-ins list row 10, Q-181 b): the hunted animal's
+/// Dying starts in the tick the hunter's approach ends and his 55-tick
+/// action starts (the animal still on the map): the tick before, it walks
+/// or stands; from then on Dying, once, on its own instance, until the
+/// logic removes it at the end of the action. A hunting lodge by the Storm
+/// Coast headquarters on the real rules. Skipped without `S2_GAME_DIR`.
+// spec: GFX-ANIM-5.2 (GFX-ANIM T10a), ECO-FOOD-5.3
+#[test]
+fn t10a_the_hunted_animal_dies_when_the_action_starts() {
+    let Some(root) = std::env::var_os("S2_GAME_DIR") else {
+        eprintln!("skipped: S2_GAME_DIR is not set");
+        return;
+    };
+    let dir = s2_assets::GameDir::new(std::path::Path::new(&root)).expect("the install");
+    let (rules, _) = s2_rules::load(&dir).expect("the property scripts");
+    let path = crate::game::find_maps(&dir.root().join("data/maps"))
+        .into_iter()
+        .find(|p| crate::game::map_name(p).eq_ignore_ascii_case("MP_2P_Storm_Coast"))
+        .expect("the map");
+    let map = s2_assets::s2m::parse(&crate::game::read_game_file(&path).unwrap()).unwrap();
+    let mut world = s2_rules::new_game(1, &map, &rules, 0).expect("a game");
+    let tables = crate::render::models3d::read_tables(dir.root());
+    let lookup = Lookup::new(&rules, &tables);
+    let animations = s2_assets::anim_tables::SettlerAnimations::default();
+    let frame = crate::render::world3d::Heights::frame(world.terrain());
+    let lodge = rules
+        .buildings
+        .iter()
+        .find(|b| b.name.as_deref() == Some("HuntingLodge"))
+        .map(|b| b.id)
+        .expect("HuntingLodge");
+    let player = s2_sim::PlayerId(0);
+    let at = crate::tools::scenes::building(&mut world, player, lodge).expect("a lodge");
+    let at_spot = |world: &World| {
+        world.settlers().any(|(_, s)| {
+            matches!(&s.job, s2_sim::SettlerJob::Worker { target, work }
+                if target.at == at && matches!(work, s2_sim::Work::AtSpot { .. }))
+        })
+    };
+    // Per tick while an animal is hunted: whether the hunter is in his
+    // action and whether the hunted animal's mover plays Dying.
+    let mut log: Vec<(u64, bool, Option<bool>)> = Vec::new();
+    let mut prey = None;
+    for _ in 0..60_000 {
+        world.step();
+        let hunted = world
+            .animals()
+            .find(|(_, a)| a.hunted_by.is_some_and(|t| t.at == at))
+            .map(|(id, _)| id);
+        prey = prey.or(hunted);
+        let Some(id) = prey else {
+            continue;
+        };
+        let movers = movers(&world, &lookup, &tables, &animations, &frame, &|_| false);
+        let dying = movers
+            .iter()
+            .find(|m| m.id == MoverId::Animal(id))
+            .map(|m| matches!(&m.anim, MoverAnim::Unique(_)));
+        log.push((world.tick(), at_spot(&world), dying));
+        if dying.is_none() {
+            break;
+        }
+    }
+    let a = log
+        .iter()
+        .position(|(_, action, _)| *action)
+        .expect("the hunter's action started");
+    assert!(a > 0, "the animal was hunted before the action");
+    assert_eq!(log[a - 1].2, Some(false), "a - 1: not Dying");
+    let removed = log
+        .iter()
+        .position(|(.., d)| d.is_none())
+        .expect("the animal removed");
+    assert!(
+        log[a..removed].iter().all(|(.., d)| *d == Some(true)),
+        "Dying from a until it is removed: {:?}",
+        &log[a.saturating_sub(1)..=removed]
+    );
+    let ticks = log[removed].0 - log[a].0;
+    assert!((55..=56).contains(&ticks), "removed {ticks} ticks after a");
+}
+
+/// ECO-HQ-4.3a, GFX-VIEW-4.2 (stand-ins list row 9): the leveller walks
+/// from field to field around his site and is drawn where his step is, so
+/// he never jumps a field in one tick; ECO-HQ-4.6b, TRN-MOVE-2.5 (row 8):
+/// the builder is drawn on the lattice step under way, between two
+/// neighbouring height samples, also without a jump. Three large sites by
+/// the Storm Coast headquarters, built on the real rules. Skipped without
+/// `S2_GAME_DIR`.
+// spec: ECO-HQ-4.3a, ECO-HQ-4.6b, TRN-MOVE-2.5, GFX-VIEW-4.2
+#[test]
+fn builder_and_leveller_walk_without_a_jump() {
+    use crate::render::world3d::{SAMPLE_ROW_STEP, SAMPLE_STEP};
+    let Some(root) = std::env::var_os("S2_GAME_DIR") else {
+        eprintln!("skipped: S2_GAME_DIR is not set");
+        return;
+    };
+    let dir = s2_assets::GameDir::new(std::path::Path::new(&root)).expect("the install");
+    let (rules, _) = s2_rules::load(&dir).expect("the property scripts");
+    let path = crate::game::find_maps(&dir.root().join("data/maps"))
+        .into_iter()
+        .find(|p| crate::game::map_name(p).eq_ignore_ascii_case("MP_2P_Storm_Coast"))
+        .expect("the map");
+    let map = s2_assets::s2m::parse(&crate::game::read_game_file(&path).unwrap()).unwrap();
+    let mut world = s2_rules::new_game(1, &map, &rules, 0).expect("a game");
+    let tables = crate::render::models3d::read_tables(dir.root());
+    let lookup = Lookup::new(&rules, &tables);
+    let animations = s2_assets::anim_tables::SettlerAnimations::default();
+    let frame = crate::render::world3d::Heights::frame(world.terrain());
+    let player = s2_sim::PlayerId(0);
+    let large: Vec<u32> = rules
+        .buildings
+        .iter()
+        .filter(|b| {
+            b.size == Some(s2_rules::model::BuildingSize::Large)
+                && b.costs.len() + b.frame_costs.len() > 0
+        })
+        .map(|b| b.id)
+        .collect();
+    let sites: Vec<Point> = large
+        .iter()
+        .filter_map(|&b| crate::tools::scenes::building(&mut world, player, b))
+        .take(3)
+        .collect();
+    assert!(!sites.is_empty(), "no large site placed");
+    let xz = |s: Point| frame.sample_xz(i64::from(s.0), i64::from(s.1));
+    let flat = |a: [f32; 3], b: [f32; 3]| ((b[0] - a[0]).powi(2) + (b[2] - a[2]).powi(2)).sqrt();
+    let mut last: std::collections::HashMap<MoverId, [f32; 3]> = Default::default();
+    let (mut leveller_between, mut builder_between) = (0, 0);
+    for _ in 0..12_000 {
+        world.step();
+        let movers = movers(&world, &lookup, &tables, &animations, &frame, &|_| false);
+        let seen = seen_points(&world, &frame);
+        let mut now = std::collections::HashMap::new();
+        for view in world.settler_views() {
+            let id = match view.id {
+                s2_sim::view::SettlerRef::Leveller(at) => MoverId::Leveller(at),
+                s2_sim::view::SettlerRef::Builder(at) => MoverId::Builder(at),
+                _ => continue,
+            };
+            let Some(mover) = movers.iter().find(|m| m.id == id) else {
+                continue;
+            };
+            let point = seen.iter().find(|p| p.id == id).expect("a seen point");
+            assert_eq!(
+                point.at, mover.at,
+                "{id:?}: the seen mark where he is drawn"
+            );
+            let moving = matches!(&mover.anim, MoverAnim::Settler { state, .. } if state.moving);
+            match id {
+                MoverId::Leveller(_) => {
+                    let step = view.walk;
+                    if let Some(next) = step.next {
+                        let (a, b) = (
+                            frame.field_xz(step.at.0, step.at.1),
+                            frame.field_xz(next.0, next.1),
+                        );
+                        let f = step.fraction();
+                        let want = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+                        assert!(
+                            (mover.at[0] - want[0]).abs() < 1e-3
+                                && (mover.at[2] - want[1]).abs() < 1e-3,
+                            "leveller {id:?} at {:?}, his step at {want:?}",
+                            mover.at
+                        );
+                        assert!(
+                            moving && mover.heading.is_some(),
+                            "leveller {id:?} stepping but not walking"
+                        );
+                        if f > 0.0 {
+                            leveller_between += 1;
+                        }
+                    }
+                }
+                _ => {
+                    let fine = view.fine.expect("a builder's lattice walk");
+                    if let Some(to) = fine.step.next.filter(|&to| to != fine.step.at) {
+                        let (a, b) = (xz(fine.step.at), xz(to));
+                        let span = ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt();
+                        assert!(
+                            span <= SAMPLE_STEP.max(SAMPLE_ROW_STEP) * 1.01,
+                            "builder {id:?}: a step of {span} is not one lattice step"
+                        );
+                        let p = [mover.at[0], mover.at[2]];
+                        let via = ((p[0] - a[0]).powi(2) + (p[1] - a[1]).powi(2)).sqrt()
+                            + ((p[0] - b[0]).powi(2) + (p[1] - b[1]).powi(2)).sqrt();
+                        assert!((via - span).abs() < 1e-3, "builder {id:?} off his step");
+                        assert!(moving, "builder {id:?} stepping but not walking");
+                        builder_between += 1;
+                    }
+                }
+            }
+            // No jump: a walk step is 0.045 of a field (6 units) a tick or
+            // less, a lattice step a quarter of that; 0.5 leaves room.
+            if let Some(before) = last.get(&id) {
+                let d = flat(*before, mover.at);
+                assert!(d < 0.5, "{id:?} jumps {d} at tick {}", world.tick());
+            }
+            now.insert(id, mover.at);
+        }
+        last = now;
+    }
+    assert!(
+        leveller_between > 20,
+        "only {leveller_between} leveller ticks between fields"
+    );
+    assert!(
+        builder_between > 20,
+        "only {builder_between} builder ticks between samples"
+    );
+}
+
 /// GFX-ANIM-3.8d, T20 (play test 11): a forester planting on the real
 /// rules plays his own work entry, `WorkLoop0Forester`, whose Sound events
 /// are the four shovel digs and "plant grows" (no chopping, no tree fall:

@@ -182,7 +182,9 @@ flag stand in up to six stacks around it.
   turns it off** (the type's constructor sets it; the shipped scripts turn it off only for the
   14 signs). Whenever the game rechecks the doodads at a field or over a box of fields after a
   change there, it **removes** each doodad (erases it from the map for good; it does not come
-  back when the road or building goes) whose own field (the doodad's field, not its sample) is
+  back when the road or building goes) whose own field (the doodad's field, not its sample; for a
+  doodad made in the game, such as a skeleton, the nearest field of its sample, MAP-GRID-4.4,
+  `TRN-carriers-transport.md` TRN-CARRY-7.1, Q-1072) is
   covered: (i) its type deletes by street and the field has the Street state (`FMT-s2m-map.md`
   FMT-S2M-4.4 bit 1), or (ii) the field is MovementBlocked (bit 8), whatever the switch, or (iii)
   the field is DepositBlocked (bit 7) and a further test on the doodad holds, or (iv) an object

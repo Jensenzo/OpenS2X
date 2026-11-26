@@ -21,7 +21,6 @@ above lists every one.
 | a | Which control opens Select Map (UI-MENU-2.1) | the free play page's map button of UI-SETUP-1.8 | `menus/menu/pages.rs` (`free_play`) |
 | a | Where the title bar's close button sits | UI-GAME-1.8's (w - 40, 5) on the 506 x 540 XXL panel | `menus/menu/pages.rs` (`select_map`) |
 | a | The layout of the `!INVALID_MAP` message box (dialog 38) | the small panel (288 x 88) centred on the dialog, the text at (15, 40), a close button | `menus/menu/pages.rs` (`invalid_map_box`) |
-| a | The colour of a row by the map's validity | white, the chosen map yellow | `menus/menu/pages.rs` (`select_map`) |
 | d | Which field is a good's slot number on the depot and inventory pages (UI-GAME-8.1, 8.5c) | its `gp_setSort` value ("position in sorted UI lists"; wares 0 to 30, settlers 0 to 29) | `ui/game/mod.rs` (`Catalog.good_slots`) |
 | e | The style of the save dialog's name input (UI-MENU-5.1) | style 0, 256 x 20 | `menus/menu/dialogs.rs` (`save_load`) |
 | e | What ESC's "clears the result" does (UI-MENU-5.3) | the input ends and the old text stays (a ship keeps its name) | `ui/widgets.rs` (`edit`), `ui/mod.rs` (`type_text`) |
@@ -56,7 +55,6 @@ Hidden numbers in another place within the tick (ours, not open):
 | Q | What is open | What the program does | Where |
 |---|---|---|---|
 | Q-187 i | The strength of a lesson's computer players (UI-SETUP-2.4 sets only the kinds) | profile 1, every start position a player | `s2_rules::mission::players` |
-| Q-1057 | The end screen's name column (CAM-3.6a) for a computer player | the human's profile name; a computer player's name column empty | `menus/campaign.rs` (`end_panel`) |
 
 ## The chat line (Q-258 e)
 
@@ -101,13 +99,6 @@ other screen sizes were not seen.
   keeps is Q-100 b; ours keeps every global the script set to a whole
   number from 0 to 2^32 - 1 (the spec's `u32` values), not booleans,
   strings or tables.
-- **An original save's construction sites in mid-unit** (FMT-SAV-3.4b): the file
-  has the main part's remaining work first, then the frame's, and its stock holds
-  only unused materials. What the work has used counts as delivered, so it is not
-  ordered again. A builder in a running unit (FMT-SAV-3.5a e, step 10) goes on
-  with it from the decrements made; at a site without one the work goes on from
-  that unit's end, up to 220 ticks of work early (Q-204,
-  `ConstructionSite::restore_work`).
 - A save that does not read whole (`s2_assets::sav::SaveGame::problems`):
   the reader keeps what it read, notes the record and offset that failed,
   and goes on at the next section it finds; the game continues from what
@@ -123,3 +114,7 @@ other screen sizes were not seen.
   Windowed, and a choice changes nothing. The Network page (SET-5.7) shows
   the player's name as CALLSIGN (not an input) and INTERNET SPEED NONE;
   nothing on it changes a single-player game, as in the original.
+- **A project's pages** (`menus/menu/dialogs.rs` `extension_page`,
+  `docs/extending.md`): the original has no such page. They sit on the
+  XXL panel (506 x 540) with BACK at (50, 480); the game's own settings
+  pages follow UI-MENU-4.0 (`uiDepot`, the tabs, no BACK).

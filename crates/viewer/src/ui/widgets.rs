@@ -298,6 +298,10 @@ pub enum Action {
     /// Send a game command (with the refusal box on failure).
     Command(s2_sim::Command),
     Hud(u8),
+    /// A bar button's key (UI-GAME-12.1): does what the button does, but a
+    /// tutorial step never sees it (CAM-5.3c: the steps look at the
+    /// button's click, not at the key).
+    HudKey(u8),
     CloseContext,
     CloseGlobal,
     OpenGlobal(Global),
@@ -440,7 +444,8 @@ pub enum Edit {
 /// the ends; DELETE removes the character right of the caret, BACKSPACE
 /// the one left of it; RETURN ends the input, ESC ends it and clears the
 /// result (what clearing does is not given: the caller keeps the old text,
-/// Q-256 e).
+/// Q-256 e). UI-MENU-5.3a: a character is kept as its Windows-1252 byte;
+/// `<` is never inserted.
 /// UI-MENU-5.3: what the restricted character mode lets through: space, digits,
 /// A .. Z, a .. z and `äÄöÖüÜß!&()+-_çâáàôéèê`. The characters a file name cannot
 /// hold are not among them.
@@ -460,11 +465,21 @@ pub fn edit(
     *caret = (*caret).min(n);
     let byte = |text: &String, k: usize| text.char_indices().nth(k).map_or(text.len(), |(b, _)| b);
     let mut insert = |c: char| {
-        if (c as u32) < 32
-            || c.is_control()
-            || limit.is_some_and(|l| n >= l)
-            || (restricted && !restricted_char(c))
-        {
+        // UI-MENU-5.3a (Q-1088 b, E-ui-045): the key's character arrives as
+        // one byte of the Windows-1252 code page and is stored as it is; a
+        // character the code page lacks has been made `?` by Windows (medium).
+        // Every byte from 0x20 up is printable, 0x80 .. 0xFF too, except `<`
+        // (0x3C), which no input ever inserts.
+        let code = if c.is_control() {
+            None
+        } else {
+            Some(s2_assets::lang::cp1252_byte(c).unwrap_or(b'?'))
+        };
+        let Some(code) = code.filter(|&b| b >= 0x20 && b != b'<') else {
+            return Edit::Ignored;
+        };
+        let c = s2_assets::lang::cp1252_char(code);
+        if limit.is_some_and(|l| n >= l) || (restricted && !restricted_char(c)) {
             return Edit::Ignored;
         }
         text.insert(byte(text, *caret), c);
@@ -517,7 +532,7 @@ pub fn edit(
 pub fn caret_at(font: &s2_assets::bmfont::Font, text: &str, x: f32) -> usize {
     let mut width = 0;
     for (i, c) in text.chars().enumerate() {
-        width += font.glyphs.get(&(c as u32)).map_or(0, |g| g.x_advance);
+        width += font.glyph(c).map_or(0, |g| g.x_advance);
         if width as f32 > x - 3.0 {
             return i;
         }
@@ -750,7 +765,9 @@ pub enum Widget {
         colour: [u8; 3],
         align: Align,
     },
-    /// A filled rectangle (stand-ins for art the specs do not name).
+    /// A filled rectangle: the chat line's box (UI-GAME-12.1), the paused
+    /// layer (1.11), the statistics graph's lines (8.5f), the intro's
+    /// black; and the tutorial's error box, whose art is not given (Q-199 c).
     Fill {
         at: [f32; 2],
         size: [f32; 2],

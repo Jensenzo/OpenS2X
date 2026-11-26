@@ -1440,6 +1440,66 @@ fn t11_nowhere_to_plant() {
     assert!(saplings(&world).is_empty());
 }
 
+// ECO-OUT T29: a forester switched off while he waits. With nowhere to
+// plant, he is switched off during a countdown: the search that ends it
+// still runs, finds nothing, and he stays inside (Begin), every tick, with no
+// search and no draw. Switched on, the countdown starts in that tick and the
+// next search is 51 ticks later. With a spot to plant, a switch-off during
+// the countdown does not stop the search: he goes out and plants.
+// spec: ECO-OUT-4.4, ECO-OUT-4.1, ECO-OUT-4.2 (ECO-OUT T29)
+#[test]
+fn t29_a_switched_off_forester_stops_searching() {
+    let (mut world, id) = nursery(Some(1));
+    world.ground.iter_mut().for_each(|g| g.plantable = false);
+    // The first search ends a countdown; the next is under way.
+    while work_of(&world, id) != (Work::WaitSpot { countdown: 50 }) {
+        world.step();
+    }
+    world.step();
+    assert_eq!(work_of(&world, id), Work::WaitSpot { countdown: 49 });
+    world.toggle_production(P0, (10, 10)).unwrap();
+    let mut searched = None;
+    for n in 0..60 {
+        world.step();
+        if work_of(&world, id) == Work::Begin {
+            searched = Some(n);
+            break;
+        }
+    }
+    assert_eq!(searched, Some(49), "the countdown's search still ran");
+    let draws = world.rng().draws();
+    for _ in 0..500 {
+        world.step();
+        assert_eq!(work_of(&world, id), Work::Begin, "off: inside, no search");
+    }
+    assert_eq!(world.rng().draws(), draws, "no draw while off");
+    world.toggle_production(P0, (10, 10)).unwrap();
+    world.step();
+    assert_eq!(work_of(&world, id), Work::WaitSpot { countdown: 50 });
+    let on = world.tick();
+    while work_of(&world, id) != Work::Begin && world.tick() < on + 60 {
+        world.step();
+        if work_of(&world, id) == (Work::WaitSpot { countdown: 50 }) {
+            break;
+        }
+    }
+    assert_eq!(world.tick(), on + 51, "the next search 51 ticks later");
+
+    // A spot to plant: switched off in the countdown, he still goes out.
+    let (mut world, id) = nursery(Some(1));
+    world.step();
+    assert!(matches!(work_of(&world, id), Work::WaitSpot { .. }));
+    world.toggle_production(P0, (10, 10)).unwrap();
+    for _ in 0..60 {
+        world.step();
+    }
+    assert!(
+        matches!(work_of(&world, id), Work::Out { .. } | Work::ToSpot { .. }),
+        "{:?}",
+        work_of(&world, id)
+    );
+}
+
 // ECO-OUT T12, T13: spots among the 11 first candidates, never next to
 // a building.
 // spec: ECO-OUT-4.3, ECO-OUT-4.4 (ECO-OUT T12, T13)

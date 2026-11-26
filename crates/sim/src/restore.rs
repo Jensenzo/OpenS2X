@@ -576,18 +576,25 @@ impl World {
                         };
                         let frame_done = done(frame, site.frame_end);
                         let main_done = done(main, site.work_total - site.frame_end);
-                        let nearest = |left: f32, total: u32| {
-                            ((1.0 - left.clamp(0.0, 1.0)) * total as f32).round() as u32
-                        };
-                        exact_work.insert(
-                            b.at,
-                            nearest(frame, site.frame_end)
-                                + nearest(main, site.work_total - site.frame_end),
-                        );
+                        // FMT-SAV-3.5a (e), ECO-HQ-4.6: the decrements the
+                        // site has had are those whose float counting leaves
+                        // the remaining work the file holds.
+                        let exact = site.decrements_for(frame, main);
+                        let frame_exact = exact.min(site.frame_end);
+                        let main_exact = exact - frame_exact;
+                        exact_work.insert(b.at, exact);
                         if b.levelled >= 1.0 {
                             site.levelling_bits = crate::construction::LEVELLING_DONE.to_bits();
                         }
-                        site.restore_work(frame_done, main_done, &b.delivered, plank);
+                        // FMT-SAV-3.5a (e): a site in mid-unit always has
+                        // its builder in a running unit; without one no unit
+                        // is under way and the work is the file's.
+                        let running = saved.builder_units.iter().any(|u| u.0 == b.at);
+                        if running {
+                            site.restore_work(frame_done, main_done, &b.delivered, plank, true);
+                        } else {
+                            site.restore_work(frame_exact, main_exact, &b.delivered, plank, false);
+                        }
                     }
                     report.sites += 1;
                 }

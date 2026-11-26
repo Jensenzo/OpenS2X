@@ -6,7 +6,16 @@ license.workspace = true
 publish.workspace = true
 default-run = "s2-viewer"
 
+[features]
+# The investigation build of the long play (tools/span_log.rs): Bevy's
+# system spans and wgpu's own scopes timed, the long ones logged. Never in
+# the game's build.
+frame-trace = ["bevy/trace", "bevy/debug", "dep:profiling"]
+
 [dependencies]
+# frame-trace: wgpu's profiling scopes as tracing spans (the version wgpu
+# already brings; MIT OR Apache-2.0).
+profiling = { version = "=1.0.18", default-features = false, features = ["profile-with-tracing"], optional = true }
 s2-sim = { path = "../sim" }
 s2-assets = { path = "../assets" }
 s2-rules = { path = "../rules" }
@@ -64,6 +73,7 @@ windows-sys = { version = "=0.61.2", features = [
     "Win32_System_Console",
     "Win32_System_ProcessStatus",
     "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
     "Win32_System_Power",
     "Win32_System_SystemServices",
     "Win32_System_LibraryLoader",

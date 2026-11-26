@@ -97,6 +97,8 @@ pub struct AudioState {
     channels: Channels<Playing>,
     music: Music,
     music_entity: Option<Entity>,
+    /// The track being read before it starts (`MusicRead`).
+    music_read: Option<MusicRead>,
     /// SND-7.4: the ambient player and the loop playing for each sound.
     ambient_player: sound::Ambients,
     ambients: HashMap<u32, Entity>,
@@ -127,18 +129,62 @@ impl AudioState {
         if let Some(found) = self.files.get(file) {
             return found.clone();
         }
-        let data = self.root.as_ref().and_then(|root| {
-            let path = crate::extend::find(root, file).ok()?;
-            // IMA ADPCM files become PCM, which the decoder reads.
-            crate::files::read(&path)
-                .ok()
-                .map(|d| Arc::from(s2_assets::wav::playable(&d)))
-        });
-        if data.is_none() {
-            eprintln!("sound file {file} not found");
-        }
+        let data = read_sound(self.root.as_deref(), file);
         self.files.insert(file.to_owned(), data.clone());
         data
+    }
+}
+
+/// A sound file's bytes as the decoder reads them (`None`: not found).
+fn read_sound(root: Option<&std::path::Path>, file: &str) -> Option<Arc<[u8]>> {
+    let data = root.and_then(|root| {
+        let path = crate::extend::find(root, file).ok()?;
+        // IMA ADPCM files become PCM, which the decoder reads.
+        crate::files::read(&path)
+            .ok()
+            .map(|d| Arc::from(s2_assets::wav::playable(&d)))
+    });
+    if data.is_none() {
+        eprintln!("sound file {file} not found");
+    }
+    data
+}
+
+/// A music track read on a thread of its own: a track's file is megabytes,
+/// and reading it in the frame stalled the frame (2026-11-24, the long play:
+/// 76 ms in this system when a track started). The track starts on the
+/// frame its bytes have come, within SND-3.3's gap before a new track.
+pub(crate) struct MusicRead {
+    pub(crate) file: String,
+    pub(crate) looping: bool,
+    /// In a mutex: the audio state is shared between systems' threads.
+    bytes: std::sync::Mutex<std::sync::mpsc::Receiver<Option<Arc<[u8]>>>>,
+}
+
+impl MusicRead {
+    pub(crate) fn start(root: Option<PathBuf>, file: &str, looping: bool) -> Self {
+        let (send, bytes) = std::sync::mpsc::channel();
+        let name = file.to_owned();
+        std::thread::spawn(move || {
+            let _ = send.send(read_sound(root.as_deref(), &name));
+        });
+        Self {
+            file: file.to_owned(),
+            looping,
+            bytes: std::sync::Mutex::new(bytes),
+        }
+    }
+
+    /// The bytes once read (the outer `None`: not yet).
+    pub(crate) fn ready(&self) -> Option<Option<Arc<[u8]>>> {
+        let Ok(bytes) = self.bytes.lock() else {
+            return Some(None);
+        };
+        match bytes.try_recv() {
+            Ok(bytes) => Some(bytes),
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Some(None),
+        }
     }
 }
 
@@ -584,16 +630,26 @@ pub fn play(
                 state.channels.retain(|held| held.handle.entity != e);
                 out.stop(e);
             }
-            if let Some(bytes) = state.bytes(&file) {
-                state.music_entity = start_set_aside(
-                    &mut state.channels,
-                    &mut out,
-                    sound::MUSIC_PRIORITY,
-                    |out| out.play(&file, bytes, music_volume, looping, None),
-                );
+            // A track read before plays now; another is read off the frame
+            // and starts when its bytes have come (`MusicRead`).
+            state.music_read = None;
+            match state.files.get(&file).cloned() {
+                Some(Some(bytes)) => {
+                    state.music_entity = start_set_aside(
+                        &mut state.channels,
+                        &mut out,
+                        sound::MUSIC_PRIORITY,
+                        |out| out.play(&file, bytes, music_volume, looping, None),
+                    );
+                }
+                Some(None) => {}
+                None => {
+                    state.music_read = Some(MusicRead::start(state.root.clone(), &file, looping));
+                }
             }
         }
         Some(MusicCommand::Stop) => {
+            state.music_read = None;
             if let Some(e) = state.music_entity.take() {
                 state.channels.retain(|held| held.handle.entity != e);
                 out.stop(e);
@@ -603,6 +659,19 @@ pub fn play(
             if let Some(e) = state.music_entity {
                 out.set_volume(e, music_volume);
             }
+        }
+    }
+    // The track read off the frame, once its bytes have come.
+    if let Some(bytes) = state.music_read.as_ref().and_then(MusicRead::ready) {
+        let read = state.music_read.take().expect("checked");
+        state.files.insert(read.file.clone(), bytes.clone());
+        if let Some(bytes) = bytes {
+            state.music_entity = start_set_aside(
+                &mut state.channels,
+                &mut out,
+                sound::MUSIC_PRIORITY,
+                |out| out.play(&read.file, bytes, music_volume, read.looping, None),
+            );
         }
     }
     // SND-7.4: the four nearest emitters of different sounds play, looping,
@@ -880,6 +949,36 @@ pub(crate) mod output {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A track's file is read off the frame (the long play of 2026-11-24:
+    /// 76 ms in the audio system when a track started): its bytes come
+    /// through `MusicRead::ready` as read, a missing file as none, and
+    /// nothing before they have come.
+    // spec: SND-3.3
+    #[test]
+    fn a_track_is_read_off_the_frame() {
+        let root = std::env::temp_dir().join(format!("s2-music-read-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("music")).unwrap();
+        let track: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(root.join("music/Track1.mp3"), &track).unwrap();
+        let wait = |read: &MusicRead| {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                if let Some(bytes) = read.ready() {
+                    return bytes;
+                }
+                assert!(std::time::Instant::now() < until, "the read never came");
+                std::thread::yield_now();
+            }
+        };
+        let read = MusicRead::start(Some(root.clone()), "music/Track1.mp3", true);
+        assert_eq!(read.file, "music/Track1.mp3");
+        assert!(read.looping);
+        assert_eq!(wait(&read).as_deref(), Some(&track[..]));
+        let missing = MusicRead::start(Some(root.clone()), "music/None.mp3", false);
+        assert_eq!(wait(&missing), None);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     fn finished(world: &s2_sim::World) -> HashSet<(Point, u32)> {
         world

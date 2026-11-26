@@ -848,6 +848,16 @@ Headings use the heading font (1.7). The window is placed next to the bar.
   ATTACK button** are shown while A = 0. Confidence: high (picture).
   **Measured (Q-1064):** the line is centred on x 243 of the dialog, its glyphs from y 154 to 166 (the
   number label's row, (245, 160)), white, about 13 px high.
+- **UI-GAME-5.2 The number of soldiers (2026-11-25, Q-184 i; E-ui-047, code reading).** With A the
+  soldiers available for this attack (MIL-ATK-1.3's count for the building, A >= 1 while the slider
+  shows) and v the slider's value (0 .. 1), the number is **n = trunc(v x (A - 1) + 1 + 0.5)**, worked in
+  single precision in that order (A - 1 first, times v, plus 1, plus 0.5, then cut toward zero). So the
+  slider's left end means one soldier and its right end all A; values in between round to the nearest
+  count, a half rounding up. The label at (245, 160) shows n; the `!ATTACK` click sends
+  `attack-building` with n worked out again at the click from A counted at that moment, together with
+  the weak / strong choice. While the dialog is open the label's A is counted again at most once per
+  game second (when the game clock has moved more than 1 s past the last count); A = 0 shows the line of
+  5.1 instead. The four count buttons set v. Confidence: high (code). Test T63.
 
 ### UI-GAME-6 Global dialogs
 
@@ -928,6 +938,22 @@ are these four pages).
   the knob's place and pictures; data: the rows are identical). This agrees with the pictures
   of the original (E-trace-028 tools dialog: cyan fill to the knob; E-trace-026 Sound page: no
   fill). Test T61.
+- **UI-GAME-6.6 The gauge's art (2026-11-25; E-ui-046, code reading, the shipped picture and a picture
+  of the original).** The productivity gauge of a building window (4.1) and the completion gauge of a
+  construction site (4.2) are one control, **312 x 24** px, placed with its top-left at the window
+  point the rule gives ((136, 112)). It is drawn in this order:
+  - **track:** `uiElements3` (0, 384, 312 x 24), a dark, slightly translucent teal bar (its visible
+    part ends about 4 px before the right edge);
+  - **fill:** `uiElements3` (0, 408, 312 v x 24) at the gauge's left edge, cut (not stretched) to
+    312 v pixels; v is the value, kept to 0 .. 1 (above 1 counts as 1, below 0 as 0). The art is
+    an opaque bright cyan-green band with a lighter middle;
+  - **label:** the value as a whole percent, trunc(100 v + 0.5) followed by `%` (`0%` .. `100%`), in
+    `light_system`, centred on the gauge, its centre 3 px above the gauge's middle. The label reads
+    `0%` when the gauge is made, before a value is set.
+  The value is set again whenever the window updates, so the fill and the label follow the building.
+  Seen (E-trace-028, a farm at 2560 x 1440): `90%`, the fill 280 px wide (312 x 0.9 = 280.8), the
+  track to the right of it. Confidence: high (code: sizes, pictures, clamp, rounding; the picture
+  agrees). Test T62.
 
 ### UI-GAME-7 Overview dialogs
 
@@ -1775,6 +1801,8 @@ are these four pages).
 | T59 | 4.4: the headquarters' military page, Private reserve 1 with one private in the headquarters | click the Private bar at its right end, at its middle, at its left end | `1/15` with the bar filled to the knob; `1/8`; `0/0` with no fill; each click moves the knob at once; `set-soldier-reserve`(0, value) sent each time |
 | T60 | 4.1a (g): a bakery with flour 4 and water 2; a coal mine with fish 1, meat 2, bread 2 | open both windows | bakery: water `2/6` at slot 395, flour `4/6` at 335, slot 275 empty; coal mine: fish `1/2` at 395, meat `2/2` at 335, bread `2/2` at 275; both gauges at x 137 .. 442, y 113 .. 129 |
 | T61 | 6.5: an economy slider (200 x 20) at value 0.5, enabled; then at 0.2 disabled; a settings slider (152 x 24) at 1.0 | pixels drawn | 0.5: bar (0, 0, 200 x 20) of `uiElements2`; fill `uiElements2` (0, 104, 100 x 20) over the slider's x 0 .. 99, plain; knob `uiElements0` (8, 104, 20 x 20) at x 90.5 .. 110.5 (left 2 + 88.5); 0.2: fill row 80, 40 px wide, tinted (170, 170, 255) at alpha 170/255; knob left at 37.4; settings slider at 1.0: bar `uiElements0` (264, 344, 152 x 24), no fill, knob left at 131 (right edge 151) |
+| T62 | 6.6: a building window's gauge at v = 0.9, then 0.004, then 1.2 | draw | 0.9: track `uiElements3` (0, 384, 312 x 24); fill (0, 408, 280.8 x 24) from the gauge's left edge; label `90%`; 0.004: fill 1.248 px, label `0%`; 1.2: fill 312 px, label `100%` |
+| T63 | 5.2: A = 7 | slider at 0, 0.25, 0.5, 0.75, 1 | label 1, 3 (0.25 x 6 + 1.5 = 3.0), 4 (4.5 -> 4), 6 (6.0), 7; `!ATTACK` at 0.5 sends `attack-building` with 4 |
 
 ## Evidence
 
@@ -1819,6 +1847,8 @@ are these four pages).
 | E-ui-037 | code reading and data | (session 2026-11-15 day) | 6.5 (Q-1054): the slider's kinds and their bar, fill and knob pictures, the fill's width and row by value, the disabled tint, the knob's place; the three fill rows of `uiElements2` compared pixel for pixel |
 | E-ui-038 | code reading, pictures | (session 2026-11-15 day) | 4.4: the `,` key's window placed at the pointer (the context windows' placement: the pointer minus the window's size, x at most W - 600, then clamped); E-trace-029's pointer positions |
 | E-ui-039 | code reading, a picture | (session 2026-11-16 night) | 4.5 (b): the ship window's two separators are `uiElements3` (0, 432, 350 x 8); E-trace-030's ship window pixel equal |
+| E-ui-046 | code reading, data, a picture | (session 2026-11-24 night) | 6.6: the gauge control's size, its two pictures, the value's clamp, the label's text and place; checked on E-trace-028's farm window |
+| E-ui-047 | code reading | (session 2026-11-24 night) | 5.2: the attack dialog's count from the slider and the available soldiers, the label's refresh, the ATTACK click's count |
 | E-trace-031 | pictures of the original | (session 2026-11-16 night) | the interface catalogue part 4: message kinds (misc, military, chat), the build menu's disabled tooltip, the attack menu with no attackers, the campaign map with a mission won, the forester's dust |
 | E-trace-032 | pictures of the original | (session 2026-11-16 day) | 11.4: the geologist, economic and lost-territory message rows; the headquarters window's three pages; the barracks window; the road-building cursor marks |
 | E-trace-028 | pictures of the original | (session 2026-11-15 night) | the interface catalogue part 1: the windows and dialogs seen in UI-GAME-2.4, 2.5, 4.1a (f), 4.2, 4.4, 6, 8.1a |

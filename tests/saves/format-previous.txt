@@ -1,4 +1,4 @@
-save format 2, world format 98
+save format 2, world format 99
 s2_ai::AiSystem
     counter: u64
     players: seq<Option<s2_ai::player::AiPlayer>>
@@ -435,6 +435,7 @@ s2_sim::combat::DefendStep
     4 Ended
     5 Held
     6 In
+    7 Meeting
 s2_sim::combat::OffsetStep
     walk: s2_sim::movement::LatticeWalk
     back: bool

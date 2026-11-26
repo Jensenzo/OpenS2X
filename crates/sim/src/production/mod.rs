@@ -1008,15 +1008,20 @@ impl World {
                     self.walk_out(settler, at, flag);
                     Work::Out { spot: Some(spot) }
                 }
-                PlantSpot::Unfinished => Work::WaitSpot {
-                    countdown: CHECK_COUNTDOWN,
-                },
                 // ECO-FOOD-3.2a (T49, corrected 2026-10-27 b): a finished
                 // search with no candidate ends the sowing step in its own
                 // tick; the farmer decides again in the next (Begin).
                 PlantSpot::None if kind.cycle == WorkCycle::Farm => Work::Begin,
-                // ECO-OUT-4.4: the forester starts again without resting.
-                PlantSpot::None => Work::WaitSpot {
+                // ECO-OUT-4.4 (T29): the forester starts again at 4.1 without
+                // resting, after a search without a spot or one that did not
+                // finish; switched off, the start is refused and he stays
+                // inside, trying it every tick (no search, no draw).
+                PlantSpot::Unfinished | PlantSpot::None
+                    if kind.cycle == WorkCycle::Forester && !building.production.enabled =>
+                {
+                    Work::Begin
+                }
+                PlantSpot::Unfinished | PlantSpot::None => Work::WaitSpot {
                     countdown: CHECK_COUNTDOWN,
                 },
             },

@@ -188,6 +188,8 @@ impl Material for TerrainMaterial {
         // GFX-WATER-2.6a 3: the shader culls back faces itself, reversed in
         // the mirror view.
         descriptor.primitive.cull_mode = None;
+        // A development switch: the look study's looks of the materials.
+        crate::render::look_materials::add_defs(descriptor);
         Ok(())
     }
 }
@@ -274,6 +276,8 @@ impl Material for WaterMaterial {
             .0
             .get_layout(&[Mesh::ATTRIBUTE_POSITION.at_shader_location(0)])?;
         descriptor.vertex.buffers = vec![vertex_layout];
+        // A development switch: the look study's looks of the materials.
+        crate::render::look_materials::add_defs(descriptor);
         Ok(())
     }
 }

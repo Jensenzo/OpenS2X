@@ -2949,6 +2949,42 @@ fn a_cells_landmass_is_the_index_at_its_first_position() {
     assert_eq!((cell.position, cell.landmass), (Some((23, 24)), 1));
 }
 
+// AI-CON T112 (AI-CON-1.1d, E-ai-087): a need refers to its cell, not to
+// the cell's place. The validity scan removes cell (4, 1) (no corner owned,
+// no building): its need loses the cell at once, the headquarters cell's
+// need keeps its own; a cell made again later on (4, 1) is a new one at
+// the end of the cell list, with no needs, and the need does not come back.
+// spec: AI-CON-1.1d (AI-CON T112), AI-CON-1.1
+#[test]
+fn t112_a_removed_cells_needs_lose_their_cell() {
+    let world = world_with_continents(vec![1; 96 * 96]);
+    let mut ai = start(&world, 2);
+    let p = ai.player_mut(P0);
+    let home = cell_of(p.home);
+    let far = (4, 1);
+    assert!(!crate::cells::corner_owned(&world, P0, far));
+    p.cells.ensure(far, 0);
+    let lost = p.plan.add_need(999, None, 0.0);
+    p.plan.give_cell(lost, far);
+    let kept = p.plan.add_need(999, None, 0.0);
+    p.plan.give_cell(kept, home);
+    let total = p.cells.cols * p.cells.rows;
+    for _ in 0..total {
+        if p.cells.get(far).is_none() {
+            break;
+        }
+        assert_eq!(p.plan.need(lost).unwrap().cell, Some(far));
+        p.cell_scan(&world);
+    }
+    assert!(p.cells.get(far).is_none(), "the scan removed the cell");
+    assert_eq!(p.plan.need(lost).unwrap().cell, None, "lost with it");
+    assert_eq!(p.plan.need(kept).unwrap().cell, Some(home));
+    p.cells.ensure(far, 0);
+    assert_eq!(p.cells.in_order().last(), Some(&far));
+    assert_eq!(p.plan.needs_in(far), 0);
+    assert_eq!(p.plan.need(lost).unwrap().cell, None);
+}
+
 // AI-CON-7.3: the stones of the cell count only on the landmass of the
 // cell's current position (its stored continent index, AI-CON-1.1b): the
 // 12 rocks of T8 in the headquarters' cell, 8 of them on another index:

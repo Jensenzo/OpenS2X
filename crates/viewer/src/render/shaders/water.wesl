@@ -214,9 +214,65 @@ fn study_surface(g: vec3<f32>) -> vec4<f32> {
     return vec4<f32>(saturate(d * colour * visible), saturate(alpha + 1.0 - visible));
 }
 
+// A development switch, not a hook: the look study's looks of the
+// materials (`look_materials.rs`; shader defs LOOK_TOY, LOOK_CEL). origtoy:
+// a glossy toy blue with the waves' ripples and a sharp highlight; cel2:
+// two flat blues by the depth and drawn foam: a band along the shore and a
+// thin line further out, both breathing in and out.
+fn look_water(in: VertexOutput, g: vec3<f32>) -> vec4<f32> {
+    let rect = params.world_rect;
+    let uv = (vec2<f32>(g.x, g.z) - rect.xy) / (rect.zw - rect.xy);
+    let texel = textureSampleLevel(world, world_sampler, uv, 0.0);
+    let deep = saturate(1.0 - texel.g);
+    let visible = texel.r;
+    let time = globals.time;
+    let day = (params.light_color.rgb + params.ambient.rgb) / vec3<f32>(1.54, 1.40, 1.38);
+    var colour = vec3<f32>(0.0);
+    var alpha = 1.0;
+    @if(LOOK_TOY) {
+        let st0 = rotate(vec2<f32>(g.x * 0.19, g.z * 0.17) * 0.3, params.rotation.x)
+            + params.drift.xy * time;
+        let st1 = rotate(vec2<f32>(g.z * 0.23, g.x * 0.19) * 0.3, params.rotation.y)
+            + params.drift.zw * time;
+        let n = normalize(0.5 * (wave_normal(textureSample(wave0, wave0_sampler, st0).rgb)
+            + wave_normal(textureSample(wave1, wave1_sampler, st1).rgb)) + vec3<f32>(0.0, 1.5, 0.0));
+        var base = mix(vec3<f32>(0.42, 0.78, 0.86), vec3<f32>(0.18, 0.62, 0.77), saturate(deep * 3.0));
+        base = mix(base, vec3<f32>(0.12, 0.49, 0.66), saturate(deep * 2.0 - 0.6));
+        let v = normalize(view.world_position.xyz - in.world_position);
+        let to_light = -params.light_dir.xyz;
+        let h = normalize(to_light + v);
+        let spec = pow(saturate(dot(h, n)), 90.0) * 0.9 + pow(saturate(dot(h, n)), 14.0) * 0.08;
+        colour = base * day * (0.85 + 0.15 * saturate(dot(n, to_light))) + params.light_color.rgb * spec;
+        alpha = mix(0.6, 0.97, saturate(deep * 4.0));
+    }
+    @if(LOOK_CEL) {
+        colour = select(vec3<f32>(0.227, 0.635, 0.910), vec3<f32>(0.165, 0.525, 0.800), deep > 0.45);
+        colour = select(vec3<f32>(0.45, 0.80, 0.95), colour, deep > 0.06);
+        let breathe = sin(time * 1.1 + (g.x + g.z) * 0.15);
+        let shore = deep < 0.03 + 0.012 * breathe;
+        let line = abs(deep - (0.12 + 0.02 * sin(time * 0.8 + g.x * 0.21))) < 0.008;
+        if shore || line {
+            colour = vec3<f32>(1.0);
+        }
+        colour *= day;
+        alpha = select(0.85, 1.0, deep > 0.06);
+    }
+    return vec4<f32>(saturate(colour * visible), saturate(alpha + 1.0 - visible));
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let g = vec3<f32>(in.world_position.x, in.world_position.y, -in.world_position.z);
+    @if(LOOK_TOY) {
+        if params.mirror.x < 1.5 {
+            return look_water(in, g);
+        }
+    }
+    @if(LOOK_CEL) {
+        if params.mirror.x < 1.5 {
+            return look_water(in, g);
+        }
+    }
     if params.study.x > 0.5 && params.mirror.x < 1.5 {
         if params.study.z > 3.5 {
             return study_surface(g);

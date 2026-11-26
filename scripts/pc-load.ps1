@@ -8,7 +8,7 @@
 #   pc-load.ps1 -Out <path> -StopFile <path> [-Seconds N] [-Ours name,name]
 #
 # Each line:
-#   L <unix ms> cpu <total %> disk <read MB/s> <write MB/s> gpu <3D %> self <%> ours <%> faults <ours' page faults/s> top <name> <pid> <% of one core> ...
+#   L <unix ms> cpu <total %> disk <read MB/s> <write MB/s> gpu <3D %> self <%> ours <%> faults <ours' page faults/s> ws <ours' working set MB> hard <the machine's page reads/s> trans <the machine's transition faults/s> top <name> <pid> <% of one core> ...
 #   G <unix ms> gpu-top <name> <pid> <3D %> ...   (a process not ours using the 3D engine, 3 % or more)
 # The time is the sample's end; a sample covers about the second before it.
 # "self" is this sampler's own CPU, "ours" the -Ours processes' (% of one
@@ -38,7 +38,15 @@ $counters = @(
 # The -Ours processes' page faults (all their instances): a frame that
 # allocates megabytes fresh touches new pages, and a busy memory manager
 # slows each fault.
-foreach ($o in $Ours) { $counters += "\Process($o*)\Page Faults/sec" }
+foreach ($o in $Ours) {
+    $counters += "\Process($o*)\Page Faults/sec"
+    $counters += "\Process($o*)\Working Set"
+}
+# The machine's hard faults (pages read from disk) and transition faults
+# (pages taken back from the standby and modified lists after a trim): no
+# process counter gives hard faults without elevation (2026-11-24).
+$counters += '\Memory\Page Reads/sec'
+$counters += '\Memory\Transition Faults/sec'
 $writer = [System.IO.StreamWriter]::new($Out, $false)
 $writer.AutoFlush = $true
 $writer.WriteLine("# pc-load: started $([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()), ours: $($Ours -join ','), sampler pid $me")
@@ -59,6 +67,7 @@ Get-Counter -Counter $counters -SampleInterval 1 -MaxSamples 5 -ErrorAction Sile
     $s = $_
     $ms = [DateTimeOffset]::new($s.Timestamp).ToUnixTimeMilliseconds()
     $cpu = 0.0; $read = 0.0; $write = 0.0
+    $faults = 0.0; $ws = 0.0; $hard = 0.0; $trans = 0.0
     $pct = @{}; $ids = @{}; $gpu = @{}
     foreach ($c in $s.CounterSamples) {
         $p = $c.Path
@@ -68,6 +77,9 @@ Get-Counter -Counter $counters -SampleInterval 1 -MaxSamples 5 -ErrorAction Sile
         elseif ($p -like '*\process(*)\% processor time') { $pct[$c.InstanceName] = $c.CookedValue }
         elseif ($p -like '*\process(*)\id process') { $ids[$c.InstanceName] = [int]$c.CookedValue }
         elseif ($p -like '*\process(*)\page faults/sec') { $faults += $c.CookedValue }
+        elseif ($p -like '*\process(*)\working set') { $ws += $c.CookedValue }
+        elseif ($p -like '*\memory\page reads/sec') { $hard = $c.CookedValue }
+        elseif ($p -like '*\memory\transition faults/sec') { $trans = $c.CookedValue }
         elseif ($p -like '*\gpu engine(*') {
             # Instance names read pid_<n>_luid_..._engtype_3d.
             if ($c.InstanceName -match '^pid_(\d+)_') {
@@ -79,7 +91,6 @@ Get-Counter -Counter $counters -SampleInterval 1 -MaxSamples 5 -ErrorAction Sile
     $names = @{}
     $self = 0.0
     $mine = 0.0
-    $faults = 0.0
     $rows = foreach ($k in $pct.Keys) {
         if ($k -eq '_total' -or $k -eq 'idle') { continue }
         $id = $ids[$k]
@@ -93,7 +104,7 @@ Get-Counter -Counter $counters -SampleInterval 1 -MaxSamples 5 -ErrorAction Sile
     $top = $rows | Where-Object { $_.Pct -ge 5 } | Sort-Object Pct -Descending | Select-Object -First 5
     $gpuAll = 0.0
     foreach ($g in $gpu.Keys) { $gpuAll += $gpu[$g] }
-    $line = 'L {0} cpu {1:F0} disk {2:F1} {3:F1} gpu {4:F0} self {5:F0} ours {6:F0} faults {7:F0} top' -f $ms, $cpu, ($read / 1MB), ($write / 1MB), $gpuAll, $self, $mine, $faults
+    $line = 'L {0} cpu {1:F0} disk {2:F1} {3:F1} gpu {4:F0} self {5:F0} ours {6:F0} faults {7:F0} ws {8:F0} hard {9:F0} trans {10:F0} top' -f $ms, $cpu, ($read / 1MB), ($write / 1MB), $gpuAll, $self, $mine, $faults, ($ws / 1MB), $hard, $trans
     foreach ($t in $top) { $line += (' {0} {1} {2:F0}' -f $t.Name, $t.Id, $t.Pct) }
     $writer.WriteLine($line)
     $foreign = foreach ($g in $gpu.Keys) {

@@ -271,6 +271,15 @@ repeat. Times are on level ground with room at the flag.
     with the game's random number generator (ECO-OUT-4.9);
   - without candidates: no spot. The forester starts again at ECO-OUT-4.1
     without resting (so the next search is 51 ticks later).
+  **A forester switched off while he waits (2026-11-25, E-eco-059: code reading, the Weak
+  recording E-trace-034 and an experiment build; high):** that restart is ECO-OUT-4.1's start,
+  so it is refused while the building is switched off. The search that ends the countdown still
+  runs (a switch-off during the countdown does not stop it, and if it finds a spot he goes out
+  and plants); only when it finds none, or does not finish, does he stay inside in the
+  switched-off state, trying the start again every tick, and the countdown of 4.2 begins anew in
+  the tick he is switched on. So a switched-off forester makes no further search and no draw. The
+  same holds when the search did not finish (the queue ran empty): that too ends the step and
+  goes back through 4.1. Test T29.
 - **ECO-OUT-4.9 Random draws** (Q-116): all random choices of the logic use
   one generator, the Lehmer generator of `FMT-rc00-container.md` (multiplier
   16807, modulus 2^31 - 1). A choice among `n` takes one draw `x` and uses
@@ -529,6 +538,7 @@ ticks for 1 .. 4 lattice steps (TRN-FREE-5.3).
 | T26 | 3.11 (the productivity entries): E-trace-013 (Hard, player 1), the statistics entries in the heap dump of counter 10 000 (value, falls counted) | each building's value | farm 90720 0.4 (2 falls; built from its site of 4776, two sowings at 9453 and 9900, no harvest), brewery 90786 0.4 (2; no beer made), mill 90961 0.5 (0), building 90896 0.5 (0), woodcutters 91097 0.65 (2; one product), 90986 0.9 (2), forester 90954 0.7 (1: first planting 9100 sets 0.5, fall 9600, planting 9732), sites 91254, 91283, 91310 0.5 (0), sawmills, smithy, spring 1.0, stone pits 0.95; no entry for the castle, harbour, tower and catapult. Experiment build (0.5 at placement for types with a product, sowing not counted): every value above equal; with AI-CON T67 the Hard pair's buildings 10175 -> 10278 |
 | T27 | 8.1 (the animal's walk goal): E-trace-013 (R3, the Hard game), hunter 95536 of the hut at (127, 26) (flag (127, 25)), animal 90047 | the hunter's walk | the animal walks (120, 28) -> (120, 27) -> (121, 26), its walk goal (121, 26), stepping onto (121, 26) from counter 42883 and registered there from 42905; the hunter's free walk starts at counter 42904 from the flag (127, 25), ends on (121, 25) (one field short of (121, 26)) at trace tick 43039, walks the lattice to (485000, 101080) by 43051 and the animal dies at 43061 (recorded). Aiming at the field the animal stands on at the walk's start, (120, 27), walks him onto (121, 26) (the Hard game vs R3 differs from settlers 43039). With the rule (experiment build, with TRN-CARRY T56 and AI-CON T97): settlers 43100 -> 43500, buildings 44700 -> 45400, generator 43124 -> 43426 (the pair's rows); every other pair unchanged |
 | T28 | 3.8a (3), the view on admission: E-trace-012 (the Hard game to 20 000), woodcutter 90664 back from (135, 57), standing from trace tick 18 308 on (136, 56) next to his flag (137, 56), which is full; a ware leaves the flag in 18 415 (counter 18 414) and his ware is admitted in trace tick 18 417 | his rows 18 416 .. 18 419 | 18 416 Stand; 18 417 the walk clip at time 0 on (136, 56) (544 000, 224 000); 18 418 walk clip 1 at 544 180; 18 419 at 544 360 (recorded). Showing the stand clip in 18 417 (as before) is the Hard 20 000 pair's only difference (trace tick 18 417, the animation column); with the rule (experiment build) the pair is equal to 20 000 and every other pair unchanged |
+| T29 | 4.4 'a forester switched off while he waits': E-trace-034 (the Weak game, `MP_2P_Storm_Coast`, player 1 Weak), the forester's hut at (146, 40) (worker 93511), switched off by its computer player at counter 54 009 and not switched on again before 62 000; the field (146, 34) free from about 60 100 and its neighbour (145, 33) a grain field harvested at 60 872 (removed 18 ticks later) | the forester from 54 009 | he stays inside in the switched-off state: no search, no planting, no draw up to 62 000 (recorded: state unchanged from 54 059; the farm sows grain on (146, 34) at about 61 600). Searching on while switched off (as before) finds (146, 34) at counter 60 927 and plants there (three draws). Experiment build: the Weak game's generator first difference 60 928 -> 60 999 (with SHIP T31 on); Hard 150 000 (58 115) and the war (24 343) unchanged |
 
 ## Evidence
 
@@ -568,6 +578,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-eco-031, E-trace-013 | code reading and memory reads of the running game | the game's statistics entries in E-trace-013's heap dumps (each: building id, value, falls) | ECO-OUT-3.11 (T26), `ECO-food-mining.md` ECO-FOOD-1.2 |
 | E-eco-041, E-trace-013 | code reading and recording | the hunter's two walks (the free walk to the animal's walk goal, then the lattice walk to its position); R3 `animals` (90047, counters 42880 .. 43061) | 8.1, T27 |
 | E-eco-054, E-trace-012 | recording, experiment build | (session 2026-11-22 day): the woodcutter's rows and the wares of his flag, counters 18 405 .. 18 420 | ECO-OUT-3.8a (3) the view on admission (T28), Q-1078 |
+| E-eco-059 | code reading, recording, experiment build | | (session 2026-11-25 a) the forester's restart after a search without a spot refuses while switched off; E-trace-034, the hut at (146, 40) | ECO-OUT-4.4 (T29) |
 
 ## Open questions
 

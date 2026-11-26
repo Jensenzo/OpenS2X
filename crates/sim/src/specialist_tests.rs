@@ -449,3 +449,71 @@ fn t8_no_spot_sends_him_home_at_once() {
         );
     }
 }
+
+// ECO-SPC T9, 2.1a (E-trn-048): his road route H -> A -> B -> F; while he
+// walks the road A - B, the road B - F is removed (F stays, cut off). His
+// walk ends on B, and in the same update he goes home from B: he never
+// reaches F, digs nothing and is stored in the headquarters. Before the
+// correction he stood on B and searched again every tick.
+// spec: ECO-SPC-2.1a (ECO-SPC T9), ECO-SPC-2.1, TRN-FREE-6.3, TRN-FREE-6.4
+#[test]
+fn t9_a_cut_road_sends_him_home_from_the_flag_he_reached() {
+    let mut world = game(&stock(1));
+    let (a, b, f) = (FLAG, (16, 9), (16, 13));
+    for at in [b, f] {
+        apply_all(&mut world, vec![Command::PlaceFlag { player: P0, at }]);
+    }
+    apply_all(&mut world, vec![road_cmd(a, b), road_cmd(b, f)]);
+    for at in grid::area(f, 6, 40, 40) {
+        world.set_bits(at, state::FOR_BUILDING, false);
+        world.set_bits(at, state::FOR_MINING, true);
+    }
+    let inner = |w: &World, from: Point, to: Point| -> Vec<Point> {
+        let path = w
+            .roads()
+            .find(|r| r.path.first() == Some(&from) && r.path.last() == Some(&to))
+            .expect("a road")
+            .path
+            .clone();
+        path[1..path.len() - 1].to_vec()
+    };
+    let (a_b, b_f) = (inner(&world, a, b), inner(&world, b, f));
+    world.submit(Command::OrderGeologist { player: P0, at: f });
+    let mut cut = None;
+    let mut standing_on_b = 0;
+    for _ in 0..3000 {
+        world.step();
+        let geologist = world
+            .settlers()
+            .find(|(_, s)| s.profession == GEOLOGIST)
+            .map(|(_, s)| (s.walker.at, s.job.clone()));
+        let Some((at, job)) = geologist else {
+            continue;
+        };
+        assert_ne!(at, f, "he never reaches F");
+        if cut.is_none() && a_b.contains(&at) {
+            world.submit(Command::RemoveRoad {
+                player: P0,
+                at: b_f[0],
+            });
+            cut = Some(world.tick());
+        }
+        if at == b
+            && matches!(
+                job,
+                SettlerJob::Specialist {
+                    step: SpecialistStep::ToFlag,
+                    ..
+                }
+            )
+        {
+            standing_on_b += 1;
+        }
+    }
+    assert!(cut.is_some(), "the road was cut while he walked A - B");
+    assert_eq!(world.flag_at(f), Some(P0), "F stays");
+    assert!(standing_on_b <= 1, "no wait on B ({standing_on_b} ticks)");
+    assert_eq!(world.signs().count(), 0, "no spot dug");
+    assert!(world.settlers().all(|(_, s)| s.profession != GEOLOGIST));
+    assert_eq!(world.warehouse(HQ).unwrap().count(GEOLOGIST), 1);
+}

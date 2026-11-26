@@ -148,6 +148,15 @@ wares) and uses its terms: order, free ware, warehouse with stock, route cost.
   not identified; it also skips the stock handling) is set, stock decrease, ware made and given to the helper; the job's door test
   reads that wait; the order matching reaches the same sending). The 35-tick rhythm itself is not recorded (no take-out happened in
   E-trace-006).
+- **ECO-DIST-1.7e The warehouse order (2026-11-24 a; E-eco-055: code reading, the war recording and
+  an experiment build; high).** The take-out job of 1.7 goes over **one list holding the warehouses
+  of all players together** (headquarters, storehouses and harbours), in the order they were made
+  (their object numbers, `SIM-game-start.md` SIM-START-4.2), not player by player. "For every
+  warehouse of every player" in 1.7 means that list. So with player 1's headquarters (number 14158),
+  player 2's (14164), player 3's (14170), then player 2's storehouse 17198, player 1's 17310 and
+  player 3's 17612, the draws go to them in that order, each one skipped as in 1.7c (a) when its door
+  waits. Which draw a warehouse gets changes nothing while no record has "out" set (nothing is sent
+  either way), so the order shows only once a computer player has set "out" (AI-MIL-6.1). Test T25.
 - **ECO-DIST-1.7b Measured (E-trace-005, 2026-10-21; E-trace-006, 2026-10-23).** In
   the two-player game the draw of step 2 is the one extra draw before the animals of
   trace tick 484 and the only draw of trace ticks 554, 561 and 582 (counters 483,
@@ -224,6 +233,27 @@ wares) and uses its terms: order, free ware, warehouse with stock, route cost.
   Entries never present keep accumulating, but they cannot win until they
   have an order. Confidence: high for 1 to 3; medium for the stamp's initial
   value.
+- **ECO-DIST-2.3a An order whose key has no entry (Q-137, answered 2026-11-24; E-eco-056,
+  code reading).** An order of list 1 (ECO-DIST-3.3a) whose key (its building's type, or
+  "construction") is not in the good's table is never marked present and is never chosen by
+  the pick. When the network holds only such orders of the good, step 3 finds no entry present,
+  and the pick is **tried again**, once per entry of the table in all (as many tries as the table
+  has entries: 4 for grain, water, food; 3 for planks and coal; 2 for iron): each try runs
+  steps 2 and 3 again (every entry's accumulator += its weight, then the first entry's
+  accumulator set to 0) and looks for an order of the first entry's key in that network,
+  which it does not find. After the last try no order is chosen, no stamp changes, and no ware
+  is sent for that network in that matching run (ECO-REQ-5.3d). Net effect of one such choice
+  point on a table of n entries: every entry except the first gains n x its weight (added one
+  try at a time, float32), the first entry ends at 0. When the network holds at least one
+  order with a key in the table, that key's order is chosen on the first try as in 2.3 and the
+  keyless orders wait on. A keyless order is therefore never served while it is in list 1.
+  Orders of finished warehouse-type buildings are not affected: they are in list 0 and are
+  chosen by "longest waiting" (ECO-DIST-3.3a), so a storehouse or harbour that orders planks
+  is served (T24). In the shipped game no other keyless list-1 order arises: every finished
+  consumer of the six goods has an entry (ECO-DIST-2.1 against the inputs of
+  `ECO-buildings-catalog.md`), a catapult orders stones (no table: longest waiting), a site or
+  upgrading building uses "construction". Confidence: high (code reading); the loop count:
+  high.
 - **ECO-DIST-2.4** The pick ignores distance entirely; distance only decides
   where the ware comes from (ECO-REQ-5.3). The long-run shares are **not**
   proportional to the weights (see T2, T3). Confidence: high.
@@ -357,6 +387,8 @@ wares) and uses its terms: order, free ware, warehouse with stock, route cost.
 | T22 | 1.6 (the network test): E-trace-014 (R4, the Weak game), player 1's stones 92284 (lying at (139, 43), next flag (137, 37)) and 92289 (at (137, 44), next (137, 37)), both for the catapult 91705 on (132, 31); at counter 25782 the computer player splits the road (137, 37)-(135, 30) at (136, 33), the half (135, 30)-(136, 33) without a carrier until 25803 (the carrier 92453 made at the castle's door) | the stones' next flags and destinations | the re-check of counter 25785 clears both next flags (their next flag is still joined to their own flag by a road with a carrier, but the catapult's flag is in another ware network); the storage run of 25795 sends 92284 to the storehouse 90351 and 92289 to the castle; at 25806, the networks joined again, the matching gives 92289 to the catapult (measured, `wares.csv`). An experiment build with the test on the ware's own flag kept both next flags and the catapult destination; with the test on the destination's flag both lose them at 25785 and are stored at 25795 as recorded; Hard, dense and single-player pairs unchanged, the Weak pair then differs at the matching of 25806 (Q-373) |
 | T23 | 3.1 (list 0 before list 1), ECO-REQ-5.3: E-trace-018 (R5, the Weak game), player 1, the matching of counter 50820: plank orders of the harbour 90351 (144, 47) (finished, list 0) and of the site at (116, 35) (list 1), the castle (139, 51) the warehouse H for both with its cooldown at 0 | which order the castle sends to | the plank 96101 leaves the castle with the helper 96100 for the harbour (recorded); the site's order waits (the castle's 30 ticks). Taking the good's orders in filing order, both lists together, sends it to the site (experiment build): the plank's carrier 90260 stays idle at 50881 and the Weak game against R5 differs from settlers 50882; with list 0 first, from 51466 (buildings 52147 -> 52290; with `ECO-food-mining.md` T61 the Weak 150 000 generator 50934 -> 51472, every other pair unchanged) |
 | T24 | 3.3a (list 0 by the plain rule for a good with a table): E-trace-013 (R3, the Hard game), player 1, the harbour 90366 (144, 47) files 4 plank and 6 stone orders before the matching of counter 46541 (finished, list 0); planks have a distribution table; free planks lie in its network, among them 96630 on (141, 45) | the harbour's plank orders | 46541: 96630 (storage-bound for 94359) gets the harbour as destination (recorded), and at 46552 96624 on (140, 46) as well. Choosing the harbour's orders by the plank table (the harbour is no consumer in it) chooses none, so no plank is matched to it: the donkey 92756 of the road (140, 46) - (145, 46) stays idle at 46565 and the Hard game against R3 differs from settlers 46566; with the plain rule for list 0 (experiment build, with T23) from 46751, buildings 46985 -> 48034 (the Hard 150 000 pair: settlers 46600 -> 46800, buildings 47000 -> 48200). In the Weak game the rule makes the castle send planks to the harbour 90351 at 50820 and 50853 as recorded (it sent stones there before), and so uncovers a later point: our harbour has a fifth plank order at 50985 where R5 sends a stone (Q-385); the Weak 150 000 generator's first difference moves 51472 -> 51297 from that, and with that point settled (`SHIP-ships-expeditions.md` T14) to 51724. Every other pair unchanged |
+| T25 | 1.7e (one warehouse list for all players): E-trace-019 (R6, the war), counter 20475, a take-out tick; the doors of 14158 (52, 56) and 14164 (52, 24) wait; player 3's headquarters 14170 (26, 24) has 11 flag records with "out" set on a8483903 (5 in stock), 1eebcf03 (5) and 58647da3 (0) since counter 20434; the four draws of the tick mod 11 are 1, 6, 10, 4 | which warehouse sends what | in the one list 14170 draws first: r = 1, at a8483903 r becomes 0 with stock, so one a8483903 is carried out (helper 20996 at the door in 20475, the ware put down on (26, 23) from 20523; the door then waits 30, so in counter 20482 the job draws only for 17198 and 17612: 2 take-out draws, as recorded). Player by player 14170 draws third (r = 10, nothing sent) and 20482 has 3 take-out draws: the war's generator first differs at trace tick 20483, the settlers at 20480 (the helper missing); with the one list the generator at 23710, the settlers at 23690, the buildings at 24130 (experiment build on top of the fifty-one rules and T54's) |
+| T26 | 2.3a: player 0's planks table at its defaults with all accumulators 0 (construction 1.0, metalworks 0.4, shipyard 0.2); in one network the only open plank order is a list-1 order whose building type has no entry (a test-only type), a free plank lies in the network | the choice point of the matching run, then the table | no order chosen, no plank moves, the order's stamp unchanged; accumulators construction 0, metalworks 1.2 (0.4 + 0.4 + 0.4 in float32: 1.2000000477), shipyard 0.6 (0.6000000238). Add a site's plank order in the same network: the next run chooses the site's order on the first try (construction 1.0 + 0 = 1.0 against metalworks 1.6, shipyard 0.8: metalworks and shipyard are absent, so construction wins and is reset) and the keyless order still waits |
 
 ## Evidence
 
@@ -365,6 +397,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | Ref | Kind | Where | Note |
 |---|---|---|---|
 | E-sim-008 | code reading | | ECO-DIST-1.7 step 4, 1.7d, T12 |
+| E-eco-055, E-trace-019 | code reading, recording, experiment build | the take-out job's list; the war recording's goodflags, wares and settlers tables at counters 20434 .. 20530 | ECO-DIST-1.7e (T25) |
 | E-eco-036, E-trace-014 | code reading and recording | E-trace-014 `wares.csv`, `streets.csv` counters 25782 .. 25806 | ECO-DIST-1.6 (T22) |
 | E-eco-011 | code reading | `S2DNG.exe` | warehouse flag command executors (all, toggle stop, toggle out, cycle, set stop, set out) |
 | E-eco-011 | code reading | | flag record (create with defaults), accepts test, set for all goods of a type, load |
@@ -381,6 +414,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-eco-013 | code reading | | order list index (finished depot type = 0) stored per good group, list 0 bypasses table and coin rule; lowest stamp strict, unsigned |
 | E-eco-013 | code reading | | new order stamp |
 | E-eco-013 | code reading | | settler sent out by kind, no job |
+| E-eco-056 | code reading | | ECO-DIST-2.3a: a key without an entry is never marked; the pick retried once per table entry, then no order (Q-137) |
 
 ## Open questions
 

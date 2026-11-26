@@ -4,7 +4,11 @@
 pub(crate) mod bench;
 pub(crate) mod camera_file;
 pub(crate) mod colour_probe;
+pub(crate) mod frame_steps;
 pub(crate) mod model;
 pub(crate) mod play;
+pub(crate) mod probe_window;
 pub(crate) mod scenes;
 pub(crate) mod shots;
+#[cfg(feature = "frame-trace")]
+pub(crate) mod span_log;

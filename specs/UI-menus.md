@@ -310,6 +310,42 @@ list box of files. The player-slot screen of a free game is in
   MP_6P_Paradise_Island, MP_6P_the_others, then sp01_big_fish .. sp11_southshore_attack in their
   number order (the order read live, E-ui-023). Confidence: high (code; agrees with the live read).
   Test T20.
+  **How the rows look (2026-11-25, Q-256 a, Q-185 c; E-ui-048, code reading and pictures of the original,
+  E-trace-035, 2560 x 1440).** The dialog's frame sits at ((W - 376) / 2, (H - 464) / 2) (1.9), the list's
+  first row at (50, 50) in it, rows 21 px apart. Each row is drawn as:
+  - **its bar:** `uiElements0` (8, 8, 248 x 20) (a dark brown bar with a thin light edge), drawn 1:1 with its
+    top-left at the row's corner, so a bar covers x 0 .. 247 and y 0 .. 19 of the row and a 1 px gap of the
+    dialog's body shows between rows. **Under the pointer** the row's bar is `uiElements0` (8, 32, 248 x 20)
+    instead, a dark blue bar with a bright blue line near its top; nothing else of the row changes (no
+    other text colour). The art has a third bar of the same size at (8, 56) (light cyan), not seen here;
+  - **its text:** the map's shown name (the name the set-up page shows, e.g. `Coastal Storm` for
+    `MP_2P_Storm_Coast`, `Big Fish` for `sp01_big_fish`), not the file name; the rows keep the file-name
+    order of T20 (seen: Coastal Storm, Summer Breeze, Black Hole, On the Border, Crossroads, Death Valley,
+    Keyhole, The Green Mile, Paradise Island, The Others, Big Fish, On the River, Blazing Sun, Land of
+    Lava, In the Woods, Desert Eve, Good Old Times, Gold Fever, Rat Race, South coast), left-aligned about
+    9 px into the bar, in the colour of the map's kind:
+    - a map of the free game folder whose file name starts with `MP_` (case as written): **(238, 189,
+      115)**, a tan;
+    - one whose file name starts with `sp` followed by a digit: **(219, 199, 186)**, a pale pink-grey;
+    - any other map of that folder: (253, 139, 107);
+    - a map found only in the campaign folder: (255, 255, 128); only in the saved games folder: (128, 64,
+      192); in the user's own maps folder (when that folder is read first): (255, 200, 64);
+    - a map file found in none of them: (255, 0, 0), red.
+    So of the 20 shipped maps the ten `MP_` rows are tan and the ten `sp` rows pale; nothing else is red
+    or another colour unless a file is missing or added.
+  - The scroll bar of the previous paragraph, the thumb at the top with the list at its first row and at
+    the bottom of the track at the last (seen), the down arrow drawn darker (disabled) at the end.
+  - The close button is the standard dialog's (`UI-ingame.md` UI-GAME-1.8: `uiElements3` (415, 32, 24 x
+    24) at (w - 40, 5)): seen as the small red square with a cross in the title bar's right end.
+  - Hovering a row fills `!Map Size:` with `W x H` and `!Players:` with the count and shows the preview
+    (seen: Black Hole, `120 x 120`, `4`); off the list both are blank and the preview frame is empty.
+  - **The message box** of a map that cannot be read (titled `!INVALID_MAP`, text `!INVALID_FILE`) has one
+    button, `!OK`, a text button of the style of the other dialogs' buttons at (16 + 292, 185) in the box;
+    the box's frame and its text's place were not read (no shipped map shows it; low priority).
+  One arrow click in the picture moved the list by two rows (the posted click lasts long enough for the
+  held-arrow repeat of the previous paragraph, 0.05 s); that is the hold rule, not a different step.
+  Confidence: high for the bars (pictures match the art pixel for pixel), the two colours seen and the
+  close button; high for the other colours (code), not seen; medium for the message box. Test T22.
   Class rule (2026-10-24): the preview of every shipped map is its `.bmp` beside the
   `.s2m` (20 free-game, 10 campaign maps). Covers (inventory): *texture* from
   `data/maps/*/*.bmp`. Covers (inventory): *free game map* from
@@ -493,6 +529,17 @@ list box of files. The player-slot screen of a free game is in
   plays nothing. RETURN and the closing of the dialog give the text back
   (not traced: medium). Confidence: high for the art, keys, caret and sound;
   medium for which inputs use the restricted mode and for RETURN.
+- **UI-MENU-5.3a Which byte a typed key stores (2026-11-24 c, Q-1088 b; E-ui-045, code reading,
+  high unless marked).** The game window is an ANSI window: Windows turns a key press into a
+  character of the system's ANSI code page before the game sees it (Windows-1252 on a Western or
+  German Windows), and the input stores that character's **one byte** as it is, with no mapping
+  of its own. So the euro key stores 0x80, `ä` 0xE4, `ß` 0xDF; each stored byte later draws the
+  glyph with that id (FMT-3.8b). A character the code page lacks never reaches the game as itself:
+  Windows replaces it before (normally by `?`; Windows' behaviour, not the game's: medium). Every
+  byte from 0x20 up is a printable character for 5.3, the bytes 0x80 .. 0xFF included, with **one
+  exception: `<` (0x3C) is never inserted** in any input, restricted or not (no sound, nothing
+  changes). The restricted mode's extra signs are compared as Windows-1252 bytes. Typed text is
+  kept and saved as these bytes (a save name, a ship's name, the chat line).
 
 ### UI-MENU-6 Answers to Q-096 (2026-10-17)
 
@@ -565,6 +612,8 @@ list box of files. The player-slot screen of a free game is in
 | T18 | 2.1 (Q-1042): Select Map with the 20 shipped maps, at the top | the thumb, then 1, 5, 6 and 10 clicks on the down arrow | thumb top 0, up arrow disabled; after 1 click v = 0.1, first row 1, thumb top 17; after 5: v = 0.5, row 5 (floor(4.5 + 0.5)), top 85; after 6: v = 0.6, row 5 still, top 102; after 10: v = 1, row 9, top 170, down arrow disabled (v summed in float32 steps of 0.1) |
 | T19 | 2.1: a list with 8 entries (everything fits) | the thumb and the arrows | first row 0, thumb top 85 (the track's middle), both arrows disabled |
 | T20 | 2.1 map order (Q-211 f): map files `AB.s2m`, `A_B.s2m`, `ab2.s2m`, `Zeta.s2m` | the list | AB, ab2, A_B, Zeta (upper-cased: AB, AB2, A_B, ZETA; `_` after the letters and digits) |
+| T21 | 5.3a (Q-1088 b): a Western Windows; the save dialog's name input focused, then the network page's call sign input | typing `a<b`; then `Grüße` and the euro key in the call sign | the name reads `ab` (the `<` refused, no `uiKey0` for it); the call sign holds the bytes 47 72 FC DF 65 80 and draws `Grüße€` with the font's glyphs 0xFC, 0xDF, 0x80 |
+| T22 | 2.1 rows (Q-256 a): the shipped 20 maps, Select Map opened, the pointer on row 2 | draw | row n's bar `uiElements0` (8, 8, 248 x 20) at (50, 50 + 21 n) of the dialog, row 2's (8, 32, 248 x 20); rows 0 .. 9 (MP_) text (238, 189, 115), row 10 (sp01_big_fish, `Big Fish`) (219, 199, 186); `!Map Size:` `120 x 120`, `!Players:` `4` (Black Hole); a file `Foo.s2m` in the free game folder: (253, 139, 107) |
 | T16a | shipped `menu.cfg` (language "gb"), intro plays, master volume 255 | audio | tracks 0 and 2 at Bink volume 32 640 each, mixed; tracks 1 and 3 at 0. With `setLanguage("de")`: tracks 0 and 1. With a language "it" not in the map: tracks 0 and 2. Master volume 0: silence (0.3a) |
 
 ## Evidence
@@ -589,6 +638,8 @@ list box of files. The player-slot screen of a free game is in
 | E-ui-017 | code reading | | UI-MENU-3.3a, T17 |
 | E-sim-002 | code reading | | text line anchor, alignment flags, wrapping, baseline alignment (UI-MENU-1.8); text input (5.3) |
 | E-ui-019 | code reading | (= E-gfx-039, session 2026-11-06) | UI-MENU-5.1 |
+| E-ui-045 | code reading | (session 2026-11-24 c) | UI-MENU-5.3a: the window's character message handed to the inputs' key handler, the byte stored, the refused `<` (Q-1088 b) |
+| E-ui-048 | code reading, pictures of the original (E-trace-035) | (session 2026-11-24 night) | 2.1 'How the rows look': the row colour by folder and name, the message box's buttons; the bars, hover bar, colours, scroll ends and close button seen at 2560 x 1440 |
 
 ## Open questions
 

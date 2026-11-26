@@ -1,8 +1,10 @@
 //! The in-game interface (`specs/UI-ingame.md`): the main bar, the context
 //! menus on the map, the building windows, the attack dialog, the global
-//! dialogs, messages and the minimap, described as panels. Every position
-//! is the spec's; where the spec names no art or place, the stand-in is said
-//! (Q-184).
+//! dialogs, messages and the minimap, described as panels. Every frame,
+//! place and piece of art is the spec's (Q-184 answered: UI-GAME-1.8, 1.9,
+//! 3.x, 4, 5.2, 6, 6.5, 6.6, 8.5). One stand-in is left: the building
+//! windows' portrait is the type's icon, not the 3D model (see
+//! `windows::portrait`).
 
 mod context;
 mod globals;
@@ -899,6 +901,9 @@ fn context_on_field(world: &World, player: PlayerId, field: Point) -> Option<Con
             return Some(Context::Building { at: field, tab: 9 });
         }
         if crate::ui::military::attackable(world, player, field) {
+            // UI-GAME-5.1, 5.2: the slider's value and the weak / strong
+            // choice when the dialog opens are not given (Q-1093): a
+            // stand-in of the middle and weak first.
             return Some(Context::Attack {
                 target: field,
                 share: 0.5,

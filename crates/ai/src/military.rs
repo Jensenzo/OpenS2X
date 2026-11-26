@@ -158,9 +158,19 @@ pub fn castle_reserve(d: u32) -> u32 {
     }
 }
 
-/// AI-MIL-5.2: the attack target value of a cell for an enemy player.
-pub fn target_value(construction_threat: f32, score: f32, balance: f32, c: f32, a: f32) -> f32 {
-    (construction_threat + 2.0 * score - balance) / (c + 1.0 + a)
+/// AI-MIL-5.2: the attack target value of a cell for an enemy player:
+/// (the enemy's threat under construction + the enemy's score + the
+/// attacking player's own score - the balance) / (C + 1 + A) ('the second
+/// score is the attacker's own', T37).
+pub fn target_value(
+    construction_threat: f32,
+    score: f32,
+    own_score: f32,
+    balance: f32,
+    c: f32,
+    a: f32,
+) -> f32 {
+    (construction_threat + score + own_score - balance) / (c + 1.0 + a)
 }
 
 /// AI-MIL-5.2 (T31): whether a cell is looked at for an attack: one of
@@ -179,8 +189,8 @@ pub fn next_to_own_threat(own: &MilitaryMap, cell: MPos) -> bool {
 /// own military presence ([`next_to_own_threat`]) are visited column by
 /// column (x from 0, and for each x every y from 0), and for each the alive
 /// enemy players 0 to 7 in order whose score in the cell is not 0; value =
-/// (their threat under construction + 2 x their score - the balance) /
-/// (C + 1 + A). The highest value above -100 wins, a later one only when
+/// (their threat under construction + their score + the player's own
+/// score, minus the balance) / (C + 1 + A) (T37). The highest value above -100 wins, a later one only when
 /// strictly greater. `counters` gives the cell's C and A.
 pub fn attack_target(
     maps: &[MilitaryMap],
@@ -209,9 +219,12 @@ pub fn attack_target(
                 if them.score == 0 {
                     continue;
                 }
+                // AI-MIL-5.2 (T37): the second score is read from the
+                // attacking player's own map.
                 let value = target_value(
                     them.threat_building as f32,
                     them.score as f32,
+                    own.get(cell).score as f32,
                     balance,
                     c,
                     a,
@@ -1020,8 +1033,8 @@ impl AiPlayer {
                 let defenders = if warehouse {
                     WAREHOUSE_DEFENDERS
                 } else {
-                    // T33 (Q-1076): the building's list, not only those
-                    // inside.
+                    // AI-MIL-5.4 def (T35, T36; Q-1082): the building's
+                    // whole soldier list, walking-in soldiers included.
                     world.listed_soldiers(b.at) as u32
                 };
                 let x = soldiers_wanted(ratio, defenders, defend_outside);

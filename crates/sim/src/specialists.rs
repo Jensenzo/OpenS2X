@@ -143,9 +143,11 @@ impl World {
                 if !arrived {
                     return true;
                 }
-                // ECO-SPC-2.1
+                // ECO-SPC-2.1 (corrected 2026-11-24): off the order's flag
+                // he goes home at once from where he stands, no walk back
+                // to the flag (2.1a: a walk cut short ends here too).
                 if settler.walker.at != flag || !flag_stands {
-                    self.specialist_finishes(settler, flag);
+                    self.specialist_goes_home(settler, flag);
                 } else {
                     self.next_spot(settler, flag, spots_left);
                 }

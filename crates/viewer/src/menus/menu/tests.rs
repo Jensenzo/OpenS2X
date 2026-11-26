@@ -370,20 +370,28 @@ fn select_map_layout() {
         .widgets
         .iter()
         .filter_map(|w| match w {
-            Widget::TextButton {
-                text,
+            Widget::Button {
                 at,
-                colour,
                 action: Action::Menu(MenuAction::SelectMap(i)),
                 ..
-            } => Some((text.clone(), [at[0] - o[0], at[1] - o[1]], *colour, *i)),
+            } => Some(([at[0] - o[0], at[1] - o[1]], *i)),
             _ => None,
         })
         .collect();
     assert_eq!(rows.len(), MAP_ROWS);
-    assert_eq!(rows[0].1, [50.0, 50.0]);
-    assert_eq!(rows[2].2, [255, 220, 0]);
-    assert_eq!(rows[1].2, WHITE);
+    assert_eq!(rows[0].0, [50.0, 50.0]);
+    // T22: nothing marks the chosen map (row 2): every row in its kind's
+    // colour (the test's names are no MP_ or sp maps).
+    let colours: Vec<[u8; 3]> = p
+        .widgets
+        .iter()
+        .filter_map(|w| match w {
+            Widget::Text { text, colour, .. } if text.starts_with('m') => Some(*colour),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(colours.len(), MAP_ROWS);
+    assert!(colours.iter().all(|c| *c == MAP_ROW_OTHER));
     let info = |p: &Panel| -> Vec<_> {
         p.widgets
             .iter()
@@ -2315,4 +2323,117 @@ fn starts_tooltip_tells_ready_or_a_shared_start() {
     assert_eq!(tip(&menu).as_deref(), Some("Ready to start"));
     choose(&mut menu, Drop::Hq(1), 0);
     assert_eq!(tip(&menu).as_deref(), Some("Double allocation of HQ"));
+}
+
+/// UI-MENU T22: Select Map's rows: row n's bar `uiElements0` (8, 8, 248 x
+/// 20) at (50, 50 + 21 n) of the dialog, (8, 32) under the pointer (the
+/// button's hover look); the shown names (Coastal Storm, Big Fish) with
+/// the MP_ rows tan (238, 189, 115), the sp rows (219, 199, 186), another
+/// file (253, 139, 107), left 9 px into the bar, the 16 px line centred on
+/// it.
+// spec: UI-MENU-2.1 (T22), UI-MENU-1.8
+#[test]
+fn t22_select_map_rows() {
+    let mut menu = free_play_menu();
+    let files = ["MP_2P_Storm_Coast", "Foo", "sp01_big_fish"];
+    menu.maps = files
+        .iter()
+        .map(|n| PathBuf::from(format!("freeGameMaps/{n}.s2m")))
+        .collect();
+    menu.map_names = vec!["Coastal Storm".into(), "Foo".into(), "Big Fish".into()];
+    menu.screen = Screen::SelectMap;
+    let texts = Texts::parse("");
+    let p = select_map(&menu, &texts, [1024.0, 768.0]);
+    let o = [324.0, 152.0];
+    let bars: Vec<_> = p
+        .widgets
+        .iter()
+        .filter_map(|w| match w {
+            Widget::Button {
+                atlas: Atlas::Elements0,
+                rect,
+                hover: Hover::Swap(h),
+                at,
+                action: Action::Menu(MenuAction::SelectMap(i)),
+                ..
+            } => Some((*rect, *h, [at[0] - o[0], at[1] - o[1]], *i)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        bars,
+        (0..3)
+            .map(|n| ([8, 8, 248, 20], [8, 32], [50.0, 50.0 + 21.0 * n as f32], n))
+            .collect::<Vec<_>>()
+    );
+    let text = |name: &str| {
+        p.widgets.iter().find_map(|w| match w {
+            Widget::Text {
+                text,
+                at,
+                colour,
+                align: crate::ui::widgets::Align::TopLeft,
+                font: Font::Body,
+            } if text == name => Some(([at[0] - o[0], at[1] - o[1]], *colour)),
+            _ => None,
+        })
+    };
+    assert_eq!(text("Coastal Storm"), Some(([59.0, 52.0], [238, 189, 115])));
+    assert_eq!(text("Foo"), Some(([59.0, 73.0], [253, 139, 107])));
+    assert_eq!(text("Big Fish"), Some(([59.0, 94.0], [219, 199, 186])));
+    // Case as written: `mp_` is not an MP_ map.
+    assert_eq!(
+        map_row_colour(Path::new("freeGameMaps/mp_x.s2m")),
+        MAP_ROW_OTHER
+    );
+}
+
+/// UI-MENU T20: map files AB, A_B, ab2, Zeta list as AB, ab2, A_B, Zeta
+/// (upper-cased, `_` after the letters and digits); the shipped twenty in
+/// the order read live.
+// spec: UI-MENU-2.1 (T20)
+#[test]
+fn t20_select_map_order() {
+    let files = |names: &[&str]| -> Vec<PathBuf> {
+        names
+            .iter()
+            .map(|n| PathBuf::from(format!("freeGameMaps/{n}.s2m")))
+            .collect()
+    };
+    let stems = |maps: Vec<PathBuf>| -> Vec<String> { maps.iter().map(|p| stem(p)).collect() };
+    assert_eq!(
+        stems(free_maps(&files(&["AB", "A_B", "ab2", "Zeta"]))),
+        ["AB", "ab2", "A_B", "Zeta"]
+    );
+    let shipped = [
+        "sp11_southshore_attack",
+        "MP_6P_the_others",
+        "MP_4P_DeathValley",
+        "MP_4P_Fight2",
+        "MP_2P_Summer_Breeze",
+        "MP_4P_black_hole",
+        "MP_4P_crossroads",
+        "sp01_big_fish",
+        "MP_4P_Close_Frontier",
+        "MP_4P_Fight",
+        "MP_2P_Storm_Coast",
+        "MP_6P_Paradise_Island",
+    ];
+    assert_eq!(
+        stems(free_maps(&files(&shipped))),
+        [
+            "MP_2P_Storm_Coast",
+            "MP_2P_Summer_Breeze",
+            "MP_4P_black_hole",
+            "MP_4P_Close_Frontier",
+            "MP_4P_crossroads",
+            "MP_4P_DeathValley",
+            "MP_4P_Fight",
+            "MP_4P_Fight2",
+            "MP_6P_Paradise_Island",
+            "MP_6P_the_others",
+            "sp01_big_fish",
+            "sp11_southshore_attack",
+        ]
+    );
 }

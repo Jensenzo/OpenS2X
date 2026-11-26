@@ -535,14 +535,14 @@ pub fn game_keys(
         (KeyCode::KeyN, 7),
     ] {
         if keys.just_pressed(key) && !(button == 2 && modified) {
-            events.actions.push(Action::Hud(button));
+            events.actions.push(Action::HudKey(button));
         }
     }
     if keys.just_pressed(KeyCode::KeyI) {
-        events.actions.push(Action::Hud(21));
+        events.actions.push(Action::HudKey(21));
     }
     if keys.just_pressed(KeyCode::KeyB) {
-        events.actions.push(Action::Hud(22));
+        events.actions.push(Action::HudKey(22));
     }
     // UI-GAME-12.1, SET-5: S (and CTRL+SHIFT+S) opens the settings dialog
     // at its last page.
@@ -784,6 +784,15 @@ fn message_icon_clicked(
     (key.1 != game::NO_FIELD).then_some(key.1)
 }
 
+/// A bar button's key as the button's action, and whether it came by key
+/// (CAM-5.3c: a tutorial step never looks at a key).
+pub(crate) fn by_key(action: Action) -> (Action, bool) {
+    match action {
+        Action::HudKey(n) => (Action::Hud(n), true),
+        action => (action, false),
+    }
+}
+
 /// The actions fired this frame, applied.
 #[allow(clippy::too_many_arguments)]
 pub fn apply_actions(
@@ -879,16 +888,35 @@ pub fn apply_actions(
     }
     let actions = std::mem::take(&mut events.actions);
     for action in actions {
+        // A bar button's key does what the button does; CAM-5.3c: no
+        // tutorial step looks at it.
+        let (action, by_key) = by_key(action);
         let opens_dialog = matches!(action, Action::OpenGlobal(_) | Action::Hud(4..=7 | 21 | 22));
         if opens_dialog {
             events.sounds.push("uiDialog0");
         }
         // CAM-5.3: the tutorial step that expects this widget advances;
         // CAM-5.3c: a build menu click by the cell it is in.
-        if let Some(t) = mission.tutorial.as_mut() {
-            match build_menu_cell(&ui, viewer.world.as_ref(), catalog.0.as_ref(), &action) {
-                Some(cell) => t.build_menu_click(&action, cell),
-                None => t.action(&action),
+        // CAM-5.3c (Q-1090): the place-flag menu at step 0x32 carries out
+        // only its Create Flag.
+        if let Some(t) = mission.tutorial.as_mut().filter(|_| !by_key) {
+            let place_flag_menu = matches!(ui.context, Some(Context::DeployFlag(_)))
+                && matches!(
+                    action,
+                    Action::CloseContext
+                        | Action::Command(
+                            s2_sim::Command::PlaceFlag { .. } | s2_sim::Command::CancelRoute { .. }
+                        )
+                );
+            if place_flag_menu {
+                if !t.place_flag_menu_click(&action) {
+                    continue;
+                }
+            } else {
+                match build_menu_cell(&ui, viewer.world.as_ref(), catalog.0.as_ref(), &action) {
+                    Some(cell) => t.build_menu_click(&action, cell),
+                    None => t.action(&action),
+                }
             }
         }
         // UI-MENU-5.3: the click puts the caret by the character it is on;
@@ -1195,14 +1223,10 @@ fn apply(
             }
         }
         Action::AttackPreset(i) => {
-            if let (Some(Context::Attack { target, share, .. }), Some(world)) =
-                (ui.context.as_mut(), viewer.world.as_ref())
-            {
-                let available = world.attack_available(player, *target);
-                let count = world.attack_counts(player, *target)[*i];
-                if available > 0 {
-                    *share = count as f32 / available as f32;
-                }
+            // UI-GAME-5.2, MIL-ATK-1.4: the four count buttons set the
+            // slider's value to 0.25, 0.5, 0.75, 1.
+            if let Some(Context::Attack { share, .. }) = ui.context.as_mut() {
+                *share = game::ATTACK_PRESETS[(*i).min(3)];
             }
         }
         Action::AttackStrong(s) => {
@@ -1276,7 +1300,8 @@ fn apply(
             );
         }
         Action::Menu(m) => crate::menus::menu::apply(m, menu, viewer, ui, mission, exit),
-        Action::None | Action::StatsList(_) => {}
+        // Turned into `Hud` before this (`apply_actions`).
+        Action::None | Action::StatsList(_) | Action::HudKey(_) => {}
     }
 }
 
@@ -1436,6 +1461,7 @@ fn map_press(
         .as_ref()
         .is_some_and(|t| crate::menus::campaign::ship_by_field(t.step));
     // CAM-5.3: in a tutorial only the marked field takes a click.
+    let step_before = mission.tutorial.as_ref().map(|t| t.step);
     if let Some(t) = mission.tutorial.as_mut() {
         if t.field_click(field) == crate::menus::campaign::FieldClick::Refuse {
             return;
@@ -1459,6 +1485,12 @@ fn map_press(
             events.sounds.push("uiClick0");
             submit(viewer, s2_sim::Command::ExtendRoute { player, to: field });
         }
+        return;
+    }
+    // CAM-5.3c (Q-1090): step 0x31's click opens the place-flag menu.
+    if step_before.is_some_and(crate::menus::campaign::opens_place_flag_menu) {
+        ui.context = Some(Context::DeployFlag(field));
+        ui.context_click = Some(end.to_array());
         return;
     }
     ui.context = if by_field {
@@ -1709,6 +1741,48 @@ mod tests {
             Edit::Ignored
         );
         assert_eq!(full.len(), 15);
+    }
+
+    /// UI-MENU T21 (Q-1088 b): `a<b` reads `ab` (the `<` refused, no
+    /// `uiKey0`); `Grüße` and the euro key hold the Windows-1252 bytes
+    /// 47 72 FC DF 65 80; a character the code page lacks is `?`; the
+    /// restricted mode (the save name) compares the bytes, so the euro is
+    /// refused there and ü and ß are not.
+    // spec: UI-MENU-5.3a, UI-MENU-5.3
+    #[test]
+    fn t21_a_typed_key_is_its_code_page_byte_and_lt_is_refused() {
+        let typed = |keys: &str, restricted: bool| {
+            let mut text = String::new();
+            let mut caret = 0;
+            let edits: Vec<Edit> = keys
+                .chars()
+                .map(|c| {
+                    widgets::edit(
+                        &mut text,
+                        &mut caret,
+                        &Key::Character(c.to_string().into()),
+                        None,
+                        restricted,
+                    )
+                })
+                .collect();
+            (text, edits)
+        };
+        let (name, edits) = typed("a<b", true);
+        assert_eq!(name, "ab");
+        assert_eq!(edits[1], Edit::Ignored, "no uiKey0 for <");
+        let (call, _) = typed("a<b", false);
+        assert_eq!(call, "ab", "refused in every input");
+        let (call, _) = typed("Grüße€", false);
+        let bytes: Vec<u8> = call
+            .chars()
+            .map(|c| s2_assets::lang::cp1252_byte(c).expect("a code page byte"))
+            .collect();
+        assert_eq!(bytes, [0x47, 0x72, 0xFC, 0xDF, 0x65, 0x80]);
+        let (save, _) = typed("Grüße€", true);
+        assert_eq!(save, "Grüße", "the euro is not in the restricted set");
+        assert_eq!(typed("a\u{3a9}", false).0, "a?", "Windows' replacement");
+        assert_eq!(typed("\u{93}x\u{201c}", false).0, "x\u{201c}");
     }
 
     /// UI-MENU-5.3: a click puts the caret before the character that ends

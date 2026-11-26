@@ -1597,6 +1597,71 @@ fn t47b_a_walk_home_cut_chooses_again_in_its_arrival_tick() {
     assert_eq!(walker(&world).destination(), HQ);
 }
 
+// TRN-FREE T54 (TRN-FREE-6.4b, the road removed under the last step onto a
+// flag that stays; E-trn-046): a settler on the road walk home his own home
+// search chose, mid-step on that road's last step onto its end flag, has
+// nothing cut when the road is removed: he reaches the flag as on any road
+// walk and, in that tick, is already in the next road's first step with the
+// excess carried; no new home search, no progress 0 (R6: player 2's builder
+// 20421 on (43, 13) -> (43, 14), the road removed after counter 20015; at
+// 20022 in the step (43, 14) -> (43, 15) at progress 0.007).
+// spec: TRN-FREE-6.4b (TRN-FREE T54), TRN-MOVE-2.3
+#[test]
+fn t54_a_road_removed_under_the_last_step_cuts_nothing() {
+    let mut world = game(&full_stock());
+    let (x, y) = ((14, 9), (16, 11));
+    apply_all(&mut world, vec![flag_cmd(x), flag_cmd(y)]);
+    apply_all(&mut world, vec![road_cmd(HQ_FLAG, x), road_cmd(x, y)]);
+    let hq = world.target_of(HQ).unwrap();
+    let id = world.add_settler(Settler {
+        number: 77_777,
+        player: P0,
+        profession: HELPER,
+        list: crate::SettlerList::Carriers,
+        walker: crate::movement::Walker::new(y),
+        job: SettlerJob::Home { target: hq },
+        timer: 0,
+        carrying: None,
+    });
+    let mut settler = world.settlers[id].take().unwrap();
+    world.plan_home_excluding(&mut settler, None);
+    world.settlers[id] = Some(settler);
+    let walker = |w: &World| w.settlers[id].as_ref().unwrap().walker.clone();
+    let job = |w: &World| w.settlers[id].as_ref().unwrap().job.clone();
+    // Mid-step on the road y - x's last step, onto the flag x.
+    run_until(&mut world, 200, |w| {
+        let k = walker(w);
+        k.next == Some(x) && k.progress() > 0.0
+    });
+    let inner = world.road_at(walker(&world).at).expect("on the road").path[1];
+    apply_all(
+        &mut world,
+        vec![Command::RemoveRoad {
+            player: P0,
+            at: inner,
+        }],
+    );
+    assert!(world.flag_at(x).is_some(), "the end flag stays");
+    assert_eq!(walker(&world).next, Some(x), "the step is not cut");
+    assert_eq!(walker(&world).destination(), HQ, "nor the walk");
+    let mut arrived = false;
+    for _ in 0..40 {
+        world.step();
+        if walker(&world).at == x {
+            arrived = true;
+            break;
+        }
+    }
+    assert!(arrived, "on the end flag");
+    // In the arrival tick: already in the next road's first step, the
+    // excess carried, still on the walk home.
+    let k = walker(&world);
+    assert!(k.next.is_some_and(|n| n != y), "{k:?}");
+    assert!(k.progress() > 0.0, "the excess carried");
+    assert!(matches!(job(&world), SettlerJob::Home { .. }));
+    assert_eq!(k.destination(), HQ);
+}
+
 // ECO-REQ T36 (ECO-REQ-2.5): the skip after a failed try is keyed by the
 // profession and the land road network of the requester's flag, not by the
 // requester: another road of the same network is skipped, a road whose

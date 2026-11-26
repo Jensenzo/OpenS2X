@@ -25,7 +25,13 @@ health point off the other.
   1. B is a military building (territory range > 0) and **not** a warehouse-type
      building (so never the headquarters, MIL-SOL-6.4);
   2. B is finished;
-  3. no interceptors are currently out on B's behalf (MIL-ATK-3);
+  3. B is **not itself the target of an attack**: no soldier currently has B as his attack target
+     (corrected 2026-11-23 b, Q-1083, E-mil-040: code reading and an experiment build; high). A
+     soldier has B as his target from the moment he is sent against B (MIL-ATK-2) until he falls,
+     he takes B (and then the new building on B's place, MIL-CON), or B is gone. Interceptors play
+     no part here: a building whose own soldiers are out intercepting, or which other buildings'
+     interceptors defend, can still send attackers (T45). (The earlier wording, "no interceptors
+     currently out on B's behalf", was wrong);
   4. B and the target stand on the same land region (the region number used by
      path finding, so not across water);
   5. `d = dist(B, target) < 24` (MAP-GRID-2.1);
@@ -138,6 +144,16 @@ health point off the other.
   of D chosen as in MIL-ATK-5.2 among soldiers that are idle (in the building
   or waiting outside as defender) and not already intercepting. Confidence:
   high.
+  **The pairing gives no hold (2026-11-23 b, E-mil-042: the war recording with the code reading of
+  E-mil-034 and E-mil-037, and an experiment build; high for the measured cases):** what 3.2 makes is
+  the **meeting field** both walk to, not a pair of opponents. Neither holds the other: when the
+  attacker arrives on his meeting field, his waiting check (4.4) looks for his opponent by 5.1 like
+  every other attacker: the **first interceptor in the order they were sent** that defends the
+  target and that no attacker holds, **whatever that interceptor is doing** (one still walking out
+  to his own meeting field counts). That may be his own interception partner (then nothing
+  changes for either) or another one; his partner is then free for the next attacker, and the
+  partner's meeting field, which his record keeps, counts as taken in the new pair's waiting-field
+  search (4.3). Test T47.
 - **MIL-ATK-3.3 Meeting field.** From D's field, a breadth-first search over
   walkable fields, limited to fields closer than 20 to D, finds the field
   with the smallest nonzero distance to the target (first found on ties).
@@ -150,6 +166,15 @@ health point off the other.
   **directions 5, 0, 1, 2, 3, 4** (one step in direction 4, then around), not 0 to 5. "First found on
   ties" is in that order. So when D is the target itself, the meeting field is the target's
   direction-5 neighbour if that is free (T25). The free-field search of 4.3 visits in the same order.
+  **Where the first search stops (corrected 2026-11-23 b, E-mil-041: code reading, the war recording
+  and an experiment build; high):** a field is judged **when the search reaches it** (the start field
+  first, then each newly reached walkable neighbour in the order above): if its distance to the
+  target is not 0 and smaller than the best so far, it becomes the best. Then, if its distance to D
+  is **20 or more**, the **whole search ends at once** (this field has already been judged). Fields
+  under 20 from D are put in the queue. So the search does not cover every field closer than 20 to
+  D: it ends the first time it touches the distance-20 ring, and for a D about 20 from the target
+  the best field may be 2 or more from the target (T46). For a D near the target the target's
+  neighbours are reached long before the ring, and nothing changes.
 - **MIL-ATK-3.4** An interceptor that reaches its meeting field, or whose
   duel has ended, waits there ("defense wait"). In each of its updates: if it
   is paired with an attacker (again), it walks to that attacker's waiting
@@ -162,6 +187,17 @@ health point off the other.
   waiting check) only links the two; the interceptor's walk starts in the interceptor's own update,
   so in the next tick when his update comes before the attacker's in the tick (the settlers' update
   order), never inside the attacker's update. Test T30.
+  **The arrival update (2026-11-23 b, E-mil-042: the war recording and an experiment build; high
+  for the measured case):** an interceptor reaching his meeting field while the attacker he is paired
+  with waits on another field does not walk on in the update his walk ends: he stands there that
+  update (defense wait) and starts the walk to the attacker's waiting field, at progress 0, in his
+  next update. Test T48.
+  **The turn into defense wait (2026-11-23 b, E-mil-044: the war recording and an experiment build;
+  high for the measured case):** likewise, in the update in which an interceptor whose duel has
+  ended turns to defense wait (T32 (b): two updates after his opponent's death when he is updated
+  first) he only stands; the checks above (paired again, the defended building still attacked,
+  else home) are made from his next update. So with no attacker left he starts home one update
+  after he turned to defense wait (T49).
 
 ### MIL-ATK-4 Walking out and lining up
 
@@ -295,6 +331,13 @@ health point off the other.
   very update his fight job notices the pair gone (6.6), before he is back in defense wait, and
   an attacker who starts waiting or checks again in that tick or later takes him. How he moves on
   when paired then: 6.6. Test T43.
+  **One search everywhere (2026-11-24 a, E-mil-045: code reading; high).** The arrival on the
+  meeting field (3.2, T47), the waiting check (4.4), the pairing that follows it, and the take-over
+  test (`MIL-conquest.md` MIL-CON-1.1 condition 2, at the door and while waiting) all run this one
+  search. So everywhere the interceptors are taken in the order they were sent, and one still walking
+  counts as long as no attacker holds him. A build that keeps "waiting interceptors only, in settler
+  order" at the door or in the waiting check differs from the original. That difference has not
+  shown in any measured game yet (the war measures the same with and without it through T49).
 - **MIL-ATK-5.2 Which defender.** With defense type 1 ("prefer strong") the
   candidate with the **highest rank**, on equal rank the higher health, on
   equal both the first in the soldier list; with the other setting the
@@ -593,7 +636,12 @@ health point off the other.
 | T41 | 4.3, 4.4 (the search at the wait's start): E-trace-019 (R6, the war), player 3's attack on player 2's (31, 21) of T39/T40: 19481 walks to the meeting field (33, 22) that the interceptor 18285 gave him; 18285 has been paired with 18814 since trace tick 17 060 and his record keeps (33, 22); 19481 arrives in trace tick 17 081 and is paired in 17 082 with the target's own soldier 17868 | 19481's next walk and the game draws | in 17 082 his wait job's search from (33, 22) finds (33, 22) taken (18285's meeting field) and chooses (33, 23); his walk there starts at progress 0 in 17 082 (recorded: progress 8 in 17 090 at (132 576, 89 152)); he is on (33, 23)'s point at about 17 110 and makes his offset step and its draw then; no draw for him in 17 083. Staying on (33, 22) and stepping off it (the draw in 17 083) puts the war's generator apart from 17 083 and its settlers from 17 090; with the rule (experiment build) generator 17 092, settlers 17 120 |
 | T42 | 5.3 (an interceptor's first walk): E-trace-019 (R6), interceptor 16608 of (47, 19), paired at the interception with 19304 (T39); his meeting field (32, 21) is 19304's waiting field, where 19304 already stands off its point | the duel's first round | 16608's walk ends on the point of (32, 21) in trace tick 17 091; defense wait then, his Defend job in 17 092, its walk's end seen in 17 093, his arrival and the first round's two draws in 17 094 (recorded: fight animations at progress 6 in 17 100). Counting his arrival as a defender's (T28) fights in 17 092: generator apart from 17 092; with the rule from 17 454 (settlers 17 460) |
 | T43 | 5.1, 6.6 (an interceptor whose duel has just ended): E-trace-019 (R6), 16608 fighting 19304 on (32, 21); 19304 falls (his last round in trace tick 17 451); 16608 is updated before him; 18814, waiting unpaired on (33, 20) for the same target, is updated after 16608 | the pairing and 16608's walk | 16608's fight job ends in 17 453 and 18814 takes him in that update (18814's offset step and its draw in 17 454; recorded: 18814 at progress 6 of his step in 17 460); 16608 turns to defense wait in 17 454 and walks to (33, 20) from progress 0 in 17 455 (recorded (130 450, 83 099) in 17 460). Taking only interceptors back in defense wait pairs them in 17 454 (generator apart from 17 454); walking in 17 454 puts the settlers apart from 17 460; with both rules generator 17 611, settlers 17 550 |
-| T44 | 3.1 "already out": E-trace-019 (R6, the war), player 2's attack order of counter 17937 on player 1's guard house (58, 45) (3 soldiers present, setting 0.5), 8 attackers from (58, 36); player 1's buildings in list order: (56, 50) j 4, (47, 62) j 1, (56, 57) j 2, (58, 64) j 0, then the target (58, 45) j 1 | interceptors per building | (56, 50) 4, (47, 62) 1, (56, 57) 2, the target **none** (7 already defend it); the target's three soldiers stay inside (recorded: still in at 17970). Counting the interceptors sent from the target instead, it sends one (19818) and pairs him with the eighth attacker. Experiment build (with AI-MIL-5.4's want of T34 already in): the war's settlers first differ at the same tick, but the generator earlier (18003 -> 17943), because the computer player 1 then answers at 17942 against (58, 36) with def counted as the soldiers present (1), where the original counts the soldier list (9, `AI-military.md` AI-MIL-5.4, Q-1076) and does not attack; see Q-1082 |
+| T44 | 3.1 "already out": E-trace-019 (R6, the war), player 2's attack order of counter 17937 on player 1's guard house (58, 45) (3 soldiers present, setting 0.5), 8 attackers from (58, 36); player 1's buildings in list order: (56, 50) j 4, (47, 62) j 1, (56, 57) j 2, (58, 64) j 0, then the target (58, 45) j 1 | interceptors per building | (56, 50) 4, (47, 62) 1, (56, 57) 2, the target **none** (7 already defend it); the target's three soldiers stay inside (recorded: still in at 17970). Counting the interceptors sent from the target instead, it sends one (19818) and pairs him with the eighth attacker. Experiment build (with AI-MIL-5.4's want of T34 already in): the war's settlers first differ at the same tick, but the generator earlier (18003 -> 17943), because the computer player 1 then answers at 17942 against (58, 36) with def counted as the soldiers present (1), where the original counts the soldier list (9, `AI-military.md` AI-MIL-5.4, Q-1076) and does not attack; see Q-1082 (answered: build 3.1 together with AI-MIL-5.4's def as the list, T35, and 1.1 item 3, T45) |
+| T45 | 1.1 item 3 (E-mil-040): E-trace-019 (R6, the war), player 1's buildings at counter 17942, after player 2's attack of 17937 on player 1's guard house (58, 45) (8 attackers on their way) and the interception (T44): (56, 50) has 4 of its soldiers out intercepting, (56, 57) 2, both defending (58, 45); the computer player 1 considers an attack on player 2's (58, 36) | what (56, 50), (56, 57) and (58, 45) may send | (56, 50) 3 and (56, 57) 1 (their own interceptors out do not stop them: nobody attacks them); (58, 45) **0** (it is the target of the 8 attackers). Avail 4; player 1 then does not attack, because def of (58, 36) is 9 (`AI-military.md` AI-MIL-5.4 T35). Experiment build: with item 3 read as "interceptors sent from B" (56, 50) and (56, 57) send nothing (avail 0) and the result is the same here, but the rule decides when a building under attack would otherwise send |
+| T46 | 3.3 where the search stops (E-mil-041): E-trace-019 (R6, the war), player 2's attack of counter 17937 on player 1's guard house (58, 45), 8 attackers from (58, 36); interceptors in list order: (56, 50) four, (47, 62) one (distance 20 from the target), (56, 57) two | the meeting fields | (56, 50): (58, 47), (59, 46), (57, 47), (58, 48); (47, 62): the search from (47, 62) stops at its first field 20 away, the best then (57, 47) at 2 from the target, the free field from it **(56, 45)**; (56, 57): (60, 46) and (59, 45). Recorded: the interceptor of (47, 62) walks to (56, 45), its attacker waits there; (56, 57)'s two wait on (60, 46) and (59, 45). Searching every field under 20 instead gives (47, 62) the best (58, 46) and the field (60, 46), (56, 57) then (59, 45) and (60, 48): the war's generator first differs at trace tick 17963, settlers 17970; with the rule generator 18348, settlers 18100, buildings 18240 -> 18930 (experiment build on top of the forty-four rules and rule 45's package; every Storm Coast pair unchanged) |
+| T47 | 3.2, 5.1 the pairing gives no hold (E-mil-042): E-trace-019 (R6, the war), player 2's attack of counter 17937 on (58, 45) with the interceptions of T46 (sent in the order 16724, 16729, 16741, 16750 of (56, 50), 16558 of (47, 62), 17280, 18277 of (56, 57); interception partners 18056, 18123, 18136, 18147, 18156, 18186, 18202). 18056, 18123 and 18136 reach their meeting fields first (from about counter 18230), then 18156 (counter 18345) and 18147 (counter 18371) | the opponent each takes | 18056, 18123, 18136: their own partners (the first free ones in send order). 18156 on (56, 45) at 18345: **16750** (sent 4th; its partner 18147 still walking), not 16558 (sent 5th, still walking); (56, 45) is then taken by 16558's meeting field and 18156 waits on (57, 44), stepping off to the recorded (227 000, 176 000). 18147 on (58, 48) at 18371: **16558** (sent 5th, held by nobody, still walking to (56, 45)), not 17280 (sent 6th, waiting). The attack of T39 on (31, 21): 19304 on (32, 21) at about 16958 keeps 16608 (sent before 18285, still walking), and 18285 waits for 19481 until 18814 takes him (T40). All recorded. Keeping the interception partner as opponent: the war's settlers first differ at trace tick 18350, generator 18348; with the rule (experiment build on top of the forty-four rules and rules 45 .. 47) settlers 18430, generator 18424, buildings 18930 -> 19160; every Storm Coast pair unchanged |
+| T48 | 3.4 the arrival update (E-mil-042): E-trace-019 (R6, the war): interceptor 16558, paired since counter 18371 with 18147 (waiting on (58, 48)), reaches his own meeting field (56, 45) at counter 18423 | his states from 18423 | 18423: standing on (56, 45) (defense wait, recorded state 39); 18424: the walk towards (57, 46) at progress 0; 18425: progress 0.045 (recorded). Walking on in the arrival update puts him one tick ahead: the war's settlers first differ at trace tick 18430, generator 18424; with the rule (on top of T47's, the door's waiting-field search counting interceptors' meeting fields as 4.3 says) settlers 19230, generator 19225, buildings 19160 -> 20450; every Storm Coast pair unchanged |
+| T49 | 3.4 the turn into defense wait (E-mil-044): E-trace-019 (R6, the war): attacker 18186 dies in counter 19497 in his duel with interceptor 16750 (the lower number, updated first) on (61, 46); no attacker is left for the guard house (58, 45) that 16750 defends | 16750's states from 19497 | fighting in 19497 and 19498, defense wait in 19499 (only standing), the walk home towards (60, 46) at progress 0 in 19500 (recorded: states 17, 17, 39, 16). Walking home in the update he turns to defense wait (19499) puts the war's settlers apart from trace tick 19510, generator 19500; with the rule settlers 20030, generator 20483 (experiment build on top of the forty-four rules and rules 45 .. 50; every Storm Coast pair unchanged) |
 
 ## Evidence
 
@@ -635,6 +683,10 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-036, E-trace-019 | code reading, recording, experiment build | (session 2026-11-22 pm): an interceptor's states from his walk to the meeting field to his Defend job's arrival; R6's 16608 on (32, 21), trace ticks 17 080 .. 17 110 | 5.3 an interceptor's first walk (T42) |
 | E-mil-037, E-trace-019 | code reading, recording, experiment build | (session 2026-11-22 pm): the opponent search's interceptor records against the soldier's state; a fight job's end, defense wait and the Defend job's start; R6's 16608 and 18814, trace ticks 17 440 .. 17 480 | 5.1 read from the records, 6.6 (T43) |
 | E-mil-039, E-trace-019 | code reading, recording, experiment build | (session 2026-11-23): the interception loop of the attack order, the defender record's building, R6's soldiers at counters 17930 .. 17970 | 3.1 "already out" (T44) |
+| E-mil-040, E-trace-019 | code reading, experiment build | (session 2026-11-23 b): the list the sending test reads and who fills it; R6 at counter 17942 | 1.1 item 3 (T45) |
+| E-mil-041, E-trace-019 | code reading, recording, experiment build | (session 2026-11-23 b): the meeting search's per-field test and its stop; R6's interceptors and attackers at counters 17937 .. 18430 | 3.3 where the search stops (T46) |
+| E-mil-042, E-trace-019 | recording, code reading (E-mil-034, E-mil-037), experiment build | (session 2026-11-23 b): R6's attackers and interceptors at counters 18229 .. 18450 and 16958 .. 17100 | 3.2 no hold, 5.1 on arrival (T47); 3.4 the arrival update (T48) |
+| E-mil-044, E-trace-019 | recording, experiment build | (session 2026-11-23 b): R6's interceptor 16750 at counters 19497 .. 19500 | 3.4 the turn into defense wait (T49) |
 | data | script | `military.lua`, `ai.lua` | fighting time, AI profile values |
 
 ## Open questions

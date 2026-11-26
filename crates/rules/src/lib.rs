@@ -879,6 +879,8 @@ pub fn game_setup(map: &Map, rules: &RuleSet, start_resources: u8) -> GameSetup 
                     state: a.counters[0],
                     counter: a.counters[1],
                     walk,
+                    // ECO-FOOD-5.14a: the walk's start clock.
+                    walk_start: a.walk_start.to_bits(),
                 }
             })
             .collect(),

@@ -493,8 +493,24 @@ fn study_pixel(p: vec2<f32>, world_position: vec3<f32>, smooth_normal: vec3<f32>
     }
     let shadow = shadow_at(world_position, n, frag);
     let occlusion = ambient_occlusion(frag);
-    let d = params.light_color.rgb * saturate(dot(n, -params.light_dir.xyz)) * shadow
+    var d = params.light_color.rgb * saturate(dot(n, -params.light_dir.xyz)) * shadow
         + params.ambient.rgb * occlusion;
+    // A development switch: the look study's looks of the materials
+    // (`look_materials.rs`), the ground lit as the models are.
+    let ndl = dot(n, -params.light_dir.xyz);
+    let lit = saturate((shadow - params.light_dir.w) / max(1.0 - params.light_dir.w, 1e-3));
+    @if(LOOK_TOY) {
+        let wrap = saturate((ndl + 0.45) / 1.45);
+        let sun = params.light_color.rgb * vec3<f32>(1.0, 0.95, 0.86) * wrap * mix(0.4, 1.0, lit);
+        let sky = mix(params.ambient.rgb, vec3<f32>(params.ambient.w) * vec3<f32>(0.86, 0.92, 1.04),
+            0.75) * occlusion;
+        d = sun + sky;
+    }
+    @if(LOOK_CEL) {
+        let step = select(vec3<f32>(0.663, 0.706, 0.878), vec3<f32>(1.06, 1.04, 1.0),
+            saturate(ndl) * lit > 0.3);
+        d = step * (params.light_color.rgb + params.ambient.rgb) / vec3<f32>(1.54, 1.40, 1.38);
+    }
     return d * colour;
 }
 

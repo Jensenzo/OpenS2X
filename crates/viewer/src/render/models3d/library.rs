@@ -440,19 +440,36 @@ impl ModelLibrary {
                     Vec::new(),
                 ),
             };
+            let mut v = crate::render::look_materials::Vertices {
+                positions: part.positions,
+                normals: part.normals,
+                uvs: part.uvs,
+                uvs1: part.uvs1,
+                uvs2: part.uvs2,
+                colors: part.colors,
+                bone_indices: indices,
+                bone_weights: weights,
+                indices: part.indices,
+            };
+            // A development switch (the look study's looks of the
+            // materials, none by default): the part's faces recoloured.
+            if let Some(m) = crate::render::look_materials::active().filter(|_| !ground) {
+                let name = part.textures.iter().find(|n| !is_light(n)).cloned();
+                v = self.look_reshape(file, name.as_deref(), v, m);
+            }
             let mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
                 RenderAssetUsages::RENDER_WORLD,
             )
-            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, part.positions)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, part.normals)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, part.uvs)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, part.uvs1)
-            .with_inserted_attribute(ATTRIBUTE_UV_2, part.uvs2)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, part.colors)
-            .with_inserted_attribute(ATTRIBUTE_BONE_INDEX, indices)
-            .with_inserted_attribute(ATTRIBUTE_BONE_WEIGHT, weights)
-            .with_inserted_indices(Indices::U32(part.indices));
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, v.positions)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, v.normals)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, v.uvs)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_1, v.uvs1)
+            .with_inserted_attribute(ATTRIBUTE_UV_2, v.uvs2)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, v.colors)
+            .with_inserted_attribute(ATTRIBUTE_BONE_INDEX, v.bone_indices)
+            .with_inserted_attribute(ATTRIBUTE_BONE_WEIGHT, v.bone_weights)
+            .with_inserted_indices(Indices::U32(v.indices));
             out.push(LoadedPart {
                 mesh: meshes.add(mesh),
                 texture,
@@ -476,6 +493,49 @@ impl ModelLibrary {
             bounds,
             house,
         })
+    }
+
+    /// The look study's looks of the materials (a development switch):
+    /// one part's faces recoloured from its texture (`look_materials`).
+    fn look_reshape(
+        &self,
+        file: &str,
+        texture: Option<&str>,
+        v: crate::render::look_materials::Vertices,
+        m: crate::render::look_study::Materials,
+    ) -> crate::render::look_materials::Vertices {
+        use crate::render::look_materials as lm;
+        let kind = lm::Kind::of_file(file);
+        let pixels = texture.and_then(|name| {
+            let path = self.texture_path(name)?.clone();
+            lm::cached(&folder_key(&path), || {
+                let data = crate::files::read(&path).ok()?;
+                let t = s2_assets::dds::load(&path.to_string_lossy(), &data).ok()?;
+                Some(lm::Pixels::new(t.width, t.height, t.rgba))
+            })
+        });
+        // A house is drawn times its colour map (GFX-OBJ-2.1, 2.2): the
+        // palette is made of the colours at column 0.
+        let mut tint = [1.0f32; 3];
+        let uv2 = v.uvs2.first().copied().unwrap_or([0.0; 2]);
+        if kind == lm::Kind::Building && uv2 != [0.0, 0.0] {
+            let map_file = self
+                .tables
+                .color_map
+                .clone()
+                .unwrap_or_else(|| "data/buildings/colors.tga".into());
+            let map = lm::cached(&format!("colour-map:{}", file_key(&map_file)), || {
+                let t = self.read_tga(&map_file)?;
+                Some(lm::Pixels::new(t.width, t.height, t.rgba))
+            });
+            if let Some(map) = map {
+                let x = ((uv2[0].rem_euclid(1.0)) * map.width as f32) as u32 % map.width;
+                let y = ((uv2[1].rem_euclid(1.0)) * map.height as f32) as u32 % map.height;
+                let i = ((y * map.width + x) * 4) as usize;
+                tint = [0, 1, 2].map(|k| f32::from(map.rgba[i + k]) / 255.0);
+            }
+        }
+        lm::reshape(v, pixels.as_deref(), tint, kind, m)
     }
 
     /// GFX-GR2-5.1: the file of a texture name: the model file's own folder

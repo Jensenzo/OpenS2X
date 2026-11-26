@@ -299,34 +299,13 @@ impl World {
         self.present_ranks(at).len()
     }
 
-    /// AI-MIL-5.4 (T33, E-ai-077; Q-1076, E-ai-078): the soldiers on the
-    /// building's list as the original keeps it, wherever they are: inside,
-    /// out attacking or defending, and one sent to it from his step in from
-    /// its flag on (the original lists him from his arrival on the flag;
-    /// ours lists him from the request, so one still walking there is left
-    /// out). The computer player's def.
+    /// AI-MIL-5.4 "def as built, restated" (T35, T36; Q-1082, E-ai-086):
+    /// the building's whole soldier list, wherever they are: inside, out
+    /// attacking or defending, and those still walking to it from a
+    /// warehouse (listed from the moment they are sent). The computer
+    /// player's def.
     pub fn listed_soldiers(&self, at: Point) -> usize {
-        let Some(m) = self.military.get(&at) else {
-            return 0;
-        };
-        let flag = self.terrain.neighbour(at, 1);
-        m.soldiers
-            .iter()
-            .filter(|&&id| {
-                let Some(s) = self.settlers.get(id).and_then(|s| s.as_ref()) else {
-                    return false;
-                };
-                match s.job {
-                    SettlerJob::Garrison { .. }
-                    | SettlerJob::Attack { .. }
-                    | SettlerJob::Defend { .. } => true,
-                    SettlerJob::ToMilitary { .. } => {
-                        Some(s.walker.at) == flag && s.walker.next == Some(at)
-                    }
-                    _ => false,
-                }
-            })
-            .count()
+        self.military.get(&at).map_or(0, |m| m.soldiers.len())
     }
 
     /// (settler id, rank) of the present soldiers of `at`, in list order.

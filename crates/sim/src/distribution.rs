@@ -244,33 +244,43 @@ impl World {
     /// ECO-DIST-1.7 (ticks with `t mod 7 = 0`): every warehouse with flag
     /// records sends at most one unit of a good marked "out".
     pub(crate) fn take_out(&mut self) {
-        for p in 0..PLAYERS {
-            let player = PlayerId(p);
-            for at in self.warehouses_of(player) {
-                // ECO-DIST-1.7c a: a warehouse whose door a settler leaving
-                // blocks (its 30 ticks, ECO-REQ-3.7) is skipped, no draw.
-                if self.warehouses[&at].cooldown > 0 {
+        // ECO-DIST-1.7e (T25): one list of every player's warehouses
+        // together, in the order they were made (object number), not
+        // player by player.
+        let mut list: Vec<(u32, PlayerId, Point)> = (0..PLAYERS)
+            .flat_map(|p| {
+                let player = PlayerId(p);
+                self.warehouses_of(player)
+                    .into_iter()
+                    .map(move |at| (player, at))
+            })
+            .filter_map(|(player, at)| Some((self.building_at(at)?.serial, player, at)))
+            .collect();
+        list.sort_unstable();
+        for (_, player, at) in list {
+            // ECO-DIST-1.7c a: a warehouse whose door a settler leaving
+            // blocks (its 30 ticks, ECO-REQ-3.7) is skipped, no draw.
+            if self.warehouses[&at].cooldown > 0 {
+                continue;
+            }
+            let records: Vec<(i32, GoodFlags)> = self.warehouses[&at]
+                .flags
+                .iter()
+                .map(|(&g, &f)| (g, f))
+                .collect();
+            if records.is_empty() {
+                continue;
+            }
+            let mut r = (u64::from(self.rng.draw()) % records.len() as u64) as i64;
+            for (key, flags) in records {
+                if !flags.out {
                     continue;
                 }
-                let records: Vec<(i32, GoodFlags)> = self.warehouses[&at]
-                    .flags
-                    .iter()
-                    .map(|(&g, &f)| (g, f))
-                    .collect();
-                if records.is_empty() {
-                    continue;
-                }
-                let mut r = (u64::from(self.rng.draw()) % records.len() as u64) as i64;
-                for (key, flags) in records {
-                    if !flags.out {
-                        continue;
-                    }
-                    r -= 1;
-                    let good = key as u32;
-                    if self.warehouses[&at].count(good) > 0 && r < 1 {
-                        self.send_out(player, at, good);
-                        break;
-                    }
+                r -= 1;
+                let good = key as u32;
+                if self.warehouses[&at].count(good) > 0 && r < 1 {
+                    self.send_out(player, at, good);
+                    break;
                 }
             }
         }
@@ -453,27 +463,29 @@ impl World {
             .iter()
             .map(|e| keys.contains(&Some(e.key)))
             .collect();
-        for e in entries.iter_mut() {
-            e.accumulator = (e.accumulator() + e.weight()).to_bits();
-        }
-        let mut best: Option<usize> = None;
-        for (i, e) in entries.iter().enumerate() {
-            if present[i] && best.is_none_or(|b| e.accumulator() > entries[b].accumulator()) {
-                best = Some(i);
+        // ECO-DIST-2.3a (T26): with no entry present the pick is tried
+        // again, once per entry of the table in all; each try adds every
+        // weight and zeroes the first entry, and finds no order.
+        let mut picked = None;
+        for _ in 0..entries.len().max(1) {
+            for e in entries.iter_mut() {
+                e.accumulator = (e.accumulator() + e.weight()).to_bits();
             }
-        }
-        let picked = match best {
-            Some(b) => {
-                entries[b].accumulator = 0f32.to_bits();
-                Some(entries[b].key)
-            }
-            None => {
-                if let Some(first) = entries.first_mut() {
-                    first.accumulator = 0f32.to_bits();
+            let mut best: Option<usize> = None;
+            for (i, e) in entries.iter().enumerate() {
+                if present[i] && best.is_none_or(|b| e.accumulator() > entries[b].accumulator()) {
+                    best = Some(i);
                 }
-                None
             }
-        };
+            if let Some(b) = best {
+                entries[b].accumulator = 0f32.to_bits();
+                picked = Some(entries[b].key);
+                break;
+            }
+            if let Some(first) = entries.first_mut() {
+                first.accumulator = 0f32.to_bits();
+            }
+        }
         self.tables.insert(player, tables);
         let key = picked?;
         // The order that has waited longest; ties go to the first filed.

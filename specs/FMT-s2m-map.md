@@ -295,7 +295,9 @@ order (row by row, `x` fastest).
   position's six neighbours on the height lattice), `f32` size (1.0 = fully grown in all maps), `i32` 0, `i32` -1.
 - **FMT-S2M-5.3** `u32` count, then that many animal records.
 - **FMT-S2M-5.4** Animal record: `u32` animal type id (`an_create`), then object
-  `Resources Animal`: marker, object id, `f32` (0.0), field cursor **home**
+  `Resources Animal`: marker, object id, `f32` **walk start clock** (the clock value when its
+  current or last walk started, `ECO-food-mining.md` ECO-FOOD-5.14a; 0.0 in every shipped map),
+  field cursor **home**
   (the field the animal was placed on; it roams around it and can be more than
   9 fields away), then nested movement state:
   - marker `Navy Movement`, marker `Resources Path`, object `Movement Path Base`

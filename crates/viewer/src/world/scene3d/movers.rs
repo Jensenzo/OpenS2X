@@ -173,6 +173,26 @@ pub fn fine_point(world: &World, frame: &Frame, fine: &FineStep) -> ([f32; 3], O
     (at, fine.facing.map(crate::render::world3d::heading))
 }
 
+/// ECO-HQ-4.6b, TRN-MOVE-2.5: a builder on his walk on the height lattice:
+/// where the step under way between two neighbouring samples puts him (on
+/// the drawn ground), the way it heads and whether he moves (a walk of no
+/// step stands).
+pub fn builder_point(
+    world: &World,
+    frame: &Frame,
+    fine: &FineStep,
+) -> ([f32; 3], Option<f32>, bool) {
+    let (at, _) = fine_point(world, frame, fine);
+    let xz = |s: Point| frame.sample_xz(i64::from(s.0), i64::from(s.1));
+    match fine.step.next {
+        Some(to) if to != fine.step.at => {
+            let (a, b) = (xz(fine.step.at), xz(to));
+            (at, Some((b[0] - a[0]).atan2(b[1] - a[1])), true)
+        }
+        _ => (at, None, false),
+    }
+}
+
 /// GFX-ANIM-4.2: turn `current` toward `target` by at most `step` radians,
 /// the shorter way round; the result is wrapped to -pi .. pi.
 pub fn ease_heading(current: f32, target: f32, step: f32) -> f32 {
@@ -278,10 +298,9 @@ pub struct SeenPoint {
 
 /// GFX-VIEW-5.4: the settlers with a seen mark, at the positions
 /// [`movers`] draws them: settlers outside a building, road carriers not on
-/// a donkey, builders on their fine walk, levellers on the neighbour they
-/// level. A leveller walks while the logic's walk runs, though the view
-/// draws him standing (a stand-in there). Needs no models, so a tool can
-/// keep the marks while it plays a game ahead (5.4 g).
+/// a donkey, builders on their fine walk, levellers on their walk between
+/// the site's fields (ECO-HQ-4.3a). Needs no models, so a tool can keep the
+/// marks while it plays a game ahead (5.4 g).
 pub fn seen_points(world: &World, frame: &Frame) -> Vec<SeenPoint> {
     let mut out = Vec::new();
     for view in world.settler_views() {
@@ -329,31 +348,23 @@ pub fn seen_points(world: &World, frame: &Frame) -> Vec<SeenPoint> {
             }
             SettlerRef::Builder(at) => {
                 let Some(fine) = &view.fine else { continue };
-                let xz = |s: Point| frame.sample_xz(i64::from(s.0), i64::from(s.1));
-                let (p, walks) = match fine.step.next {
-                    Some(to) => {
-                        let (a, b) = (xz(fine.step.at), xz(to));
-                        let f = fine.step.fraction();
-                        let p = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-                        (p, a != b)
-                    }
-                    None => (xz(fine.step.at), false),
-                };
+                let (at_point, _, walks) = builder_point(world, frame, fine);
                 SeenPoint {
                     id: MoverId::Builder(at),
                     key: key(MoverId::Builder(at)),
-                    at: [p[0], ground_height(world.terrain(), p[0], p[1]), p[1]],
+                    at: at_point,
                     field: s2_sim::grid::sample_field_truncating(fine.step.at),
                     walks,
                     shown: true,
                 }
             }
             SettlerRef::Leveller(at) => {
-                let [x, z] = frame.field_xz(view.walk.at.0, view.walk.at.1);
+                // ECO-HQ-4.3a, GFX-VIEW-4.2: where his walk is.
+                let (point, _) = walker_point(world, frame, &view.walk, None);
                 SeenPoint {
                     id: MoverId::Leveller(at),
                     key: key(MoverId::Leveller(at)),
-                    at: [x, ground_height(world.terrain(), x, z), z],
+                    at: point,
                     field: view.walk.at,
                     walks: view.has_walk,
                     shown: true,
@@ -607,10 +618,11 @@ pub fn movers(
             }
         }
     }
-    // The builder and the leveller of each site: the builder on the height
-    // sample of his last walk (the site before the first), hammering while
-    // a work unit runs; the leveller on the neighbour he levels, shovelling
-    // while his action runs. Their walks are not drawn (a stand-in).
+    // The builder and the leveller of each site: the builder on his walk on
+    // the height lattice (ECO-HQ-4.6b, TRN-MOVE-2.5: the step under way
+    // between two neighbouring samples), hammering while a work unit runs;
+    // the leveller on his walk between the site's fields (ECO-HQ-4.3a),
+    // shovelling on the field he walked to while his action runs.
     // `work`: ticks since the work request was set, while it runs.
     let still = |p: [f32; 2], work: Option<u64>| {
         (
@@ -636,19 +648,9 @@ pub fn movers(
                 // step's action (GFX-ANIM-3.8 code 4, one request per step,
                 // so the play-once clip starts again at every step, 3.8f a:
                 // the step's first tick names the request) and walks between
-                // them (the path is not kept: a straight line).
-                let xz = |s: Point| frame.sample_xz(i64::from(s.0), i64::from(s.1));
-                let (p, heading, moving) = match fine.step.next {
-                    Some(to) => {
-                        let (a, b) = (xz(fine.step.at), xz(to));
-                        let f = fine.step.fraction();
-                        let p = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-                        let heading = (a != b).then(|| (b[0] - a[0]).atan2(b[1] - a[1]));
-                        (p, heading, a != b)
-                    }
-                    None => (xz(fine.step.at), None, false),
-                };
-                let (pos, mut state) = still(p, view.request_age);
+                // them on the lattice, step by step (ECO-HQ-4.6b step 4).
+                let (pos, heading, moving) = builder_point(world, frame, fine);
+                let (_, mut state) = still([pos[0], pos[2]], view.request_age);
                 state.moving = moving;
                 out.extend(person(
                     MoverId::Builder(at),
@@ -661,24 +663,30 @@ pub fn movers(
                 ));
             }
             SettlerRef::Leveller(at) => {
+                // ECO-HQ-4.3a, GFX-VIEW-4.2: he walks from field to field
+                // around the site, drawn where his step is (from the tick
+                // the walk is ordered he plays Walk, GFX-ANIM-3.1a).
                 let field = view.walk.at;
-                let (pos, state) = still(frame.field_xz(field.0, field.1), view.request_age);
+                let (pos, heading) = walker_point(world, frame, &view.walk, None);
+                let (_, mut state) = still([pos[0], pos[2]], view.request_age);
+                state.moving = view.has_walk;
+                let moving = state.moving;
                 out.extend(person(
                     MoverId::Leveller(at),
                     view.player,
                     "Bulldozer",
                     pos,
-                    None,
+                    heading,
                     state,
-                    look_of(Holder::Leveller, "Bulldozer", None, false, field, false),
+                    look_of(Holder::Leveller, "Bulldozer", None, moving, field, false),
                 ));
             }
             _ => {}
         }
     }
-    // GFX-ANIM-5.2: an animal dies when the hunter's action at it starts
-    // (the logic removes it when the action ends; a stand-in for the dying
-    // state, Q-181).
+    // GFX-ANIM-5.2 (T10a, re-read 2026-11-24, Q-181 b): an animal's dying
+    // state starts in the update the hunter's approach ends and his action
+    // at it starts; the logic removes it when the action ends.
     let shot: std::collections::HashSet<Point> = views
         .iter()
         .filter(|v| {

@@ -458,6 +458,110 @@ fn ship_t14_served_orders_on_their_way_count() {
     assert_eq!(planks(&w), 3);
 }
 
+// T29a: a harbour gathering with every material, no builder set aside, one
+// builder in its stock and two open builder requests: at pass P the stock
+// builder is set aside, the earlier-filed open request cancelled (the
+// other kept, the queue's turn on the same request), the state stays
+// Gathering; at P + 101 Getting ship, nothing requested. With no builder
+// in stock and one request open, nothing is requested.
+// spec: SHIP-5.2a (T29a)
+#[test]
+fn ship_t29a_a_stock_builder_waits_for_the_next_pass() {
+    use crate::requests::{Request, Requester};
+    let (mut w, _) = gather_world();
+    stock(&mut w, WEST_HARBOUR, PLANK, 4);
+    stock(&mut w, WEST_HARBOUR, STONE, 6);
+    stock(&mut w, WEST_HARBOUR, BUILDER, 1);
+    w.submit(Command::ExpeditionStart {
+        player: P0,
+        at: WEST_HARBOUR,
+    });
+    w.step();
+    let h = w
+        .harbours
+        .iter()
+        .position(|h| h.at == WEST_HARBOUR)
+        .unwrap();
+    assert_eq!(w.harbours[h].expedition, ExpeditionState::Gathering);
+    let target = w.target_of(WEST_HARBOUR).unwrap();
+    let builder = |harbour: Option<Point>| Request {
+        player: P0,
+        requester: Requester::Harbour(target),
+        profession: BUILDER,
+        harbour,
+    };
+    let other = Request {
+        player: P0,
+        requester: Requester::Unlinked,
+        profession: BUILDER,
+        harbour: None,
+    };
+    // Filed at the two passes before, another request between them; the
+    // two are told apart by an attachment the test gives the second.
+    let second = builder(Some((0, 0)));
+    w.queue = vec![builder(None), other, second];
+    w.queue_cursor = 2;
+    // Pass P.
+    w.gather_expedition(h);
+    assert!(w.harbours[h].builder_aside);
+    assert_eq!(count(&w, WEST_HARBOUR, BUILDER), 0);
+    assert_eq!(w.queue, [other, second], "the first open one cancelled");
+    assert_eq!(w.queue_cursor, 1, "still on the second");
+    assert_eq!(w.harbours[h].expedition, ExpeditionState::Gathering);
+    // Pass P + 101.
+    w.gather_expedition(h);
+    assert_eq!(w.harbours[h].expedition, ExpeditionState::GettingShip);
+    assert_eq!(w.queue, [other, second], "nothing requested");
+    // No builder in stock, one request open: nothing requested.
+    let (mut w, _) = gather_world();
+    stock(&mut w, WEST_HARBOUR, PLANK, 4);
+    stock(&mut w, WEST_HARBOUR, STONE, 6);
+    w.submit(Command::ExpeditionStart {
+        player: P0,
+        at: WEST_HARBOUR,
+    });
+    w.step();
+    w.queue = vec![builder(None)];
+    w.gather_expedition(h);
+    assert_eq!(w.queue, [builder(None)]);
+    assert_eq!(w.harbours[h].expedition, ExpeditionState::Gathering);
+    // And with none open, one is filed.
+    w.queue.clear();
+    w.gather_expedition(h);
+    assert_eq!(w.queue, [builder(None)]);
+}
+
+// T33 (SHIP-5.2a 'no material was missing in this pass'): an expedition
+// with its builder set aside, its 4 planks and 4 of its 6 stones; the last
+// two stones are in the harbour's stock. The pass takes both and sets them
+// aside, but stays in Gathering (they were missing at its start); the next
+// pass, with nothing to set aside, goes to Getting ship.
+// spec: SHIP-5.2a (T33)
+#[test]
+fn ship_t33_the_pass_that_sets_aside_the_last_stones_waits() {
+    let (mut w, _) = gather_world();
+    w.submit(Command::ExpeditionStart {
+        player: P0,
+        at: WEST_HARBOUR,
+    });
+    w.step();
+    let h = w
+        .harbours
+        .iter()
+        .position(|h| h.at == WEST_HARBOUR)
+        .unwrap();
+    assert_eq!(w.harbours[h].expedition, ExpeditionState::Gathering);
+    w.harbours[h].builder_aside = true;
+    w.harbours[h].aside = vec![(PLANK, 4), (STONE, 4)];
+    stock(&mut w, WEST_HARBOUR, STONE, 2);
+    w.gather_expedition(h);
+    assert_eq!(count(&w, WEST_HARBOUR, STONE), 0);
+    assert_eq!(w.harbours[h].aside, [(PLANK, 4), (STONE, 6)]);
+    assert_eq!(w.harbours[h].expedition, ExpeditionState::Gathering);
+    w.gather_expedition(h);
+    assert_eq!(w.harbours[h].expedition, ExpeditionState::GettingShip);
+}
+
 // T5, T6: with everything there the next pass gets a ship; when it is
 // docked the goods and the builder go aboard.
 // spec: SHIP-5.3, SHIP-5.4, SHIP-5.5, UI-GAME-11.1 (T5, T6)
@@ -1019,12 +1123,16 @@ fn hut_orders(w: &World) -> Vec<Option<Point>> {
 // network by ship: the hut's two plank orders attach to H2 (SHIP-4.1), H2
 // asks H1, the planks are gathered, shipped and unloaded into H2, and the
 // next passes serve the orders from H2's stock, which detaches them: the
-// need is gone and the hut gets its planks.
+// need is gone and the hut gets its planks. (H1 holds both planks, so one
+// trip takes them: after it, the ship lies at H2, linked there, and is no
+// candidate for a call of H1, SHIP-4.4 'which ship', T32; gathering: T14,
+// T28, T30.)
 // spec: SHIP-4.1, SHIP-4.2, SHIP-4.3, SHIP-4.4, SHIP-4.6 (T12)
 #[test]
 fn ship_t12_transfer_between_harbours() {
     let mut w = t19_world();
-    let s = ship(&mut w, P0, (20, 10));
+    stock(&mut w, WEST_HARBOUR, PLANK, 2);
+    let s = ship(&mut w, P0, (16, 10));
     // H2 asks H1 in its first pass.
     run(&mut w, 102);
     assert_eq!(
@@ -1047,12 +1155,12 @@ fn ship_t12_transfer_between_harbours() {
     };
     assert_eq!(planks(&w).unwrap().supplier, Some(WEST_HARBOUR));
     assert_eq!(need(&w, BUILDER), 1);
-    // Within a while: the planks arrive at H1, a ship is called, loads,
+    // Within a while: a ship is called, loads,
     // sails and unloads at H2; the passes send them on to the hut.
     step_until(&mut w, 8000, |w| hut_orders(w).is_empty());
     assert_eq!(need(&w, PLANK), 0);
     assert_eq!(count(&w, WEST_HARBOUR, PLANK), 0);
-    assert_eq!(count(&w, (4, 10), PLANK), 1);
+    assert_eq!(count(&w, (4, 10), PLANK), 3);
     assert!(w.harbour_at(WEST_HARBOUR).unwrap().transfers.is_empty());
     assert!(w.ships()[s].vessel.cargo.is_empty());
 }
@@ -1128,6 +1236,58 @@ fn ship_t26_passes_held_goods_and_the_call() {
     );
 }
 
+// T32 (SHIP-4.4 'which ship, exactly'): (a) ship A sails to H1 (linked to
+// it) when H1's pass finds a plank ready for H2: A is called and keeps its
+// route (no new route, the walk's goal unchanged); it docks and is loaded at
+// a later pass. (b) Ship B lies idle at H2, linked to H2, free in every other
+// way: H1 does not call it (only ships linked to H1, or free ones linked to
+// no harbour, are candidates).
+// spec: SHIP-4.4 (T32)
+#[test]
+fn ship_t32_which_ship_a_transfer_calls() {
+    // (a)
+    let mut w = t19_world();
+    let a = ship(&mut w, P0, (16, 10));
+    step_until(&mut w, 400, |w| {
+        state_of(w, a) == ShipState::ToHarbour && w.ships()[a].vessel.walker.is_walking()
+    });
+    assert_eq!(w.ships()[a].vessel.harbour, Some(WEST_HARBOUR));
+    assert!(!w.harbour_at(WEST_HARBOUR).unwrap().transfers.is_empty());
+    stock(&mut w, WEST_HARBOUR, PLANK, 2);
+    let goal = w.ships()[a].vessel.walker.destination();
+    w.harbours
+        .iter_mut()
+        .find(|h| h.at == WEST_HARBOUR)
+        .unwrap()
+        .counter = 100;
+    w.step();
+    assert_eq!(w.harbour_at(WEST_HARBOUR).unwrap().called, Some(a));
+    assert_eq!(w.ships()[a].vessel.called, Some(WEST_HARBOUR));
+    w.step();
+    assert_eq!(state_of(&w, a), ShipState::ToHarbour, "keeps sailing here");
+    assert_eq!(
+        w.ships()[a].vessel.walker.destination(),
+        goal,
+        "no new route"
+    );
+    step_until(&mut w, 400, |w| !w.ships()[a].vessel.cargo.is_empty());
+
+    // (b)
+    let mut w = t19_world();
+    let b = ship(&mut w, P0, (24, 10));
+    step_until(&mut w, 600, |w| {
+        state_of(w, b) == ShipState::Idle && w.ships()[b].vessel.harbour == Some(EAST_HARBOUR)
+    });
+    step_until(&mut w, 400, |w| {
+        !w.harbour_at(WEST_HARBOUR).unwrap().transfers.is_empty()
+    });
+    stock(&mut w, WEST_HARBOUR, PLANK, 2);
+    run(&mut w, 300);
+    assert_eq!(w.harbour_at(WEST_HARBOUR).unwrap().called, None);
+    assert_eq!(w.ships()[b].vessel.called, None);
+    assert_eq!(w.ships()[b].vessel.harbour, Some(EAST_HARBOUR));
+}
+
 /// SHIP-4.3: the planks H1 has gathered or ordered: in stock, on their way
 /// for an order, and the open orders.
 fn gathered(w: &World) -> u32 {
@@ -1188,6 +1348,122 @@ fn ship_t28_the_pass_comes_before_the_transport_jobs() {
     assert!(
         w.open_orders(WEST_HARBOUR, PLANK) < 2,
         "matched in the pass's tick"
+    );
+}
+
+// T30 (SHIP-4.3 what is "already on the way", Q-1084): H2 has asked H1 for
+// 2 planks; H1 holds none and has no open order. A plank on a storage trip
+// to H1 lies at the warehouse's flag when H1's pass comes: it does not
+// count, so the pass files 2 orders (counting it would file 1). After the
+// pass H1's planks gathered for orders (stock, ordered planks on their way,
+// open orders) are 2 whether or not the matching then gives the stored
+// plank to one of them.
+// spec: SHIP-4.3 (T30), SHIP-5.2, ECO-REQ-5.5
+#[test]
+fn ship_t30_a_storage_trip_is_not_on_the_way() {
+    let mut w = t19_world();
+    ship(&mut w, P0, (20, 10));
+    step_until(&mut w, 200, |w| {
+        !w.harbour_at(WEST_HARBOUR).unwrap().transfers.is_empty()
+    });
+    assert_eq!(need(&w, PLANK), 2);
+    assert_eq!(gathered(&w), 0);
+    let storage = crate::requests::Target {
+        at: WEST_HARBOUR,
+        serial: w.building_at(WEST_HARBOUR).unwrap().serial,
+        storage: true,
+    };
+    let to = w.flag_of(WEST_HARBOUR);
+    let plank = w.new_ware_at(PLANK, w.flag_of((4, 10)), Some(to), Some(storage));
+    assert_eq!(w.on_the_way(WEST_HARBOUR, PLANK), 0, "a storage trip");
+    w.harbours
+        .iter_mut()
+        .find(|h| h.at == WEST_HARBOUR)
+        .unwrap()
+        .counter = 100;
+    w.step();
+    assert_eq!(w.harbour_at(WEST_HARBOUR).unwrap().counter, 0, "the pass");
+    assert!(w.wares[plank].is_some());
+    assert_eq!(count(&w, WEST_HARBOUR, PLANK), 0);
+    assert_eq!(gathered(&w), 2);
+}
+
+/// H1's open builder requests.
+fn h1_builder_requests(w: &World) -> u32 {
+    let target = w.target_of(WEST_HARBOUR).unwrap();
+    w.open_requests_of(P0, Requester::Harbour(target), |p| p == BUILDER)
+}
+
+/// Builders walking to H1 (out of the warehouse as a builder, or home to it).
+fn builders_to_h1(w: &World) -> usize {
+    let target = w.target_of(WEST_HARBOUR).unwrap();
+    w.settlers()
+        .filter(|(_, s)| {
+            s.profession == BUILDER
+                && match &s.job {
+                    crate::SettlerJob::Home { target: t } => *t == target,
+                    crate::SettlerJob::ToSite { target: t, .. } => *t == target,
+                    _ => false,
+                }
+        })
+        .count()
+}
+
+/// Puts H1's pass in the next tick and runs it.
+fn h1_pass(w: &mut World) {
+    w.harbours
+        .iter_mut()
+        .find(|h| h.at == WEST_HARBOUR)
+        .unwrap()
+        .counter = 100;
+    w.step();
+    assert_eq!(w.harbour_at(WEST_HARBOUR).unwrap().counter, 0, "H1's pass");
+}
+
+// T31 (SHIP-4.3 'already on the way', settlers): H2 has asked H1 for a
+// builder; H1's pass files one request, served from the warehouse, and the
+// builder walks to H1 (as a builder, then home to it). At the next pass H1
+// wants 1, holds none, has no open request and one builder walking to it:
+// it files nothing (counting only an open request would file a second). With
+// H2's need raised to 2 the pass files one; raised to 4, with that one still
+// open, it files two (one per missing settler).
+// spec: SHIP-4.3 (T31)
+#[test]
+fn ship_t31_a_settler_on_his_way_counts() {
+    let mut w = t19_world();
+    stock(&mut w, (4, 10), BUILDER, 2);
+    ship(&mut w, P0, (20, 10));
+    step_until(&mut w, 200, |w| {
+        w.harbour_at(WEST_HARBOUR)
+            .unwrap()
+            .transfers
+            .iter()
+            .any(|t| t.good == BUILDER)
+    });
+    assert_eq!(need(&w, BUILDER), 1);
+    h1_pass(&mut w);
+    assert_eq!(h1_builder_requests(&w) as usize + builders_to_h1(&w), 1);
+    step_until(&mut w, 60, |w| h1_builder_requests(w) == 0);
+    assert_eq!(builders_to_h1(&w), 1);
+    assert_eq!(count(&w, WEST_HARBOUR, BUILDER), 0);
+    h1_pass(&mut w);
+    assert_eq!(builders_to_h1(&w), 1, "still walking");
+    assert_eq!(h1_builder_requests(&w), 0, "the walking builder counts");
+    w.attach_need(EAST_HARBOUR, BUILDER);
+    assert_eq!(need(&w, BUILDER), 2);
+    h1_pass(&mut w);
+    assert_eq!(h1_builder_requests(&w), 1);
+    w.attach_need(EAST_HARBOUR, BUILDER);
+    w.attach_need(EAST_HARBOUR, BUILDER);
+    assert_eq!(
+        builders_to_h1(&w) as u32 + count(&w, WEST_HARBOUR, BUILDER),
+        1
+    );
+    h1_pass(&mut w);
+    assert_eq!(
+        h1_builder_requests(&w),
+        3,
+        "4 wanted, 1 walking or in stock, 1 open: 2 more"
     );
 }
 
@@ -1514,4 +1790,67 @@ fn ship_t23_the_expedition_builders_way() {
     let h = w.harbour_at(WEST_HARBOUR).unwrap();
     assert!(h.builder_aside, "set aside as he is taken in");
     assert_eq!(count(&w, WEST_HARBOUR, BUILDER), 0);
+}
+
+// SHIP T29 (SHIP-4.8, E-ship-022): ship S idle at H1 (docked earlier, its
+// link to H1); H1 is torn down in tick t: in t nothing else happens to S,
+// from t + 1 it has no link and searches, keeping its counter, and finds H2
+// and sails there. With H2 gone too it searches every 101 ticks for good,
+// on the water, never removed.
+// spec: SHIP-4.8 (SHIP T29), SHIP-2.3, SHIP-2.4
+#[test]
+fn ship_t29_a_torn_down_harbour_sends_its_ship_searching() {
+    let mut w = sea_world();
+    let h2 = (11, 20);
+    harbour(&mut w, P0, WEST_HARBOUR);
+    let s = ship(&mut w, P0, (16, 10));
+    step_until(&mut w, 2000, |w| state_of(w, s) == ShipState::Docked);
+    w.step();
+    assert_eq!(state_of(&w, s), ShipState::Idle);
+    harbour(&mut w, P0, h2);
+    run(&mut w, 37);
+    let counter = w.ships()[s].vessel.counter;
+    assert_eq!(w.ships()[s].vessel.harbour, Some(WEST_HARBOUR));
+    assert_eq!(
+        apply(
+            &mut w,
+            Command::TearDown {
+                player: P0,
+                at: WEST_HARBOUR
+            }
+        ),
+        Ok(())
+    );
+    assert!(w.harbour_at(WEST_HARBOUR).is_none());
+    let v = &w.ships()[s].vessel;
+    assert_eq!(v.harbour, None, "the link reads gone");
+    assert_eq!(v.counter, counter, "the removal visits no ship");
+    w.step();
+    assert_eq!(state_of(&w, s), ShipState::Search);
+    assert_eq!(w.ships()[s].vessel.counter, counter + 1, "its counter kept");
+    step_until(&mut w, 200, |w| state_of(w, s) == ShipState::ToHarbour);
+    assert_eq!(w.ships()[s].vessel.harbour, Some(h2));
+    step_until(&mut w, 2000, |w| state_of(w, s) == ShipState::Docked);
+    // H2 goes too: no harbour left, a search every 101 ticks, for good.
+    assert_eq!(
+        apply(&mut w, Command::TearDown { player: P0, at: h2 }),
+        Ok(())
+    );
+    let mut tries = 0;
+    for _ in 0..1010 {
+        w.step();
+        assert_eq!(w.ships().len(), 1, "never removed");
+        let v = &w.ships()[s].vessel;
+        assert!(
+            matches!(
+                v.state,
+                ShipState::Search | ShipState::Idle | ShipState::MakingRoom
+            ),
+            "{:?} at {}",
+            v.state,
+            w.tick()
+        );
+        tries += usize::from(v.state == ShipState::Search && v.counter == 0);
+    }
+    assert!((9..=11).contains(&tries), "{tries} searches in 1010 ticks");
 }

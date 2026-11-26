@@ -44,7 +44,7 @@ pub fn draw_text(font: &FontData, text: &str, colour: [u8; 3]) -> (Vec<u8>, u32,
     let mut out = vec![0u8; (width * height * 4) as usize];
     let mut pen = TEXT_PAD;
     for c in text.chars() {
-        let Some(g) = f.glyphs.get(&(c as u32)) else {
+        let Some(g) = f.glyph(c) else {
             continue;
         };
         for gy in 0..g.height {

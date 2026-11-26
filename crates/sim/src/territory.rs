@@ -69,6 +69,9 @@ pub struct MapAnimal {
     /// progress (the bits of the record's float32) and the fields after
     /// it, in walking order.
     pub walk: Option<(Point, u32, Vec<Point>)>,
+    /// ECO-FOOD-5.14a: the clock value its walk started at (the bits of the
+    /// record's float32; 0.0, the game's start, in every shipped map).
+    pub walk_start: u32,
 }
 
 impl MapAnimal {
@@ -82,6 +85,7 @@ impl MapAnimal {
             state: 0,
             counter: 0,
             walk: None,
+            walk_start: 0,
         }
     }
 }

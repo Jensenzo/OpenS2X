@@ -592,6 +592,54 @@ impl World {
         }
     }
 
+    /// SHIP-4.3 (T31): file a request even when the requester has one open
+    /// for `profession` (one per missing settler).
+    pub(crate) fn file_request(&mut self, player: PlayerId, requester: Requester, profession: u32) {
+        self.queue.push(Request {
+            player,
+            requester,
+            profession,
+            harbour: None,
+        });
+        // SIM-START-4.2: a request filed takes a number.
+        self.new_number();
+    }
+
+    /// SHIP-4.3 (T31): the open requests of `requester` whose profession
+    /// `job` accepts.
+    pub(crate) fn open_requests_of(
+        &self,
+        player: PlayerId,
+        requester: Requester,
+        job: impl Fn(u32) -> bool,
+    ) -> u32 {
+        self.queue
+            .iter()
+            .filter(|r| r.player == player && r.requester == requester && job(r.profession))
+            .count() as u32
+    }
+
+    /// SHIP-5.2a: the first open request of `requester` for `profession`
+    /// (in the order filed) is cancelled: it leaves the queue (and its
+    /// harbour's need), the queue's turn staying on the request it was on.
+    pub(crate) fn cancel_first_request(
+        &mut self,
+        player: PlayerId,
+        requester: Requester,
+        profession: u32,
+    ) {
+        let Some(index) = self.queue.iter().position(|r| {
+            r.player == player && r.requester == requester && r.profession == profession
+        }) else {
+            return;
+        };
+        let request = self.queue.remove(index);
+        if index < self.queue_cursor {
+            self.queue_cursor -= 1;
+        }
+        self.detach_request(&request);
+    }
+
     /// ECO-REQ-2.3a (T38): the open requests of a requester that is gone
     /// lose their link where they stand in the queue, which deletes them
     /// unserved on their turn.

@@ -316,8 +316,9 @@ pub struct AnimalPath {
 pub struct Animal {
     pub type_id: u32,
     pub id: u64,
-    /// 0.0 in release maps.
-    pub unknown_a: f32,
+    /// FMT-S2M-5.4, ECO-FOOD-5.14a: the clock value when its current or
+    /// last walk started; 0.0 in release maps.
+    pub walk_start: f32,
     /// The field the animal was placed on; it roams around it.
     pub home: FieldPos,
     /// `None` unless the animal was saved in mid-walk.
@@ -784,7 +785,7 @@ fn read_animal(r: &mut Reader) -> Result<Animal, S2mError> {
     let type_id = r.u32()?;
     r.marker("Resources Animal", 2)?;
     let id = r.object_id()?;
-    let unknown_a = r.f32()?;
+    let walk_start = r.f32()?;
     let home = r.field_cursor()?;
 
     r.marker("Navy Movement", 1)?;
@@ -810,7 +811,7 @@ fn read_animal(r: &mut Reader) -> Result<Animal, S2mError> {
     Ok(Animal {
         type_id,
         id,
-        unknown_a,
+        walk_start,
         home,
         path,
         position,

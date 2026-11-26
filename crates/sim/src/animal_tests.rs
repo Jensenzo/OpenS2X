@@ -398,6 +398,44 @@ fn food_5_13_animals_start_as_saved() {
     assert_eq!(a.walker.destination(), (16, 10));
 }
 
+// T65 (ECO-FOOD-5.14a, E-eco-058): an animal placed in mid-walk counts its
+// walk from the record's start clock: 0.0 (the shipped maps) is the game's
+// start; another value, as a save holds it, is the walk's start, and the
+// wait when the walk ends is computed from it.
+// spec: ECO-FOOD-5.14a (ECO-FOOD T65), ECO-FOOD-5.11, FMT-S2M-5.4
+#[test]
+fn food_t65_the_walk_counts_from_the_records_start_clock() {
+    let walking = |start: f32| {
+        let mut a = crate::MapAnimal::new(DEER, (14, 10));
+        a.state = 2;
+        a.walk = Some(((15, 10), 0.9f32.to_bits(), vec![]));
+        a.walk_start = start.to_bits();
+        a
+    };
+    let mut waits = Vec::new();
+    for start in [0.0f32, 0.5] {
+        let mut world = animal_world();
+        let animal = world.map_animal(&walking(start));
+        assert!(
+            matches!(animal.state, AnimalState::Walking { since, .. } if since == start.to_bits())
+        );
+        let id = world.animals.len();
+        world.animals.push(Some(animal));
+        let mut read = world.game_seconds();
+        while matches!(state(&world, id), AnimalState::Walking { .. }) {
+            read = world.game_seconds();
+            world.step();
+        }
+        let AnimalState::Waiting { left } = state(&world, id) else {
+            panic!("waiting after the walk");
+        };
+        assert_eq!(left, crate::hunting::animal_wait(start, read, 3000));
+        waits.push(left);
+    }
+    // Half a second later started: 0.5 x 3.0 x 10 = 15 updates less.
+    assert_eq!(waits[0] - waits[1], 15);
+}
+
 /// ECO-FOOD-5.11b: the tick clock in trace tick `t`, the float32 sum of
 /// `t` terms of 0.1.
 fn clock(t: u32) -> f32 {

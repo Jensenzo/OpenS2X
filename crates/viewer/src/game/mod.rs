@@ -203,6 +203,9 @@ pub(crate) struct Viewer {
     /// file), and from a save of ours (its deposits are the world's).
     pub(crate) saved_game: bool,
     pub(crate) own_save: bool,
+    /// GFX-ANIM-3.8c1: the tick a save was loaded at (none for a new
+    /// game): the view's trees have no fall or sink from before it.
+    pub(crate) loaded_at: Option<u64>,
     /// GFX-VIEW-5.4 (g): the settlers' seen marks of the ticks a tool
     /// played ahead with the camera on the start view, for the view's first
     /// frame to take over.
@@ -210,6 +213,8 @@ pub(crate) struct Viewer {
     /// GFX-OBJ-2.2a: the house slots of those ticks, for the view to start
     /// from.
     pub(crate) ahead_slots: Option<crate::world::scene3d::HouseSlots>,
+    /// GFX-ANIM-3.8a: the fall axes of the trees felled in those ticks.
+    pub(crate) ahead_fall_axes: std::collections::HashMap<s2_sim::grid::Point, f32>,
     /// GFX-VIEW-2.1b (a): the heights when the map view was set up (the
     /// game's start or load, before a tool's play-ahead): the terrain keeps
     /// their normals outside the corner the refresh covers.

@@ -530,6 +530,14 @@ impl World {
         // is cut the same way (the excess dropped at the step's end) and
         // chooses his way home again in his arrival tick, with no standing
         // (`SettlerJob::Home`'s arrival short of its warehouse).
+        // T54 (E-trn-046): when the step in progress is the road's last
+        // step, onto its end flag that still stands, nothing is cut: he
+        // reaches that flag as on any road walk and goes on by 6.5 (c), the
+        // excess carried. Measured for the walk home (T47b) only.
+        let ends: Vec<Point> = [road.path[0], road.path[road.path.len() - 1]]
+            .into_iter()
+            .filter(|&end| self.flag_at(end).is_some())
+            .collect();
         for settler in self.settlers.iter_mut().flatten() {
             let going_home = matches!(settler.job, crate::SettlerJob::Leaving { .. })
                 && Some(settler.profession) == builder;
@@ -538,6 +546,9 @@ impl World {
                 continue;
             }
             let walker = &mut settler.walker;
+            if walking_home && walker.next.is_some_and(|next| ends.contains(&next)) {
+                continue;
+            }
             if walker.next.is_some_and(|next| along(walker.at, next)) {
                 walker.path.clear();
                 walker.pauses.clear();

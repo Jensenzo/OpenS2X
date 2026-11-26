@@ -800,6 +800,8 @@ pub(crate) fn load_map(
     // the first tick and one after each; the view's first frame is then the
     // jump to the scene.
     let plays_ahead = (viewer.until_built.is_some() && site.is_some()) || viewer.run > 0;
+    // GFX-ANIM-3.8c1: a load makes the view anew at the save's tick.
+    let loaded_at = save_file.is_some().then(|| world.tick());
     // GFX-VIEW-2.1b (a): the map view is set up with the game's first
     // frame, before the ticks a tool plays ahead.
     viewer.setup_terrain = Some(world.terrain().clone());
@@ -884,10 +886,15 @@ pub(crate) fn load_map(
         );
     }
     viewer.ahead_slots = ahead.as_ref().map(|a| a.slots.clone());
+    viewer.ahead_fall_axes = ahead
+        .as_ref()
+        .map(|a| a.fall_axes.clone())
+        .unwrap_or_default();
     viewer.ahead_marks = ahead;
     viewer.world = Some(world);
     viewer.real_game = real_game;
     viewer.saved_game = save_file.is_some();
+    viewer.loaded_at = loaded_at;
     viewer.own_save = own_save;
     viewer.world_changed = true;
     viewer.moved = true;

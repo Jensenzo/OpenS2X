@@ -199,6 +199,57 @@ run therefore also lists the licence service's starts in its time
 (`windows-events.txt`), and `--check` names one that came in the 3 s before
 a frame over 100 ms.
 
+Since 2026-11-24 the log also cuts the render world's frame into its steps
+(`crates/viewer/src/tools/frame_steps.rs`): for a frame over 50 ms, the
+render frames kept from before it and those of the three frames after it get
+an `R` line each, with the wall clock (unix ms) and the working set at the
+frame's start and end, and for each of 15 steps (the wait for the main world
+and the extract; assets; views, specialize and the swapchain's acquire;
+queue and sort; prepare's six sets: resources, batch phases, write phase
+buffers, collect phase buffers, flush, bind groups; the render system's
+start, its graph's encode, its submit, its finish and present; cleanup) the
+wall time, the CPU time of the thread that ran the step's end mark when its
+start mark ran on the same thread (`thread -` otherwise), its kernel time
+(at the clock tick's resolution, about 15.6 ms), the whole process's CPU and
+kernel time, and the process's page faults. A smooth run writes none. Every
+slow frame's `F` line names its page faults and working set, every `S` line
+the second's page faults (about 27,000 a second in a normal run).
+`PROBE_WINDOW=1` opens a second, tiny window of ours beside the game
+(`--probe-window <log>`, `crates/viewer/src/tools/probe_window.rs`: the same
+exe, Bevy and wgpu, one triangle, held to the refresh, on the left display)
+whose own log `probe.txt` has every frame over 25 ms with the wall clock: a
+stall of the graphics stack for everyone shows in both windows at once.
+`LONG_PLAY_EXE` runs another build, such as the investigation build
+`--features frame-trace` (`crates/viewer/src/tools/span_log.rs`, never the
+game's): every system run (Bevy's trace spans) and every wgpu call wgpu
+times itself, from enter to exit, and one of 25 ms or more is a line in
+`log.txt.spans` (`Y <unix ms> <ms> <thread> <name>`), and a system whose
+wgpu calls add up to 5 ms or more a `W` line with each call's count, total
+and longest. It costs the frames more as the game grows: from about 17
+minutes of a long play its frames ran at 35..48 a second, so its p99 is not
+a player's number, only its stall frames are read.
+
+What the instruments showed on 2026-11-24 (three runs, seven licence polls,
+two stalls): at the poll's stall the time is in prepare's bind-groups set
+(109..130 ms in a trial; 116.5 and 184.1 ms in the long run), in one Bevy
+system, `prepare_preprocess_bind_groups` (GPU preprocessing: it builds a
+few dozen bind groups fresh every frame, per view and phase), on two
+threads in two frames, while the whole process used 2..12 ms of CPU and
+took 0..64 page faults in that step, the working set flat; no single wgpu
+call took 25 ms or more; submit and present were normal; the probe window's
+frames were at most 36 ms. So our render thread waits inside many short
+graphics calls, it does not fault, spin or lose its working set. GPU
+preprocessing also makes and drops graphics objects every frame in ordinary
+frames: the shadow views' instance writer alone 1,100..1,900 buffer writes
+(each a staging buffer) and 20..430 new buffers by 25 minutes. Bevy's switch
+to the CPU path (`PbrPlugin::use_gpu_instance_buffer_builder: false`) is not
+a way out as things are: with it the terrain and nearly every object are not
+drawn (15 golden scenes, no error in the log). `pc-load.ps1` also records our working
+set and the machine's page reads (hard faults) and transition faults; no
+counter gives a process's own hard faults without elevation. `--check`
+prints, beside each frame over 100 ms, the slowest step of each render frame
+near it and the probe window's frames in the 3 s around it.
+
 ## Lessons 2 to 4
 
 `tutorial_two`, `tutorial_three` and `tutorial_four` (`crates/viewer/tests/play.rs`)

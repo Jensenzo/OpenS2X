@@ -419,6 +419,15 @@ the value `0xFFFFFFFFFFFFFFFF` is "none". Class names and versions are listed in
     the walk ends he chooses his first unit" for both.) **A check for a working constructor:** his animation's
     ticks left are r + 1 while the hammering runs (samples (28, 55, 4) with r = 27, (39, 55, 4) with
     38, (13, 55, 4) with 12).
+    **A site in mid-unit always has its builder (2026-11-24 c, Q-204 / stand-ins row 16; E-sav-018,
+    code reading).** A constructor leaves his site only when his site job ends, which is when the
+    building is complete (ECO-HQ-4.7), or when the site itself is gone. So in an original's save a
+    site whose remaining work is part-way through a unit always has a constructor in state 32 with
+    `step` 10 naming it, and the unit goes on from his (c, r) and saved work per tick as mapped
+    above: the site does not jump to the unit's end, and no unit is started twice. A site with no
+    builder at it (one walking to it in state 4, one approaching in `step` 13, or none) has no unit
+    under way, whatever fraction its remaining work shows (a finished unit leaves a fraction too,
+    ECO-HQ-4.6a). Confidence: high.
   Confidence: high for the counts and the refs (both samples), medium for the meanings of 24 ..
   31 and of the constructor's work fields (sample values against the work step, E-pt5-001, and the site job's steps 13 approach / 10 work, E-trn-005).
 - **FMT-SAV-3.5b** `SettlersWorker` (v1): `ref`, `ref`, then twelve states: (`u32`, `step`);
@@ -1114,6 +1123,7 @@ the value `0xFFFFFFFFFFFFFFFF` is "none". Class names and versions are listed in
 | T13 | FMT-SAV-3.11: load the Fight autosave (productivity counter 59) | the counters after the load | productivity counter 59 (not 58); the next productivity decay 541 ticks after the load; sampling counter 0: the five samples in the first five ticks, the history push in the 601st |
 | T14 | FMT-SAV-3.5a (b), 3.5h (2026-11-09 c): the Fight autosave of 2026-11-01 | the workers out on the land and their objects | professions: (2, 55, 4) on (207, 234) = forester (deposit 24822 at (207, 233), size -1); (52, 55, 4) on (200, 78) = woodcutter (deposit 23837 at (199, 79)); the 34 at (43, 55, 4) = shipwright. Rough walks out: forester 21064 (k = 1) steps (40, 67) -> (39, 67) at 0.77, then (38, 67), and stops there (one short of (37, 67), deposit 24826 at (149, 267)); woodcutter 15985 (k = 1) steps (53, 63) -> (54, 63), then (55, 63), (56, 64) and stops (one short of (56, 65), deposit 24564 at (227, 260)). All 11 active free paths: point index = the second rough cursor, point 0 = the fourth |
 | T15 | FMT-SAV-3.5a (b) step 7: the 2023 sample, farmer 211736 (countdown 4) and woodcutter 104042 (countdown 24) | ticks after the load | 211736 checks his farm's reserved target in tick 5, 104042 his hut's in tick 25 (not 51); one without a target sets 50 and checks again 51 ticks later |
+| T15a | FMT-SAV-3.5a (e), row 16 (Q-204): the Fight autosave of 2026-11-01, the constructor with (c, r) = (4, 27) at his site | the site's remaining work and the builder, tick by tick after the load | 27 decrements of the saved work per tick in the first 27 ticks, the extra decrement in the 28th and the unit ends there (4.6a); the next unit's material is taken in the tick after (4.6b step 5) only if one lies on the site; the site's work never jumps to a unit's end at the load |
 | T16 | FMT-SAV-3.7a: a `Military Fight` block (v1) with one list-2 record (both arrived, counter 3, hit pending 1) and one list-3 record | read, then one military update | the reader accepts the non-empty lists and reads on to `Military Attack` and `Military Training`; in the next update the pair's round starts with the pending hit taking 1 health from the striker of counter 3 (the defender, odd), then counter 4 |
 | T17 | FMT-SAV-3.7a samples (E-sav-017): load the original's save at counter 12854 (fights 2 / 2 / 1) and run 497 ticks | the fight lists at counter 13351 against the original's second save | list 1: attacker 16592 alone (state 20), unpaired, waiting field (33, 20), round counter 21; list 2: 16600 against 18545 (counter 11, hit pending) and 17868 against 18560 (counter 14); list 3 empty; 16579 and the interceptor 16370 gone; reading alone: both files read to the last byte, every soldier's links agree with the records |
 
@@ -1131,6 +1141,7 @@ the value `0xFFFFFFFFFFFFFFFF` is "none". Class names and versions are listed in
 | E-sav-007 | code reading | the settler lists, the soldier's and the settler common part's save; sample tables | a soldier's rank and health |
 | E-sav-008 | code reading | the site record; the computer player's save and load functions | Q-1000, Q-1009 |
 | E-sav-009 | code reading + save | (= E-gfx-039, session 2026-11-06): package, object counter, statistics, ship and movement records; the Fight autosave of 2026-11-01 read with the investigation's parser | FMT-SAV-2.2, 3.5h, 3.6, 3.8, 3.11 |
+| E-sav-018 | code reading | (session 2026-11-24 c): the constructor's update leaves the site only when the site job ends or the site link is gone | FMT-SAV-3.5a (e) "A site in mid-unit always has its builder", T15a (Q-204 row 16) |
 | E-sav-012 | code reading and sample | (session 2026-11-09 c; also holds E-gfx-047): the builder's approach legs, a step on the field lattice, a field's sample point; the Fight autosave of 2026-11-01 read with a sample script (the four step-13 constructors' first number 2, 2, 1, 1 and their fine paths) | FMT-SAV-3.5a (e); `ECO-warehouse-construction.md` ECO-HQ-4.6b, T26 |
 | E-sav-013 | code reading | (session 2026-11-10): the indoor routine; a job read as state 33's (it is another job's, see E-sav-014) | (withdrawn item of FMT-SAV-3.5a (b)) |
 | E-sav-015 | code reading and save data | (session 2026-11-11, no bundle): every class marker's construction (name, version) re-read in the program; each loader scanned for version tests; the markers counted in four sample saves, the player's profile and the 34 release maps | FMT-SAV-4.1 |

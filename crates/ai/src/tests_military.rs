@@ -216,11 +216,59 @@ fn castle_settings_follow_the_enemy_distance() {
 }
 
 // T7: target cell: enemy score 40, construction threat 0, balance 10, C = 1,
-// A = 2: (0 + 80 - 10) / 4 = 17.5.
-// spec: AI-MIL-5.2 (T7)
+// A = 2; the attacker's own score in the cell 0 (T37: the second score is
+// his own, not the enemy's again): (0 + 40 + 0 - 10) / 4 = 7.5; with an own
+// score of 40, 17.5.
+// spec: AI-MIL-5.2 (T7, T37)
 #[test]
 fn t7_target_value() {
-    assert_eq!(target_value(0.0, 40.0, 10.0, 1.0, 2.0), 17.5);
+    assert_eq!(target_value(0.0, 40.0, 0.0, 10.0, 1.0, 2.0), 7.5);
+    assert_eq!(target_value(0.0, 40.0, 40.0, 10.0, 1.0, 2.0), 17.5);
+}
+
+// T37 (AI-MIL-5.2 'the second score is the attacker's own'): the war's
+// player 3 at counter 24 342: cell (5, 1) with player 2's threat under
+// construction 20, score 220, balance 205, C 0, A 0: 35; cell (5, 2) with
+// score 510, balance 185, C 1, A 2: 81.25. (5, 2) wins (twice the enemy's
+// score gave (5, 1) 255 against 208.75). The attacker's own score in a cell
+// adds to its value.
+// spec: AI-MIL-5.2 (T37)
+#[test]
+fn t37_the_second_score_is_the_attackers_own() {
+    use crate::maps::{MilCell, MilitaryMap};
+    let (p2, p3) = (PlayerId(2), PlayerId(3));
+    let alive = [false, false, true, true];
+    let mut maps = vec![MilitaryMap::new(64, 64); 4];
+    // The attacker's threat beside both cells opens them (T31).
+    maps[3].set(
+        (4, 1),
+        MilCell {
+            threat: 30,
+            ..MilCell::default()
+        },
+    );
+    let enemy = |b, s| MilCell {
+        threat: 30,
+        threat_building: b,
+        score: s,
+    };
+    maps[2].set((5, 1), enemy(20, 220));
+    maps[2].set((5, 2), enemy(0, 510));
+    let balance = |c: (u32, u32)| if c == (5, 1) { 205.0 } else { 185.0 };
+    let counters = |c: (u32, u32)| if c == (5, 2) { (1.0, 2.0) } else { (0.0, 0.0) };
+    let best = attack_target(&maps, &alive, p3, |p| p == p2, balance, counters);
+    assert_eq!(best, Some((81.25, (5, 2), p2)));
+    // An own score of 300 in (5, 1): (20 + 220 + 300 - 205) / 1 = 335.
+    maps[3].set(
+        (5, 1),
+        MilCell {
+            threat: 30,
+            threat_building: 0,
+            score: 300,
+        },
+    );
+    let best = attack_target(&maps, &alive, p3, |p| p == p2, balance, counters);
+    assert_eq!(best, Some((335.0, (5, 1), p2)));
 }
 
 // AI-MIL T31 (AI-MIL-5.2, the gate and the order): a cell is looked at
@@ -256,19 +304,19 @@ fn t31_attack_targets_lie_next_to_own_threat_column_by_column() {
     maps[0].set((3, 3), threat(30));
     assert_eq!(target(&maps), None, "nor the attacker's in the cell itself");
     maps[0].set((2, 4), threat(30));
-    assert_eq!(target(&maps), Some((600, (3, 3), p1)), "beside it");
+    assert_eq!(target(&maps), Some((300, (3, 3), p1)), "beside it");
     // Column by column: (0, 2) before (2, 0), both beside (1, 1).
     let mut maps = vec![MilitaryMap::new(64, 64); 3];
     maps[0].set((1, 1), threat(30));
     maps[1].set((2, 0), score(100));
     maps[1].set((0, 2), score(100));
-    assert_eq!(target(&maps), Some((200, (0, 2), p1)));
+    assert_eq!(target(&maps), Some((100, (0, 2), p1)));
     // Players in order: player 2's equal value in (0, 2) does not replace.
     maps[2].set((0, 2), score(100));
-    assert_eq!(target(&maps), Some((200, (0, 2), p1)));
+    assert_eq!(target(&maps), Some((100, (0, 2), p1)));
     // A strictly greater value later does.
     maps[2].set((2, 0), score(150));
-    assert_eq!(target(&maps), Some((300, (2, 0), p2)));
+    assert_eq!(target(&maps), Some((150, (2, 0), p2)));
     // No value above -100: no target.
     let low = attack_target(&maps, &alive, p0, |_| true, |_| 1000.0, |_| (0.0, 0.0));
     assert_eq!(low, None);

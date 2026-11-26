@@ -111,8 +111,17 @@ impl Font {
     /// so `kernings` is read but not applied.
     pub fn width(&self, text: &str) -> i32 {
         text.chars()
-            .map(|c| self.glyphs.get(&(c as u32)).map_or(0, |g| g.x_advance))
+            .map(|c| self.glyph(c).map_or(0, |g| g.x_advance))
             .sum()
+    }
+
+    /// FMT-3.8a: the glyph of a character. The shipped fonts are
+    /// `charset="ANSI"`: their ids are Windows-1252 bytes, so a character
+    /// is looked up by its byte (the texts' bytes, `lang::decode`); one the
+    /// code page lacks has no glyph.
+    pub fn glyph(&self, c: char) -> Option<&Glyph> {
+        let byte = crate::lang::cp1252_byte(c)?;
+        self.glyphs.get(&u32::from(byte))
     }
 }
 
@@ -143,5 +152,71 @@ kerning first=65 second=65 amount=-1
         assert_eq!(f.width("A A"), 7 + 3 + 7);
         // UI-MENU-1.8a: the pen advances by xadvance only, no kerning.
         assert_eq!(f.width("AA"), 14);
+    }
+
+    /// FMT-3.8a (stand-ins list row 12): an `ANSI` font's ids are
+    /// Windows-1252 bytes: the left double quote (byte 0x93) and the euro
+    /// (0x80) find glyphs 147 and 128, typed or decoded from a text file; a
+    /// character outside the code page finds none.
+    // spec: FMT-3.8a
+    #[test]
+    fn glyphs_by_their_windows_1252_byte() {
+        let f = Font::parse(
+            "common lineHeight=16 base=13 pages=1
+char id=128 x=0 y=0 width=6 height=9 xoffset=0 yoffset=3 xadvance=8 page=0
+char id=147 x=8 y=0 width=5 height=4 xoffset=0 yoffset=2 xadvance=6 page=0
+char id=150 x=16 y=0 width=7 height=1 xoffset=0 yoffset=8 xadvance=9 page=0
+",
+        );
+        assert_eq!(f.glyph('\u{201c}').map(|g| g.x), Some(8));
+        assert_eq!(f.glyph('\u{20ac}').map(|g| g.x), Some(0));
+        let text = crate::lang::decode(&[0x93, 0x96, 0x80]);
+        assert_eq!(f.width(&text), 6 + 9 + 8);
+        assert_eq!(f.glyph('\u{3042}'), None);
+        // A text read byte for byte as Latin-1 (its control character
+        // U+0093) still finds the byte's glyph.
+        assert_eq!(f.glyph('\u{93}').map(|g| g.x), Some(8));
+    }
+
+    /// FMT-3.8b T7 (Q-1088 a, E-ui-044; stand-ins list row 12): the gb
+    /// `credits.txt` holds the byte 0x96 twice (in the shipped file on two
+    /// lines, `cr170` and `cr501`, not on one as T7 reads); each draws glyph
+    /// 150 in a font that has it (`light_system`), adding its advance (the
+    /// fonts' extra spacing is 0, UI-MENU-1.8); in `mini` (glyphs up to 126)
+    /// it draws nothing and adds no width. Skipped without `S2_GAME_DIR`.
+    // spec: FMT-3.8b (FMT T7), FMT-3.8a
+    #[test]
+    fn t7_a_byte_without_a_glyph_vanishes() {
+        let Ok(dir) = std::env::var("S2_GAME_DIR") else {
+            eprintln!("skipped: S2_GAME_DIR is not set");
+            return;
+        };
+        let gb = std::path::Path::new(&dir).join("data/language/gb");
+        let name = "data/language/gb/credits.txt";
+        let raw = std::fs::read(gb.join("credits.txt")).expect("credits.txt");
+        let plain = crate::rc00::decode(name, &raw).expect("the file unwrapped");
+        let text = crate::lang::decode(&plain);
+        let dash = crate::lang::cp1252_char(0x96);
+        let lines: Vec<&str> = text.lines().filter(|l| l.contains(dash)).collect();
+        assert_eq!(text.matches(dash).count(), 2, "the byte 0x96 twice");
+        let font = |name: &str| {
+            let fnt = std::fs::read(gb.join("fonts").join(name)).expect("the font");
+            Font::parse(&String::from_utf8_lossy(&fnt))
+        };
+        let light = font("light_system.fnt");
+        let glyph = light.glyphs.get(&150).expect("glyph 150");
+        let mini = font("mini.fnt");
+        assert!(mini.glyphs.keys().all(|&id| id <= 126));
+        assert_eq!(light.glyph(dash), Some(glyph));
+        assert_eq!(mini.glyph(dash), None);
+        for line in lines {
+            let n = line.matches(dash).count() as i32;
+            let without: String = line.chars().filter(|&c| c != dash).collect();
+            assert_eq!(
+                light.width(line),
+                light.width(&without) + n * glyph.x_advance
+            );
+            assert_eq!(mini.width(line), mini.width(&without));
+        }
     }
 }

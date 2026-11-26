@@ -914,7 +914,7 @@ mod tests {
         map.animals.push(Animal {
             type_id: 1,
             id: 4,
-            unknown_a: 0.0,
+            walk_start: 0.0,
             home: field,
             path: None,
             position: FieldPos { x: 6, y: 2 },

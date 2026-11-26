@@ -47,6 +47,13 @@ pub(crate) const USAGE: &str =
                           development: a study of the ground cut into flat
                           facets in a project palette's colours (not a
                           hook; render/ground_study.rs)
+  --look-study <storybook|cel|ink|miniature|facets|papercut|origtoy|cel2>[:<a>,<b>,<c>]
+                          development: the whole map picture in another art
+                          direction (lighting, colour, outlines; the
+                          interface as it is), with up to three numbers of
+                          the look's (not a hook; render/look_study.rs);
+                          origtoy and cel2 change the models' materials
+                          (render/look_materials.rs)
   --rules-overlay <file>  a Lua file run after the property scripts
                           (repeatable; docs/extending.md)
   --screenshot-dir <dir>  where F12 saves screenshots (default: screens)
@@ -181,6 +188,10 @@ pub(crate) const USAGE: &str =
                           of the steps go to --screenshot-dir; exit code 1
                           when a step failed
   --play-report <file>    where --play writes its report
+  --probe-window <log>    only a tiny window of our own, one triangle, its
+                          frames logged with the wall clock (beside a timed
+                          run; --bench-seconds ends it, --probe-at X,Y
+                          places it)
   --colour-probe <report> draw quads of known texels under the map's light,
                           read their pixels back and check them against
                           min(255, v x D) (docs/colour.md); exit code 1
@@ -244,6 +255,8 @@ pub(crate) struct Options {
     pub(crate) figure_looks: Vec<crate::extend::FigureLook>,
     /// `--ground-study` (a development switch).
     pub(crate) ground_study: Option<crate::render::ground_study::Study>,
+    /// `--look-study` (a development switch).
+    pub(crate) look_study: Option<crate::render::look_study::Look>,
     pub(crate) screenshot_dir: PathBuf,
     pub(crate) shot: Option<PathBuf>,
     /// `--shot-after`: frames on screen before the shot.
@@ -266,6 +279,10 @@ pub(crate) struct Options {
     pub(crate) bench_seconds: Option<u32>,
     /// `--bench-log`: the running log of a long benchmark.
     pub(crate) bench_log: Option<PathBuf>,
+    /// `--probe-window <log>`: only the probe window (tools/probe_window.rs).
+    pub(crate) probe_window: Option<PathBuf>,
+    /// `--probe-at X,Y`: where the probe window opens.
+    pub(crate) probe_at: Option<(i32, i32)>,
     /// `--bench-invariants`: the soak's invariants after every tick.
     pub(crate) bench_invariants: bool,
     /// `--mute`: all volumes 0 for this run.
@@ -397,6 +414,7 @@ pub(crate) fn parse_from(
         object_looks: Vec::new(),
         figure_looks: Vec::new(),
         ground_study: None,
+        look_study: None,
         screenshot_dir: PathBuf::from("screens"),
         shot: None,
         shot_after: SHOT_SETTLE_FRAMES,
@@ -406,6 +424,8 @@ pub(crate) fn parse_from(
         bench_pan: false,
         bench_seconds: None,
         bench_log: None,
+        probe_window: None,
+        probe_at: None,
         bench_invariants: false,
         mute: false,
         bench_drag: None,
@@ -499,6 +519,9 @@ pub(crate) fn parse_from(
             "--ground-study" => {
                 options.ground_study = Some(crate::render::ground_study::from_option(&value()?)?)
             }
+            "--look-study" => {
+                options.look_study = Some(crate::render::look_study::from_option(&value()?)?)
+            }
             "--screenshot-dir" => options.screenshot_dir = value()?.into(),
             "--save-dir" => options.save_dir = Some(value()?.into()),
             "--profile-dir" => options.profile_dir = Some(value()?.into()),
@@ -541,6 +564,15 @@ pub(crate) fn parse_from(
                 options.bench.get_or_insert(u32::MAX);
             }
             "--bench-log" => options.bench_log = Some(value()?.into()),
+            "--probe-window" => options.probe_window = Some(value()?.into()),
+            "--probe-at" => {
+                let at = value()?;
+                let (x, y) = at
+                    .split_once(',')
+                    .and_then(|(x, y)| Some((x.trim().parse().ok()?, y.trim().parse().ok()?)))
+                    .ok_or_else(|| format!("bad window place {at} (X,Y)"))?;
+                options.probe_at = Some((x, y));
+            }
             "--bench-invariants" => options.bench_invariants = true,
             "--mute" => options.mute = true,
             "--bench-drag" => {

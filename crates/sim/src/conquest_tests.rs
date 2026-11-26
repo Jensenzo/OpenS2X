@@ -77,6 +77,7 @@ fn con_t1_soldiers_out_still_defend() {
         intercept: true,
         defends: Some(target),
         meeting: None,
+        sent: 0,
     };
     // The one inside is an opponent still.
     assert!(!world.can_take(target, P0));
@@ -124,6 +125,61 @@ fn con_t2_walking_in_does_not_count() {
     assert!(!world.can_take(target, P0));
     assert!(world.can_take(target, P1));
     let _ = defender;
+}
+
+// T20 (MIL-CON-1.1 condition 2, E-mil-043): every soldier on the target's
+// list only on his way in, but an interceptor of another building waits
+// outside for it, unpaired: no opponent is missing, so it cannot be taken.
+// Without him it can.
+// spec: MIL-CON-1.1 (MIL-CON T20), MIL-ATK-5.1
+#[test]
+fn con_t20_an_available_interceptor_keeps_the_building() {
+    let mut world = scene();
+    fill(&mut world, P1, BARRACKS, TARGET, &[(0, 3)]);
+    fill(&mut world, P1, BARRACKS, (60, 20), &[(0, 3)]);
+    kill_defenders(&mut world, TARGET);
+    let target = world.target_of(TARGET).unwrap();
+    let other = world.target_of((60, 20)).unwrap();
+    let coming = world.add_settler(Settler {
+        number: 0,
+        player: P1,
+        profession: RANK[0],
+        list: crate::SettlerList::Soldiers,
+        walker: Walker::new((58, 20)),
+        job: SettlerJob::ToMilitary { target, health: 3 },
+        timer: 0,
+        carrying: None,
+    });
+    world
+        .military
+        .get_mut(&TARGET)
+        .unwrap()
+        .soldiers
+        .push(coming);
+    assert!(world.can_take(target, P0), "condition 1 holds");
+    let interceptor = garrison(&mut world, (60, 20), 0, 3);
+    {
+        let s = world.settlers[interceptor].as_mut().unwrap();
+        s.walker = Walker::new((52, 21));
+        s.job = SettlerJob::Defend {
+            home: other,
+            health: 3,
+            step: DefendStep::Waiting,
+            opponent: None,
+            intercept: true,
+            defends: Some(target),
+            meeting: Some((52, 21)),
+            sent: 1,
+        };
+    }
+    assert!(!world.can_take(target, P0), "an interceptor is available");
+    // Defending another building he is no opponent here.
+    if let SettlerJob::Defend { defends, .. } =
+        &mut world.settlers[interceptor].as_mut().unwrap().job
+    {
+        *defends = Some(other);
+    }
+    assert!(world.can_take(target, P0));
 }
 
 // T3: the whole way, from the order to the taken building.
@@ -681,6 +737,57 @@ fn con_5_2_no_target_searches_again() {
     assert_eq!(world.catapult_stones(CATAPULT_AT), 1);
 }
 
+// T21 (MIL-CON-5.2a, E-mil-046): two stones, production on, no target: the
+// idle check passes in update u; the searches come at u + 301 (none) and
+// u + 602, where the enemy guard house placed at u + 400 is
+// found and the shot starts. Production switched off at u + 500 changes
+// nothing in the step; after the shot one stone is left and the idle check
+// fails while production is off.
+// spec: MIL-CON-5.2a (MIL-CON T21), MIL-CON-5.2
+#[test]
+fn con_t21_the_search_step_tests_nothing() {
+    for switch_off in [false, true] {
+        let mut world = catapult_scene(&[]);
+        world.inputs.insert(CATAPULT_AT, vec![(STONE, 2)]);
+        run_until(&mut world, 10, |w| {
+            matches!(phase(w), CatapultPhase::Searching { .. })
+        });
+        let u = world.tick();
+        let mut shot_at = None;
+        while shot_at.is_none() && world.tick() < u + 700 {
+            world.step();
+            let t = world.tick();
+            if t == u + 400 {
+                // 12 fields off (the spec's example says 8): nearer, the
+                // test world's free land would go to the new barracks with
+                // the catapult on it.
+                occupied(&mut world, P1, BARRACKS, (52, 20));
+            }
+            if switch_off && t == u + 500 {
+                let index = world.terrain().index(CATAPULT_AT);
+                world.buildings[index].as_mut().unwrap().production.enabled = false;
+            }
+            if t == u + 301 {
+                assert_eq!(
+                    phase(&world),
+                    CatapultPhase::Searching { counter: 0 },
+                    "the first search finds nothing"
+                );
+            }
+            if matches!(phase(&world), CatapultPhase::Turning { .. }) {
+                shot_at = Some(t);
+            }
+        }
+        assert!(world.building_at(CATAPULT_AT).is_some());
+        assert_eq!(shot_at, Some(u + 602), "switched off: {switch_off}");
+        run_until(&mut world, 2000, |w| phase(w) == CatapultPhase::Idle);
+        assert_eq!(world.catapult_stones(CATAPULT_AT), 1);
+        run(&mut world, 400);
+        let idle = phase(&world) == CatapultPhase::Idle;
+        assert_eq!(idle, switch_off, "the idle check fails only while off");
+    }
+}
+
 // T7, T8: turn steps and times.
 // spec: MIL-CON-5.4 (T7, T8)
 #[test]
@@ -796,6 +903,7 @@ fn con_5_3_who_is_a_target() {
             intercept: true,
             defends: Some(target),
             meeting: None,
+            sent: 0,
         },
         timer: 0,
         carrying: None,
@@ -956,6 +1064,7 @@ fn con_t19_fights_at_a_taken_target_go_on() {
         intercept: true,
         defends: Some(target),
         meeting: None,
+        sent: 0,
     };
     let record = |w: &World, id: usize| w.attackers.iter().position(|r| r.soldier == id).unwrap();
     let r = record(&world, fighter);

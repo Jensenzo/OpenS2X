@@ -195,6 +195,26 @@ fn vertex(v: Vertex) -> VertexOutput {
         out.color = vec4<f32>(lambert, 0.0, 0.0, 1.0);
     }
     out.m22 = m22;
+    // A development switch (the look study's looks of the materials,
+    // `look_materials.rs`): the vertex colour is the face's flat colour
+    // (alpha: 1 plain, 0.5 roof, -1 a shell of cel2's outline, its red the
+    // width in pixels of a 1080 line picture).
+    @if(LOOK_TOY) {
+        out.color = v.color;
+    }
+    @if(LOOK_CEL) {
+        out.color = v.color;
+        if v.color.a < -0.5 {
+            // The shell pushed out along its normal on the screen.
+            let cn = (view.clip_from_world * vec4<f32>(out.normal, 0.0)).xy * view.viewport.zw;
+            let len = length(cn);
+            if len > 1e-6 {
+                let width = v.color.r * view.viewport.w / 1080.0;
+                let push = cn / len * width * 2.0 / view.viewport.zw * out.clip.w;
+                out.clip = vec4<f32>(out.clip.xy + push, out.clip.zw);
+            }
+        }
+    }
     return out;
 }
 
@@ -287,6 +307,162 @@ fn mirror_view() -> bool {
     return dot(cross(m[0].xyz, m[1].xyz), m[2].xyz) < 0.0;
 }
 
+// A development switch, not a hook: the look study's looks of the
+// materials (`look_materials.rs`, shader defs LOOK_TOY for origtoy and
+// LOOK_CEL for cel2; without them none of this is compiled in use).
+// cel2's light in two steps: the shade's cool tone and the lit factor; the
+// outline's colour.
+const LOOK_SHADE: vec3<f32> = vec3<f32>(0.663, 0.706, 0.878);
+const LOOK_LIT: vec3<f32> = vec3<f32>(1.06, 1.04, 1.0);
+const LOOK_OUTLINE: vec3<f32> = vec3<f32>(0.165, 0.125, 0.149);
+// The light and ambient added at noon (GFX-VIEW-2.3): the day's brightness
+// as a factor of the noon's.
+const LOOK_NOON: vec3<f32> = vec3<f32>(1.54, 1.40, 1.38);
+
+// How much of the direct light reaches a point: 0 in a shadow, 1 lit.
+fn look_lit(shadow: f32) -> f32 {
+    return saturate((shadow - light.light_dir.w) / max(1.0 - light.light_dir.w, 1e-3));
+}
+
+// A colour made toy-clean: more colour around its grey, lifted.
+fn look_clean(c: vec3<f32>) -> vec3<f32> {
+    let grey = dot(c, vec3<f32>(0.3333));
+    return saturate((vec3<f32>(grey) + (c - vec3<f32>(grey)) * 1.35) * 1.08 + vec3<f32>(0.03));
+}
+
+// The look's light on an albedo: origtoy a warm wrapped sun, a cool sky
+// fill, a clear-coat highlight (gloss) and a rim; cel2 two steps.
+fn look_light(albedo: vec3<f32>, n: vec3<f32>, to_eye: vec3<f32>, shadow: f32, occlusion: f32,
+        gloss: f32) -> vec3<f32> {
+    let to_light = -light.light_dir.xyz;
+    let ndl = dot(n, to_light);
+    let lit = look_lit(shadow);
+    var out = albedo;
+    @if(LOOK_TOY) {
+        let wrap = saturate((ndl + 0.45) / 1.45);
+        let sun = light.light_color.rgb * vec3<f32>(1.0, 0.95, 0.86) * wrap * mix(0.4, 1.0, lit);
+        let sky = mix(light.ambient.rgb, vec3<f32>(light.ambient.w) * vec3<f32>(0.86, 0.92, 1.04), 0.75)
+            * occlusion;
+        out = albedo * (sun + sky);
+        let h = normalize(to_light + to_eye);
+        let nh = saturate(dot(n, h));
+        let spec = (pow(nh, 60.0) * 0.5 + pow(nh, 12.0) * 0.06) * gloss * lit
+            * select(0.0, 1.0, ndl > 0.0);
+        let rim = pow(1.0 - saturate(abs(dot(n, to_eye))), 3.0) * 0.12 * gloss;
+        out += light.light_color.rgb * spec + sky * rim;
+    }
+    @if(LOOK_CEL) {
+        let step = select(LOOK_SHADE, LOOK_LIT, saturate(ndl) * lit > 0.3);
+        out = albedo * step * (light.light_color.rgb + light.ambient.rgb) / LOOK_NOON;
+    }
+    return out;
+}
+
+// A road's flat colour.
+fn look_road() -> vec3<f32> {
+    var road = vec3<f32>(0.831, 0.604, 0.353);
+    @if(LOOK_CEL) {
+        road = vec3<f32>(0.827, 0.612, 0.369);
+    }
+    return road;
+}
+
+// The look's pixel of an original model.
+fn look_pixel(in: VertexOutput, f: u32, n: vec3<f32>, occlusion: f32, seen: f32,
+        mirrored: bool, front: bool) -> vec4<f32> {
+    var uv = in.uv;
+    if f == FLAG {
+        uv.y += params.extra.y;
+    }
+    let tex = textureSample(base, base_sampler, uv);
+    let to_eye = normalize(view.world_position - in.world_position);
+    // Flat faces show the shadow map's acne the textures hid: tested a
+    // little out along the normal, as a project's faces are (W30).
+    let shadow = shadow_at(facet_shadow_point(in.world_position, n), n, in.clip);
+    if f == HOUSE {
+        // GFX-OBJ-2.6, 8.4: the rising plane cuts as ever.
+        if params.extra.z > 1.5 {
+            if in.world_position.y < params.extra.y {
+                discard;
+            }
+        } else if params.extra.z > 0.5 && in.world_position.y > params.extra.y {
+            discard;
+        }
+    }
+    let alpha_tested = f == PLAIN || f == HOUSE || f == TREE || f == DOODAD || f == HAZE
+        || f == WHEAT || (f == SHIP && params.extra.x < 0.5);
+    if in.color.a < -0.5 {
+        // cel2's shell: its far side only, outside the model's own
+        // outline; none in the water's mirror.
+        if mirrored || front || (alpha_tested && tex.a <= 0.5) {
+            discard;
+        }
+        return vec4<f32>(LOOK_OUTLINE * seen, 1.0);
+    }
+    if f == SETTLER {
+        // The figure's own colour map at one bright step of each row (no
+        // painted shading), the owner's colour where the map's alpha is 0.
+        let texel = textureSampleLevel(base, base_sampler, in.uv, 0.0);
+        let half_texel = 0.5 / 1024.0;
+        let u = 0.72 * params.extra.z + params.extra.x + half_texel;
+        let v = texel.r * params.extra.w + params.extra.y + half_texel;
+        var colour = textureSampleLevel(second, second_sampler, vec2<f32>(u, v), 0.0).rgb;
+        colour = look_clean(mix(params.player.rgb * 1.5, colour, texel.a));
+        return vec4<f32>(saturate(look_light(colour, n, to_eye, shadow, occlusion, 0.9) * seen), 1.0);
+    }
+    let up = vec3<f32>(0.0, 1.0, 0.0);
+    if f == ROAD {
+        // A road one flat colour, blended by its texture's alpha.
+        return vec4<f32>(saturate(look_light(look_road(), up, to_eye, shadow, occlusion, 0.0) * seen),
+            tex.a);
+    }
+    if f == DECAL {
+        // A building's ground: trodden earth, a little lighter than a road.
+        let earth = look_road() * 1.08;
+        return vec4<f32>(saturate(look_light(earth, up, to_eye, shadow, occlusion, 0.0) * seen),
+            tex.a * 0.8);
+    }
+    var albedo = in.color.rgb;
+    var gloss = 0.6;
+    if f == HOUSE {
+        gloss = 0.8;
+        if params.extra.w < 1.0 {
+            // GFX-OBJ-2.2b: the building's colour column (the face colour is
+            // made at column 0 and divided by it).
+            let half = vec2<f32>(0.5) / vec2<f32>(textureDimensions(second, 0));
+            let cuv = vec2<f32>(in.uv2.x + params.extra.x, in.uv2.y) + half;
+            albedo *= textureSampleLevel(second, second_sampler, cuv, 0.0).rgb;
+        }
+    } else if f == TREE || f == WHEAT {
+        gloss = 0.25;
+    }
+    if in.color.a > 0.25 && in.color.a < 0.75 {
+        // A roof: drawn tile rows by height.
+        @if(LOOK_TOY) {
+            if fract(in.world_position.y * 2.6) < 0.2 {
+                albedo *= vec3<f32>(0.62, 0.55, 0.52);
+            }
+        }
+        @if(LOOK_CEL) {
+            if fract(in.world_position.y / 0.55) < 0.12 {
+                albedo *= vec3<f32>(0.45, 0.32, 0.28);
+            }
+        }
+    }
+    let player = look_clean(params.player.rgb * 1.6);
+    if f == FLAG || f == BORDER {
+        albedo = mix(player, albedo, step(0.5, tex.a));
+    } else if f == SHIP && params.extra.x > 0.5 {
+        albedo = mix(albedo, player, step(0.5, tex.a));
+    } else if f == WHEAT {
+        albedo = mix(albedo * vec3<f32>(0.7, 1.25, 0.5), albedo, in.m22);
+    }
+    if alpha_tested && tex.a <= 127.0 / 255.0 {
+        discard;
+    }
+    return vec4<f32>(saturate(look_light(albedo, n, to_eye, shadow, occlusion, gloss) * seen), 1.0);
+}
+
 @fragment
 fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     // Hook W30b: the normal of the face as drawn (the screen derivatives of
@@ -348,6 +524,18 @@ fn fragment(in: VertexOutput, @builtin(front_facing) front: bool) -> @location(0
     // at the pixel (1 without the hook: the ambient as it is).
     let occlusion = ambient_occlusion(in.clip);
     let ambient = light.ambient.rgb * occlusion;
+    // A development switch: the look study's looks of the materials (the
+    // original's models only; a project's are drawn as ever).
+    @if(LOOK_TOY) {
+        if f < FACET {
+            return look_pixel(in, f, n, occlusion, seen, mirrored, front);
+        }
+    }
+    @if(LOOK_CEL) {
+        if f < FACET {
+            return look_pixel(in, f, n, occlusion, seen, mirrored, front);
+        }
+    }
     if f == SETTLER {
         return settler(in, n, raw_n, seen, shadow, occlusion);
     }

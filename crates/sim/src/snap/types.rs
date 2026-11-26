@@ -684,7 +684,7 @@ snap_struct!(crate::rules::Roles {
     coin,
     boat_carrier
 });
-snap_enum!(crate::settlers::SettlerJob { ToSite { target, builder }, ToBuilding { target }, Worker { target, work }, Home { target }, ToMilitary { target, health }, Garrison { target, health, heal }, Attack { home, health, step }, Defend { home, health, step, opponent, intercept, defends @ 75 = None, meeting @ 98 = None }, Specialist { flag, spots_left, step }, CarryOut { warehouse, destination, target, order, step }, Dying { stand @ 86 = None }, Released { carrier, step }, Leaving { step, at, stand, health @ 70 = None } });
+snap_enum!(crate::settlers::SettlerJob { ToSite { target, builder }, ToBuilding { target }, Worker { target, work }, Home { target }, ToMilitary { target, health }, Garrison { target, health, heal }, Attack { home, health, step }, Defend { home, health, step, opponent, intercept, defends @ 75 = None, meeting @ 98 = None, sent @ 100 = 0 }, Specialist { flag, spots_left, step }, CarryOut { warehouse, destination, target, order, step }, Dying { stand @ 86 = None }, Released { carrier, step }, Leaving { step, at, stand, health @ 70 = None } });
 snap_enum!(crate::settlers::LeavingStep {
     Wait,
     Finish,

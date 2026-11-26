@@ -27,7 +27,21 @@ one sends it. At the flag the specialist visits ten random spots around the flag
 ### ECO-SPC-2 The trip
 
 - **ECO-SPC-2.1** The specialist walks to the flag (over roads like any delivery). On arrival he
-  checks that he stands on the order's flag field; if not, he finishes (2.5).
+  checks that he stands on the order's flag field; if not, he **goes home at once from where he
+  stands** (`TRN-free-walk.md` TRN-FREE-6.4), as in 2.2b: no walk back to the order's flag, no
+  spot. (Corrected 2026-11-24 b, Q-272 / stand-ins row 13; E-trn-048, code reading, high: it read
+  "he finishes (2.5)", which would walk him to the flag first.)
+- **ECO-SPC-2.1a A road cut under him (Q-272; E-trn-048, code reading).** His walk to the flag is
+  the road walk of `TRN-free-walk.md` TRN-FREE-6.5: a route chosen again at every flag. When a
+  road on his way is removed and no route from the flag he reaches is found, the walk ends there
+  (TRN-FREE-6.5 e) and counts as done; the arrival check of 2.1 then finds him off the order's
+  flag and he goes home from that flag in the same update (TRN-FREE-6.4: the nearest warehouse he
+  can reach, by roads or, failing that, as 6.4 says). He does not wait and does not search again.
+  When no road route exists at all when he would start (the flag already cut off), the walk does
+  not start and he goes home at once from the warehouse's door. The order he was sent for is not
+  filed again by him or by this routine: the flag keeps no specialist until the player orders one
+  again (confidence medium: no re-filing found in the routine or the order's own code read;
+  ECO-SPC-1.1 files one request per command). Confidence: high for the going home.
 - **ECO-SPC-2.2** He then visits **10 spots**. Before each spot he picks one: the candidate fields are
   collected by growing a six-neighbour frontier from the flag outwards (the flag field first,
   then each popped field's six neighbours in direction order); a field is entered when it is
@@ -115,6 +129,7 @@ one sends it. At the flag the specialist visits ten random spots around the flag
 | T6 | geologist digs a field with no resource entry | result | empty sign planted, no message (3.1, 3.2) |
 | T7 | 2.2a: two geologists ordered at two flags whose candidate fields overlap, the second sent while the first walks to his spot S | the second's spot choice | not S (S is marked); once the first has finished his work at S (the sign planted), S is no longer a candidate anyway (the sign) |
 | T8 | 2.2b: a geologist ordered at a flag with no diggable field within 5 (all grass) | after he reaches the flag | he goes home at once from the flag field (TRN-FREE-6.4), no spot, no sign; with a candidate whose walk cannot start the same |
+| T9 | 2.1a: a geologist ordered at flag F, his road route H -> A -> B -> F; while he walks the road A - B, the road B - F is removed (F stays, now cut off from the network) | when he reaches B | his walk ends on B; in the same update he goes home from B (TRN-FREE-6.4) and walks to the nearest reachable warehouse, where he is stored; he never comes back to F, no spot is dug, no sign appears; the flag F has no geologist on the way afterwards. Before s2-reborn's correction he stood on B and searched again every tick |
 
 ## Evidence
 
@@ -123,6 +138,7 @@ one sends it. At the flag the specialist visits ten random spots around the flag
 | E-cmd-001 | code reading | S2DNG.exe: the command handlers, the order and its request, the specialist's tick, the spot choice, the work, the geologist's result, the scout's reveal, the 10 spots | |
 | E-pt2-001 | code reading | | spot search stop rule, diggable test, sign rule, finishing, explore shape |
 | E-eco-048 | code reading | S2DNG.exe: the specialist's states, the spot mark layer and its writers and readers | 2.2a, 2.2b, 2.5 (Q-201) |
+| E-trn-048 | code reading | | 2.1, 2.1a: the arrival check after the walk to the flag; off the flag (a walk ended short or not started) -> home at once (Q-272) |
 
 ## Open questions
 

@@ -620,6 +620,203 @@ fn the_drawn_rectangle_is_the_union_of_the_cells_seen() {
     );
 }
 
+/// GFX-ANIM-3.8a, 3.8c (stand-ins list row 14): a tool that plays a game
+/// ahead keeps the fall axes of the trees felled in its ticks, as the view
+/// does tick by tick (the original's woodcutter view object ticks whether
+/// seen or not): every tree felled while the woodcutter of Storm Coast's
+/// first hut works has the axis toward him, the same one the view takes
+/// when it runs through those ticks, and none falls the fixed +x way.
+/// Skipped without `S2_GAME_DIR`.
+// spec: GFX-ANIM-3.8a, GFX-ANIM-3.8c
+#[test]
+fn a_played_ahead_tree_falls_toward_its_woodcutter() {
+    let Some(root) = std::env::var_os("S2_GAME_DIR") else {
+        eprintln!("skipped: S2_GAME_DIR is not set");
+        return;
+    };
+    let dir = s2_assets::GameDir::new(std::path::Path::new(&root)).expect("the install");
+    let (rules, _) = s2_rules::load(&dir).expect("the property scripts");
+    let path = crate::game::find_maps(&dir.root().join("data/maps"))
+        .into_iter()
+        .find(|p| crate::game::map_name(p).eq_ignore_ascii_case("MP_2P_Storm_Coast"))
+        .expect("the map");
+    let map = s2_assets::s2m::parse(&crate::game::read_game_file(&path).unwrap()).unwrap();
+    let mut world = s2_rules::new_game(1, &map, &rules, 0).expect("a game");
+    let hut = rules
+        .buildings
+        .iter()
+        .find(|b| b.name.as_deref() == Some("WoodcutterHut"))
+        .map(|b| b.id)
+        .expect("WoodcutterHut");
+    crate::tools::scenes::building(&mut world, s2_sim::PlayerId(0), hut).expect("a hut");
+    let frame = Frame::new(world.terrain().width, world.terrain().height);
+    let mut ahead = PlayAhead::new(&world, 16.0 / 9.0, true);
+    let mut live = std::collections::HashMap::new();
+    let mut felled = std::collections::BTreeSet::new();
+    for _ in 0..30_000 {
+        world.step();
+        ahead.frame(&world);
+        crate::world::scene3d::update_fall_axes(&world, &frame, &mut live);
+        felled.extend(
+            world
+                .deposits()
+                .filter(|(f, _)| world.fall_of(*f).is_some())
+                .map(|(f, _)| f),
+        );
+        if felled.len() >= 2 {
+            break;
+        }
+    }
+    assert!(felled.len() >= 2, "only {} trees felled", felled.len());
+    // Each lying tree's axis came from its woodcutter while the play ran:
+    // the same as the view's, tick by tick.
+    let mut checked = 0;
+    for _ in 0..30_000 {
+        world.step();
+        ahead.frame(&world);
+        crate::world::scene3d::update_fall_axes(&world, &frame, &mut live);
+        for (field, _) in world
+            .deposits()
+            .filter(|(f, _)| world.fall_of(*f).is_some())
+        {
+            assert_eq!(
+                ahead.fall_axes.get(&field),
+                live.get(&field),
+                "tree {field:?}"
+            );
+            assert!(
+                ahead.fall_axes.contains_key(&field),
+                "tree {field:?} has no axis"
+            );
+            checked += 1;
+        }
+        if checked > 100 {
+            break;
+        }
+    }
+    assert!(checked > 100, "only {checked} lying-tree ticks");
+    // GFX-ANIM-3.8c1: a view starting after the felling, the woodcutter
+    // gone from the tree (a load), gives it no axis at all, no fixed one.
+    let mut late = std::collections::HashMap::new();
+    crate::world::scene3d::update_fall_axes(&world, &frame, &mut late);
+    for (field, _) in world.deposits() {
+        if world.fall_of(field).is_some() {
+            assert!(!late.contains_key(&field), "tree {field:?}");
+        }
+    }
+}
+
+/// GFX ANIM T11a (Q-1087): one woodcutter's work at a tree begun in tick W,
+/// the game loaded at W + 20, at W + 40 and 5 ticks after the harvest: at
+/// W + 20 the tree falls from W + 30 as in play; at W + 40 it stands at the
+/// load and falls from the first tick after it (0.0044 rad after that tick,
+/// the 3.8a sequence), about the line to where he stands; loaded after the
+/// harvest it stands upright, never falls, never sinks, and is gone at its
+/// removal's end. A removal that starts after the load sinks as in play.
+/// Skipped without `S2_GAME_DIR`.
+// spec: GFX-ANIM-3.8c1, GFX-ANIM-3.8a, GFX-ANIM-3.8c
+#[test]
+fn t11a_a_load_restores_no_fall_and_no_sink() {
+    use crate::world::scene3d::{fall_angle_from, seen_fall_start, sink_seen, Fall};
+    let Some(root) = std::env::var_os("S2_GAME_DIR") else {
+        eprintln!("skipped: S2_GAME_DIR is not set");
+        return;
+    };
+    let dir = s2_assets::GameDir::new(std::path::Path::new(&root)).expect("the install");
+    let (rules, _) = s2_rules::load(&dir).expect("the property scripts");
+    let path = crate::game::find_maps(&dir.root().join("data/maps"))
+        .into_iter()
+        .find(|p| crate::game::map_name(p).eq_ignore_ascii_case("MP_2P_Storm_Coast"))
+        .expect("the map");
+    let map = s2_assets::s2m::parse(&crate::game::read_game_file(&path).unwrap()).unwrap();
+    let mut world = s2_rules::new_game(1, &map, &rules, 0).expect("a game");
+    let hut = rules
+        .buildings
+        .iter()
+        .find(|b| b.name.as_deref() == Some("WoodcutterHut"))
+        .map(|b| b.id)
+        .expect("WoodcutterHut");
+    crate::tools::scenes::building(&mut world, s2_sim::PlayerId(0), hut).expect("a hut");
+    let frame = Frame::new(world.terrain().width, world.terrain().height);
+    // To the tick his work action at a tree began.
+    let (tree, began) = (0..30_000)
+        .find_map(|_| {
+            world.step();
+            world.deposits().find_map(|(f, d)| {
+                (world.fall_of(f).is_none()
+                    && !matches!(d.state, s2_sim::DepositState::Removing { .. }))
+                .then(|| world.felling_began(f))
+                .flatten()
+                .map(|w| (f, w))
+            })
+        })
+        .expect("a tree felled");
+    let mut saves = std::collections::BTreeMap::new();
+    while world.deposit(tree).is_some() {
+        let t = world.tick();
+        if t == began + 20 || t == began + 40 {
+            saves.insert(t - began, world.clone());
+        }
+        if matches!(world.deposit(tree).map(|d| d.state), Some(s2_sim::DepositState::Removing { since, .. }) if t == since + 5)
+        {
+            saves.insert(100, world.clone());
+        }
+        world.step();
+    }
+    assert_eq!(saves.len(), 3, "the three saves");
+    // Saved at W + 20: as in play.
+    let w20 = &saves[&20];
+    let start = seen_fall_start(w20, tree, Some(began + 20));
+    assert_eq!(start, Some(began + 30));
+    assert_eq!(
+        fall_angle_from(start, (began + 29) as f32 + 0.9),
+        Fall::Standing
+    );
+    // Saved at W + 40: upright at the load, 0.0044 rad one tick after it.
+    let w40 = &saves[&40];
+    let loaded = Some(began + 40);
+    let start = seen_fall_start(w40, tree, loaded);
+    assert_eq!(start, Some(began + 40));
+    assert_eq!(
+        fall_angle_from(start, (began + 40) as f32),
+        Fall::Falling(0.0)
+    );
+    let Fall::Falling(a) = fall_angle_from(start, (began + 41) as f32) else {
+        panic!("falling one tick after the load");
+    };
+    assert!((a - 0.0043633).abs() < 1e-5, "{a}");
+    // About the line to where he stands: his work action restored, the
+    // view takes the axis from him, not a fixed one.
+    let mut axes = std::collections::HashMap::new();
+    crate::world::scene3d::update_fall_axes(w40, &frame, &mut axes);
+    assert!(axes.contains_key(&tree), "an axis from the woodcutter");
+    // Saved 5 ticks after the harvest: upright, no fall, no sink, gone at
+    // its removal's end.
+    let mut after = saves.remove(&100).unwrap();
+    let loaded = Some(after.tick());
+    let Some(s2_sim::DepositState::Removing { since, gone_at }) =
+        after.deposit(tree).map(|d| d.state)
+    else {
+        panic!("removing");
+    };
+    assert!(!sink_seen(since, loaded));
+    assert!(sink_seen(since, None), "seen in play it sinks");
+    let mut axes = std::collections::HashMap::new();
+    while after.deposit(tree).is_some() {
+        assert_eq!(seen_fall_start(&after, tree, loaded), None);
+        crate::world::scene3d::update_fall_axes(&after, &frame, &mut axes);
+        assert!(!axes.contains_key(&tree), "no fall axis");
+        after.step();
+    }
+    assert_eq!(
+        after.tick(),
+        gone_at + 1,
+        "gone when its counter reaches 20"
+    );
+    // A removal the view saw start sinks.
+    assert!(sink_seen(since, Some(since)));
+}
+
 /// GFX-VIEW-5.4 (e), (g), T36a: our Weak game (the recording's set-up,
 /// fog of war off) played to trace tick 6000 with the camera on player 0's
 /// headquarters, then the farm scene's camera of the shots run (paused): the

@@ -113,12 +113,15 @@ impl World {
         };
         // Only soldiers still on their way in do not count; a present one
         // is an opponent (MIL-ATK-5.1) as well.
-        m.soldiers.iter().all(|&id| {
+        let only_coming = m.soldiers.iter().all(|&id| {
             self.settlers
                 .get(id)
                 .and_then(|s| s.as_ref())
                 .is_some_and(|s| matches!(s.job, SettlerJob::ToMilitary { .. }))
-        })
+        });
+        // Condition 2 (T20, E-mil-043): no opponent available, so no
+        // interceptor waiting outside for the target (MIL-ATK-5.1).
+        only_coming && self.waiting_interceptor(target).is_none()
     }
 
     /// MIL-CON-2: the attacker (settler `number`, record `record`) stands at

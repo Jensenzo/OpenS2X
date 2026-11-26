@@ -73,8 +73,15 @@ pub fn setup_3d(mut commands: Commands, menu: Res<crate::menus::menu::MenuState>
         RenderLayers::layer(MAP_LAYER),
         Transform::from_xyz(0.0, 50.0, 50.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
-    if let Some(occlusion) = ambient_occlusion(render.ambient_occlusion) {
+    // A development switch: the look study's prepasses (and its contact
+    // shadows), none by default.
+    let look = crate::render::look_study::look();
+    let contact_shadows = look.is_some_and(|l| l.kind.contact_shadows());
+    if let Some(occlusion) = ambient_occlusion(render.ambient_occlusion || contact_shadows) {
         camera.insert(occlusion);
+    }
+    if let Some(look) = look.filter(|l| l.kind.has_pass()) {
+        camera.insert(crate::render::look_study::camera_parts(look));
     }
     // GFX-VIEW-2.5: the light's shadow map (where it differs from the
     // spec: docs/shadows.md, Q-215). The shaders do their own
@@ -691,6 +698,10 @@ pub fn build_scene(
             })
             .cloned()
             .unwrap_or_default(),
+        // GFX-ANIM-3.8a: the fall axes of this game's play-ahead (set with
+        // every load; empty without one).
+        fall_axes: viewer.ahead_fall_axes.clone(),
+        loaded_at: viewer.loaded_at,
         ..default()
     };
     // What the game can show later, read now behind the loading picture

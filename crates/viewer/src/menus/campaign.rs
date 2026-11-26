@@ -5,7 +5,9 @@
 //! pointer (CAM-5). The script itself runs in `s2_rules::mission`; its
 //! commands go to the simulation like the player's.
 //!
-//! Layouts the spec does not give are stand-ins (Q-187).
+//! The book, the victory book, the defeat and end screens and the tutorial
+//! window are laid out by CAM-1.3c, 3.6, 3.6a to 3.6c and 5.3 (Q-187 e, f
+//! answered); what is still open is in `docs/stand-ins.md` (Missions).
 
 use bevy::prelude::*;
 use s2_assets::lang::Texts;
@@ -888,60 +890,74 @@ pub fn ship_by_field(step: u8) -> bool {
 /// arrow; a map click then does nothing and shows no message.
 const SHIP_ARROW_STEP: u8 = 0x0a;
 
+/// CAM-5.3c (Q-1090, E-cam-019): lesson 1's `T01_StoneMason_SelectFlag`,
+/// the step of the place-flag menu (UI-GAME-3.6).
+pub const PLACE_FLAG_STEP: u8 = 0x32;
+
+/// CAM-5.3c (Q-1090): the map click of step 0x31 (`T01_StoneMason_OpenFlagDialog`)
+/// opens the place-flag menu (UI-GAME-3.6) at its field, whatever lies there.
+pub fn opens_place_flag_menu(step_before_click: u8) -> bool {
+    step_before_click == PLACE_FLAG_STEP - 1
+}
+
 /// A step's text key.
 pub fn step_key(step: u8) -> &'static str {
     STEPS.get(usize::from(step)).copied().unwrap_or("T01_End")
 }
 
-/// The widget a step expects, read from its name: the per-step table is
-/// open (CAM-5.3, Q-100 b), so these are the program's stand-ins (Q-187).
-/// `None` for steps that only explain (advanced with the window's button).
+/// CAM-5.3c (E-cam-011, E-cam-014), CAM-5.3a: the one control each step
+/// expects, per dialog: whether `action` is it. `None` for the steps that
+/// only explain (advanced with the window's button) and the map-click steps
+/// (CAM-5.3, [`pointer`]). The build menu's SelectBuilding steps are
+/// checked by their cell first ([`expected_cell`]).
 pub(crate) fn expects(step: u8, action: &Action) -> Option<bool> {
     use s2_sim::Command as C;
     use widgets::Global;
-    let name = step_key(step);
-    let part = name.rsplit('_').next().unwrap_or("");
-    Some(match part {
-        "ShowConstructionMap" | "HideConstructionMap" => matches!(action, Action::Hud(3)),
-        "SelectBuilding" if name.contains("_Flag_") => {
-            matches!(action, Action::Command(C::PlaceFlag { .. }))
-        }
-        "SelectBuilding" => matches!(action, Action::Command(C::PlaceBuilding { .. })),
-        // UI-GAME-4.4: the harbour's expedition tab.
-        "SelectPage" if name.contains("StartExpedition") => {
-            matches!(action, Action::BuildingTab(12))
-        }
-        "SelectPage" if name.contains("Misc") => {
-            matches!(action, Action::OpenGlobal(Global::Military))
-        }
-        // CAM-5.3c (E-cam-011): the build menu's SelectPage steps take
-        // only the medium buildings tab.
-        "SelectPage" => matches!(action, Action::BuildTab(6)),
-        "SelectCreateStreet" => matches!(action, Action::StartRoad(_)),
-        "SelectFlag" => matches!(action, Action::Command(C::PlaceFlag { .. })),
-        "CallScholar" => matches!(action, Action::CloseContext | Action::Command(_)),
-        "StartAttack" => matches!(action, Action::AttackGo),
-        "OpenMilitaryDialog" => matches!(action, Action::Hud(6) | Action::OpenGlobal(_)),
-        // CAM-5.3c (E-cam-014): 0x1b closes the economy dialog's military
-        // page; lesson 4's steps close the building, harbour or ship window.
-        "CloseDialog" if name.contains("Misc") => matches!(action, Action::CloseGlobal),
-        "CloseDialog" => matches!(action, Action::CloseContext),
-        // CAM-5.3c (E-cam-012): the building window's third button, the
-        // shipyard's boat / ship switch.
-        "ChangeProduction" => matches!(action, Action::Command(C::ProductionSwitch { .. })),
-        "SelectIcon" if name.contains("BuildPort") => {
-            matches!(action, Action::Command(C::ExpeditionBuildHarbor { .. }))
-        }
-        "SelectIcon" => matches!(action, Action::Command(C::ExpeditionStart { .. })),
+    Some(match step {
+        // Building window, lesson 4: the shipyard's boat / ship switch,
+        // then the window's close button.
+        0x02 => matches!(action, Action::Command(C::ProductionSwitch { .. })),
+        // The building, harbour and ship windows' close button.
+        0x03 | 0x07 | 0x0c => matches!(action, Action::CloseContext),
+        // Harbour window: the expedition tab, then its start button.
+        0x05 => matches!(action, Action::BuildingTab(12)),
+        0x06 => matches!(action, Action::Command(C::ExpeditionStart { .. })),
         // CAM-5.3a 2: the compass button of direction 2 (`!SouthWest`).
-        "SelectArrow" => matches!(
+        0x09 => matches!(
             action,
             Action::Command(C::ExpeditionGo { direction: 2, .. })
         ),
         // CAM-5.3a 3: the ship window's right fleet arrow.
-        "SelectShip" if name.contains("BuildPort") => {
-            matches!(action, Action::ShipArrow { right: true, .. })
+        0x0a => matches!(action, Action::ShipArrow { right: true, .. }),
+        // CAM-5.3a 4: `!Construct harbor.`
+        0x0b => matches!(action, Action::Command(C::ExpeditionBuildHarbor { .. })),
+        // Build menu, SelectBuilding steps (the cell decides first).
+        0x10 | 0x16 | 0x20 | 0x26 | 0x28 | 0x2d | 0x3e | 0x43 | 0x49 | 0x4c => {
+            matches!(action, Action::Command(C::PlaceBuilding { .. }))
         }
+        // 0x37: the build menu's flag button (cell 0). 0x32
+        // (`T01_StoneMason_SelectFlag`): the place-flag menu's Create Flag
+        // (CAM-5.3c, Q-1090), checked by [`Tutorial::place_flag_menu_click`];
+        // a flag placed any other way does not advance it.
+        0x37 | 0x32 => matches!(action, Action::Command(C::PlaceFlag { .. })),
+        // Build menu, SelectPage steps: only the medium buildings tab.
+        0x15 | 0x25 | 0x48 | 0x4b => matches!(action, Action::BuildTab(6)),
+        // Flag menu: its build-road button.
+        0x12 | 0x22 | 0x2a | 0x2f | 0x39 | 0x40 | 0x45 | 0x4e => {
+            matches!(action, Action::StartRoad(_))
+        }
+        // Flag menu: its call-geologist button (the call is sent).
+        0x3c => matches!(action, Action::Command(C::OrderGeologist { .. })),
+        // Main bar: the construction-view button (its click, not SPACE).
+        0x1e | 0x33 => matches!(action, Action::Hud(3)),
+        // Main bar: its own button for the economy dialog (the tools page).
+        0x19 => matches!(action, Action::Hud(6)),
+        // Attack dialog: the attack button.
+        0x18 => matches!(action, Action::AttackGo),
+        // Economy dialog: the tools page's military tab, then the military
+        // page's close button.
+        0x1a => matches!(action, Action::OpenGlobal(Global::Military)),
+        0x1b => matches!(action, Action::CloseGlobal),
         _ => return None,
     })
 }
@@ -1071,6 +1087,9 @@ impl Tutorial {
             return;
         }
         match expects(self.step, action) {
+            // CAM-5.3c (Q-1090): a flag placed other than by the place-flag
+            // menu (the build menu's flag cell) does not advance 0x32.
+            Some(true) if self.step == PLACE_FLAG_STEP => {}
             Some(true) => self.advance(),
             Some(false) => self.error = Some(wrong_click_error(self.step)),
             None => {}
@@ -1089,6 +1108,26 @@ impl Tutorial {
             Some(wanted) if wanted == cell => self.advance(),
             Some(_) => self.error = Some("T01_ERROR_SelectMarkedButton"),
             None => self.action(action),
+        }
+    }
+
+    /// CAM-5.3c (Q-1090, E-cam-019): a click on a control of the place-flag
+    /// menu (UI-GAME-3.6). At step 0x32 its Create Flag advances to 0x33 and
+    /// is carried out; any other of its controls shows
+    /// `T01_ERROR_SelectMarkedButton` and is not carried out (`false`: the
+    /// menu stays as it is). At other steps the click is
+    /// [`Tutorial::action`]'s and carried out.
+    pub fn place_flag_menu_click(&mut self, action: &Action) -> bool {
+        if self.step != PLACE_FLAG_STEP {
+            self.action(action);
+            return true;
+        }
+        if matches!(action, Action::Command(s2_sim::Command::PlaceFlag { .. })) {
+            self.advance();
+            true
+        } else {
+            self.error = Some("T01_ERROR_SelectMarkedButton");
+            false
         }
     }
 
@@ -1490,6 +1529,50 @@ mod tests {
         })
     }
 
+    // CAM T19c (Q-1090): step 0x31's click opens the place-flag menu; at
+    // 0x32 only its Create Flag advances (to 0x33, whose control is the
+    // construction-view button); a click elsewhere shows the error and
+    // changes nothing; a flag from the build menu does not advance 0x32.
+    // spec: CAM-5.3c
+    #[test]
+    fn t19c_the_place_flag_menu_takes_only_its_create_flag() {
+        use s2_sim::Command as C;
+        let mut t = Tutorial::new(1);
+        t.step = 0x31;
+        assert!(opens_place_flag_menu(t.step));
+        assert_eq!(t.field_click((42, 38)), FieldClick::Allow);
+        assert_eq!(t.step, PLACE_FLAG_STEP);
+        assert_eq!(step_key(t.step), "T01_StoneMason_SelectFlag");
+        assert_eq!(pointer(t.step), None, "no map pointer");
+        // A click beside the menu's controls reaches the map: refused.
+        assert_eq!(t.field_click((40, 40)), FieldClick::Refuse);
+        assert_eq!(t.error, Some("T01_ERROR_SelectMarkedButton"));
+        assert_eq!(t.step, PLACE_FLAG_STEP);
+        // Its close button: the error, not carried out.
+        t.error = None;
+        assert!(!t.place_flag_menu_click(&Action::CloseContext));
+        assert_eq!(t.error, Some("T01_ERROR_SelectMarkedButton"));
+        assert_eq!(t.step, PLACE_FLAG_STEP);
+        // The build menu's flag cell: no advance.
+        let flag = Action::Command(C::PlaceFlag {
+            player: crate::game::PLAYER,
+            at: (42, 38),
+        });
+        t.error = None;
+        t.build_menu_click(&flag, 0);
+        assert_eq!(t.step, PLACE_FLAG_STEP);
+        t.action(&flag);
+        assert_eq!(t.step, PLACE_FLAG_STEP);
+        // Create Flag: carried out, 0x33, the construction-view button next.
+        assert!(t.place_flag_menu_click(&flag));
+        assert_eq!(t.step, 0x33);
+        assert_eq!(step_key(t.step), "T01_HideConstructionMap");
+        assert_eq!(t.error, None);
+        assert_eq!(expects(t.step, &Action::Hud(3)), Some(true));
+        // At any other step the menu's clicks are carried out as before.
+        assert!(!opens_place_flag_menu(0x30) && !opens_place_flag_menu(0x32));
+    }
+
     // CAM-5, UI-GAME-3: tutorial 1 played to its end on the real map: every
     // map click on the step's pointer field opens what the click opens
     // (the build menu, the flag menu, the road menu, the road's end), and
@@ -1530,6 +1613,11 @@ mod tests {
                             from,
                             to: field,
                         });
+                    }
+                    // CAM-5.3c (Q-1090): 0x31's click opens the place-flag
+                    // menu.
+                    None if opens_place_flag_menu(step) => {
+                        ui.context = Some(Context::DeployFlag(field));
                     }
                     None => {
                         ui.context = game::context_for(&world, player, field);
@@ -1590,7 +1678,21 @@ mod tests {
                         _ => true,
                     })
                     .unwrap_or_else(|| panic!("{name}: no button for it in {:?}", ui.context));
-                t.action(&action);
+                if let Some(Context::DeployFlag(_)) = ui.context {
+                    // CAM-5.3c (Q-1090): outside road building the menu has
+                    // Create Flag alone.
+                    assert_eq!(
+                        panels
+                            .iter()
+                            .find(|p| p.id == PanelId::Context)
+                            .map(|p| p.buttons().filter(|b| *b.0 != Action::CloseContext).count()),
+                        Some(1),
+                        "{name}"
+                    );
+                    assert!(t.place_flag_menu_click(&action), "{name}");
+                } else {
+                    t.action(&action);
+                }
                 match action {
                     Action::Command(c) => {
                         if matches!(c, C::PlaceFlag { .. } | C::PlaceBuilding { .. }) {

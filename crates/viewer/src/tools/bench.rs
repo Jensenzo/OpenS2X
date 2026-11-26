@@ -30,6 +30,11 @@ pub(crate) const WARM_UP_FRAMES: u32 = 120;
 /// A frame over this is logged with its parts (`--bench-log`).
 const SLOW_FRAME_MS: f64 = 33.3;
 
+/// A frame over this writes the render steps of the frames before it, and
+/// of the [`STEP_LOG_AFTER`] frames after it (`frame_steps`).
+const STEP_LOG_MS: f64 = 50.0;
+const STEP_LOG_AFTER: u32 = 3;
+
 /// The named spans inside a frame's parts, in ms (the road rebuild, the list
 /// of objects): what a slow frame was doing (F55). Filled by the systems that
 /// time themselves, emptied at the frame's end.
@@ -127,6 +132,14 @@ struct LongRun {
     /// new graphics buffer and every object material's bind group built
     /// again in one frame (render prepare), named beside a slow frame.
     growths: Vec<(usize, String)>,
+    /// Frames after a slow one whose render steps are still written.
+    steps_after: u32,
+    /// The process's page fault count at the last frame, and this frame's
+    /// faults and working set (MB).
+    faults_at: u32,
+    memory_now: (u32, f64),
+    /// The page fault count where the second being logged began.
+    row_faults: u32,
 }
 
 /// The frames before a slow frame whose first uses it names: the render
@@ -282,6 +295,10 @@ impl Bench {
                 first_uses: Vec::new(),
                 palette_matrices: 0,
                 growths: Vec::new(),
+                steps_after: 0,
+                faults_at: 0,
+                memory_now: (0, 0.0),
+                row_faults: 0,
             },
             pan: (pan || drag.is_some()).then(|| Pan::new(drag)),
             placements_at_start: 0,
@@ -339,6 +356,7 @@ pub(crate) fn bench_frame(
             let tick = viewer.world.as_ref().map_or(0, |w| w.tick());
             log_first_uses(&mut bench, &library.loads, tick);
             log_palette_growth(&mut bench, library.palettes.capacity(), tick);
+            bench.long.memory_now = memory_now(&mut bench);
             log_frame(
                 &mut bench,
                 ms,
@@ -347,6 +365,7 @@ pub(crate) fn bench_frame(
                 spans.as_deref(),
                 &render_times,
             );
+            log_steps(&mut bench, ms, &render_times);
             log_second(
                 &mut bench,
                 tick,
@@ -373,6 +392,8 @@ pub(crate) fn bench_frame(
         bench.long.row_tick = bench.ticks_at_start;
         bench.long.started = Some(now);
         bench.long.palette_matrices = library.palettes.capacity();
+        bench.long.faults_at = crate::tools::frame_steps::sample().faults;
+        bench.long.row_faults = bench.long.faults_at;
         // The wall clock at the first timed frame, so a run's script can
         // put what else the PC did beside each frame (scripts/pc-load.ps1).
         if let Some(log) = bench.long.log.as_mut() {
@@ -540,6 +561,18 @@ pub(crate) struct RenderTiming {
     pub(crate) timing: bool,
     last: Option<(usize, Instant)>,
     part_ms: [Vec<f64>; RENDER_PARTS.len()],
+    /// The render frame cut into its steps, for the log beside a slow
+    /// frame (`frame_steps`).
+    pub(crate) steps: crate::tools::frame_steps::Steps,
+}
+
+/// The mark before render step `N` of `frame_steps::STEPS` (0 starts a
+/// render frame).
+pub(crate) fn step_mark<const N: usize>(times: Res<RenderTimes>) {
+    let mut t = times.0.lock().expect("bench lock");
+    if t.timing {
+        t.steps.mark(N);
+    }
 }
 
 /// The mark before render part `N` (N = RENDER_PARTS.len(): after the last).
@@ -639,6 +672,8 @@ fn log_frame(
     for what in first_uses_near(&bench.long.growths, i) {
         line += &format!(" [{what}],");
     }
+    let (faults, working_set) = bench.long.memory_now;
+    line += &format!(" [faults {faults}, working set {working_set:.0} MB],");
     if ms > 100.0 {
         bench.long.stalls.push(line.clone());
     }
@@ -646,6 +681,38 @@ fn log_frame(
         use std::io::Write;
         let _ = writeln!(log, "{line}");
     }
+}
+
+/// A frame over [`STEP_LOG_MS`], and the [`STEP_LOG_AFTER`] frames after
+/// it: the render frames' steps not yet written (`R` lines), the ones
+/// before it among them (`frame_steps`).
+fn log_steps(bench: &mut Bench, ms: f64, times: &RenderTimes) {
+    if ms > STEP_LOG_MS {
+        bench.long.steps_after = STEP_LOG_AFTER;
+    } else if bench.long.steps_after > 0 {
+        bench.long.steps_after -= 1;
+    } else {
+        return;
+    }
+    let at = bench
+        .long
+        .started
+        .map_or(0.0, |s| (Instant::now() - s).as_secs_f64());
+    let lines = times.0.lock().expect("bench lock").steps.unlogged_lines(at);
+    if let Some(log) = bench.long.log.as_mut() {
+        use std::io::Write;
+        for line in lines {
+            let _ = writeln!(log, "{line}");
+        }
+    }
+}
+
+/// The page faults since the last frame and the working set now (MB).
+fn memory_now(bench: &mut Bench) -> (u32, f64) {
+    let s = crate::tools::frame_steps::sample();
+    let faults = s.faults.wrapping_sub(bench.long.faults_at);
+    bench.long.faults_at = s.faults;
+    (faults, s.working_set as f64 / (1024.0 * 1024.0))
 }
 
 /// The palette buffer's size against last frame's: a line (`B`) and an
@@ -718,11 +785,13 @@ fn log_second(bench: &mut Bench, tick: u64, check: Option<&RunCheck>, palette_ma
     }
     long.rates.push(rate);
     let broken = check.map_or(0, |c| c.broken.len());
+    let faults = long.faults_at.wrapping_sub(long.row_faults);
+    long.row_faults = long.faults_at;
     if let Some(log) = long.log.as_mut() {
         use std::io::Write;
         let _ = writeln!(
             log,
-            "S {at:.0} s, tick {tick}, {} frames, median {:.1}, p99 {:.1}, worst {:.1} ms, {rate:.1} ticks/s, memory {working:.0} MB (private {private:.0}), palettes {:.1} MB, invariants broken {broken}",
+            "S {at:.0} s, tick {tick}, {} frames, median {:.1}, p99 {:.1}, worst {:.1} ms, {rate:.1} ticks/s, memory {working:.0} MB (private {private:.0}), palettes {:.1} MB, invariants broken {broken}, page faults {faults}",
             frames.len(),
             of(0.5),
             of(0.99),

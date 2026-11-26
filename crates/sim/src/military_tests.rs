@@ -462,6 +462,66 @@ fn trn_free_t50_a_worker_on_a_free_walk_completes_it() {
     assert_eq!(s.walker.progress_bits, 0);
 }
 
+// TRN-FREE T55 (TRN-FREE-6.4a, a walk ordered, not yet begun; E-trn-047):
+// a worker whose walk was ordered in an earlier tick (its first step set, at
+// progress 0, not yet advanced) when he is sent home counts as moving: he
+// finishes that first step, and only that step, stands in its arrival tick A
+// and A + 1 and orders his walk home in A + 2; he is not taken as standing
+// (R6: player 2's farmer 21749, his walk out ordered in counter 23684, the
+// farm gone in 23685; on (40, 19) in 23707, home from 23709).
+// spec: TRN-FREE-6.4a (TRN-FREE T55)
+#[test]
+fn trn_free_t55_a_walk_ordered_not_begun_counts_as_moving() {
+    let mut world = owned_world(60, 50);
+    occupied(&mut world, P0, BARRACKS, (30, 25));
+    let hut = (35, 25);
+    finished(&mut world, P0, HUT, hut);
+    let target = world.target_of(hut).unwrap();
+    let mut walker = Walker::new((30, 28));
+    walker.walk([(31, 28), (32, 28), (33, 28), (34, 28)]);
+    let worker = world.add_settler(Settler {
+        number: 0,
+        player: P0,
+        profession: RANK[0],
+        list: crate::SettlerList::Workers,
+        walker,
+        job: SettlerJob::Worker {
+            target,
+            work: crate::production::Work::Back { score: 0 },
+        },
+        timer: 0,
+        carrying: None,
+    });
+    let w = &world.settlers[worker].as_ref().unwrap().walker;
+    assert!(
+        w.next.is_none() && w.first_step().is_some(),
+        "ordered, not begun"
+    );
+    world.submit(Command::RemoveBuilding {
+        player: P0,
+        at: hut,
+    });
+    let mut arrival = None;
+    for _ in 0..200 {
+        world.step();
+        let s = world.settlers[worker].as_ref().expect("the worker");
+        assert!(matches!(s.job, SettlerJob::Leaving { .. }), "{:?}", s.job);
+        if !s.walker.is_walking() {
+            arrival = Some(s.walker.at);
+            break;
+        }
+    }
+    assert_eq!(arrival, Some((31, 28)), "the first step only, A");
+    world.step();
+    let s = world.settlers[worker].as_ref().unwrap();
+    assert!(!s.walker.has_walk(), "it stands in A + 1");
+    world.step();
+    let s = world.settlers[worker].as_ref().unwrap();
+    assert!(s.walker.has_walk(), "A + 2: the walk home ordered");
+    assert_eq!(s.walker.progress_bits, 0);
+    assert_eq!(s.walker.at, (31, 28), "from the first step's field");
+}
+
 // T8: a flag on a field that becomes Border goes with its roads.
 // spec: TER-6.3, TER-6.4 (TER T8)
 #[test]
@@ -715,14 +775,14 @@ fn trn_free_t51_a_reinforcement_walks_out_to_the_flag_first() {
     assert_eq!(x.walker.progress_bits, 0);
 }
 
-// AI-MIL T33 (AI-MIL-5.4, E-ai-077; Q-1076 answered, E-ai-078): the
-// computer player's def counts the soldiers on the building's list as the
-// original keeps it: one inside, one out attacking (he stays on the list)
-// and one on his step in from the flag count; one still walking to the
-// flag does not (the original lists him from his arrival there).
-// spec: AI-MIL-5.4 (AI-MIL T33)
+// AI-MIL T35, T36 (AI-MIL-5.4 "def as built, restated", E-ai-086; Q-1082):
+// the computer player's def is the building's whole soldier list: one
+// inside, one out attacking (he stays on the list), one still walking to
+// the flag from a warehouse and one on his step in all count (T33's "from
+// the arrival at the flag" is withdrawn).
+// spec: AI-MIL-5.4 (AI-MIL T35, T36)
 #[test]
-fn ai_mil_t33_def_counts_the_list_from_the_step_in() {
+fn ai_mil_t36_def_counts_the_whole_list() {
     let mut world = quiet_game();
     let at = (26, 20);
     finished(&mut world, P0, GUARD, at);
@@ -759,13 +819,13 @@ fn ai_mil_t33_def_counts_the_list_from_the_step_in() {
     to_flag.next = Some((25, 19));
     to_flag.path.pop_front();
     coming(&mut world, to_flag);
-    assert_eq!(world.listed_soldiers(at), 2, "not yet on the list");
+    assert_eq!(world.listed_soldiers(at), 3, "walking in counts (T36)");
     let mut stepping = Walker::new(flag);
     stepping.walk([at]);
     stepping.next = Some(at);
     stepping.path.clear();
     coming(&mut world, stepping);
-    assert_eq!(world.listed_soldiers(at), 3, "on his step in");
+    assert_eq!(world.listed_soldiers(at), 4, "on his step in");
 }
 
 // MIL-SOL-4.7a: the soldier sent for the request stands in its creation

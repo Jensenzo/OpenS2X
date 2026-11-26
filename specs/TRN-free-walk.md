@@ -318,6 +318,9 @@ TRN-MOVE-1 and 2.
     start there, the idle step ends at once (what the carrier's job then does is not
     read). E-trn-012 (idle step: states 0x14 check and 0x15 walking;
     its walk: the road walk to a position).
+  - **Geologist and scout** (to the order's flag): when the walk is done he checks that he stands
+    on the order's flag field; otherwise he goes home at once from where he stands (6.4), no
+    retry (`ECO-specialists.md` ECO-SPC-2.1, 2.1a, T9; 2026-11-24 b, E-trn-048, code reading, high).
   - **Going home** handles a short walk by its own end-of-walk rule (6.4 step 4: choose
     again from where it stands).
 
@@ -509,7 +512,12 @@ TRN-MOVE-1 and 2.
   ECO-HQ-4.7, which is later than the completion when the building completes before
   the action ends) starts the fine walk back to its target's point in T + 1 (one standing tick) and its
   walk home in the tick after that fine walk's arrival; a settler still moving when sent
-  home finishes its step (arrival tick A), and starts its walk home in A + 2. The
+  home finishes its step (arrival tick A), and starts its walk home in A + 2. **A walk ordered but
+  not yet begun counts as moving (2026-11-24 a; E-trn-047, the R6 recording and an experiment build;
+  high for this case):** a walk ordered in an earlier tick already holds its first step, at progress
+  0, before the movement first advances it (TRN-MOVE-2.1). A settler sent home in that state
+  finishes that first step like any step in progress, and only that step, and starts home in A + 2.
+  He is not a settler standing (T, T + 1, T + 2). Test T55. The
   warehouse helper that carried a ware out stands four ticks (`TRN-carriers-transport.md`
   TRN-CARRY-3.3a). Soldiers go through the same steps; a soldier released from
   a military building is sent home only when its step out reaches the
@@ -588,6 +596,14 @@ TRN-MOVE-1 and 2.
   flag nearest to him (tries 2 and 3), started at progress 0 in A and first advancing in A + 1; on that
   flag, in its arrival tick, he chooses again and road-walks on (6.4, "at the end of the walk"). Test
   T47b.
+  **When the step in progress ends on that road's own end flag (2026-11-24 a; E-trn-046, the R6
+  recording and an experiment build, high for this case).** The cut of T47a and T47b stops the walk
+  on a field that is no road field any more. When the step under way at the removal is the road's
+  **last step**, onto the flag at its end, and that flag still stands, nothing is cut: he reaches the
+  flag as on any road walk, chooses his next road there by 6.5 (c) and walks on in the same tick
+  **with the step's excess carried** (TRN-MOVE-2.3). No new home search, and no progress 0. Measured
+  for a builder on his walk home (T54); for the walk of T47a (a settler whose going home began with a
+  road walk under way) the case was not seen.
   **A builder in a work step's walk** (`ECO-warehouse-construction.md` ECO-HQ-4.6b
   step 4, the lattice walk from one construction position to the next, TRN-FREE-5.5)
   when the site is removed (2026-10-27 b, measured T34; route corrected 2026-10-28,
@@ -769,6 +785,8 @@ produce over all six starting draws (TRN-FREE-3.2a).
 | T51 | 6.4a, a reinforcement on his walk out of the warehouse: E-trace-019 (R6, the war), player 3's soldier 18673 out of the warehouse (25, 25) since counter 13419, walking to its flag (26, 23) for (31, 21), which is taken in 13448 | his ticks | trace state 23 (the walk out) through 13464; on the flag (26, 23) in 13465 (A) with the going-home state; standing 13465 .. 13468; his walk home (26, 23) -> (26, 24) at progress 0 in 13469. Sending him home at the take-over (he walks the step to the flag and walks home at A + 3): war settlers first differ at trace tick 13470; with the rule 13480 (experiment build on 0.12.3 with T49, T50 and `MIL-attack-combat.md` T36, T37, `TRN-carriers-transport.md` T61; every Storm Coast pair unchanged) |
 | T52 | 6.4, all three tries: E-trace-019, player 3's woodcutter 16444 (sent home 13449, T49) free-walking to the network flag (27, 27), which loses its last road in counter 13468; his walk ends there in 13475. Builder 17035 of a site of the lost land, home search in 13504 on the flag (32, 20), now player 2's | their walks | 16444: in 13475 a free walk (27, 27) -> (27, 26) -> (27, 25) -> (27, 24) -> (26, 23), the warehouse (25, 25)'s flag, at progress 0 (the trace tick's 3 draws); in the warehouse at 13611. 17035: in 13504 a free walk (32, 20) -> (31, 20) -> (30, 20). The road try alone, then the wander step (one draw): the war's generator first differs at trace tick 13476 (16444) or 13505 (17035, with 2 and 3 only at a walk's end; buildings then 13890); with the rule settlers 13480 -> 14100, buildings 14320, generator 13476 -> 14092 (experiment build, with T51; every Storm Coast pair unchanged) |
 | T53 | 6.4b (a work walk ending in T): E-trace-019 (R6, the war), player 1's site (62, 39), removed with land lost to a take-over in trace tick 17 544 (T); its builder 19138 on his work walk from (250 000, 159 000) to the construction position (250 000, 158 000), which he reaches in 17 544 | his next walk | standing on (250 000, 158 000) in 17 544; the line onward at progress 0 in 17 545, moving from 17 546 (recorded: (250 000, 157 549) in 17 550, walk progress 5). Ordering it in 17 544 puts him 90 units ahead from 17 545 (the war's settlers apart from 17 550); with the rule (experiment build) from 17 620 |
+| T54 | 6.4b (the road removed under the last step, onto a flag that stays): E-trace-019 (R6, the war), player 2's builder 20421, on his road walk home that starts on the flag (44, 13) (his fine walk back from his last construction position ends there in counter 19971; the road walk from progress 0 in 19972) over the road "44,13 43,13 43,14"; the flag (43, 14) also ends the road "43,14 43,15 43,16 43,17 44,18", his next | the road "44,13 43,13 43,14" is removed after counter 20015, while he walks the step (43, 13) -> (43, 14) (a rise of class 1: 0.036 per tick; progress 0.971 at counter 20021) | at counter 20022 he is on (43, 14) and already in the step (43, 14) -> (43, 15) at progress 0.0070004 (the excess carried; level, 0.045 per tick), 0.367 at counter 20030; no stop on the flag. Cutting the walk there and choosing home again at progress 0 (the T47b rule applied to this step) puts him 0.007 of a step behind: the war's settlers first differ at trace tick 20030 (fine (172629, 57259) against the recorded (172644, 57288)); without the cut at 20480 (experiment build on top of the fifty-one rules; every Storm Coast pair, the one-player game and dense unchanged) |
+| T55 | 6.4a (a walk ordered, not yet begun): E-trace-019 (R6, the war), player 2's farm (40, 19) and its farmer 21749, in since counter 23633 (door field (40, 20)); his sowing step's wait ends and he finds a spot in counter 23684: the walk out is ordered, its first step (40, 20) -> (40, 19) at progress 0; the farm goes in counter 23685, before the settlers' part (T = 23685) | his ticks | going-home state from 23685 with that step running: 0.045 in 23685, on (40, 19) in 23707 (A), standing 23707 and 23708, the walk home (a free walk over (41, 19), (42, 20), (42, 21) to the network flag (43, 22)) from progress 0 in 23709 (A + 2). Taking him as standing on the door field (walk home from (40, 20) at 23688) makes the war's settlers differ from trace tick 23690; with the rule 24290, generator 23710 -> 24288 (experiment build on top of the fifty-one rules and T54, ECO-DIST T25) |
 
 ## Evidence
 
@@ -811,6 +829,8 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-trace-011 | recording | `settlers.csv.gz` and `buildings.csv.gz` (builder 91177, counters 11043 .. 11116; site 91151 gone after 11063) | 6.4b, the approach walk (T33) |
 | E-trn-042, E-trace-019 | recording, experiment build | (session 2026-11-21 day): the war recording's settlers and buildings tables after the take-overs | 6.4a the territory removal's T (T49), the worker's free walk completed (T50) |
 | E-trn-044, E-trace-019 | recording, experiment build | (session 2026-11-22 pm): R6's builder 19138 of the site (62, 39) removed with lost land, trace ticks 17 530 .. 17 580 | 6.4b a work walk that ends in T (T53) |
+| E-trn-046, E-trace-019 | recording, experiment build | (session 2026-11-24 a): R6's builder 20421 rows every tick 19943 .. 20034, the streets and flags tables (road "44,13 43,13 43,14" last seen in counter 20015) | 6.4b the road removed under the last step onto a standing flag (T54) |
+| E-trn-047, E-trace-019 | recording, experiment build | (session 2026-11-24 a): R6's farmer 21749 rows every tick 23682 .. 23712, the farm's last row (counter 23684) | 6.4a a walk ordered, not yet begun (T55) |
 | E-ship-014 | code reading, experiment build | (session 2026-11-21 pm) | 6.4a the reinforcement's fourth standing tick (Q-1075) |
 
 ## Open questions

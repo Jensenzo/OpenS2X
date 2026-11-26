@@ -1385,8 +1385,61 @@ fn a_projects_building_type_has_its_cell_and_its_recipe() {
 #[test]
 fn t12_attack_count() {
     assert_eq!(attack_count(7, 0.5), 4);
-    assert_eq!(attack_count(7, 0.0), 0);
     assert_eq!(attack_count(7, 1.0), 7);
+    assert_eq!(attack_count(0, 0.5), 0);
+}
+
+/// UI-GAME T63: A = 7, the slider at 0, 0.25, 0.5, 0.75, 1 shows 1, 3, 4,
+/// 6, 7 (n = trunc(v (A - 1) + 1 + 0.5)); the four count buttons set 0.25,
+/// 0.5, 0.75, 1 (MIL-ATK-1.4), so they show the counts of 1.4.
+// spec: UI-GAME-5.2 (T63), MIL-ATK-1.4
+#[test]
+fn t63_attack_slider_count() {
+    let shown: Vec<u32> = [0.0, 0.25, 0.5, 0.75, 1.0]
+        .into_iter()
+        .map(|v| attack_count(7, v))
+        .collect();
+    assert_eq!(shown, [1, 3, 4, 6, 7]);
+    assert_eq!(ATTACK_PRESETS, [0.25, 0.5, 0.75, 1.0]);
+    for a in 1..=40u32 {
+        for (k, v) in ATTACK_PRESETS.into_iter().enumerate() {
+            // MIL-ATK-1.4: count = trunc(s (A - 1) + 1.5).
+            let want = ([0.25f32, 0.5, 0.75, 1.0][k] * (a - 1) as f32 + 1.5) as u32;
+            assert_eq!(attack_count(a, v), want, "A {a}, button {k}");
+        }
+        assert_eq!(attack_count(a, 0.0), 1);
+        assert_eq!(attack_count(a, 1.0), a);
+    }
+}
+
+/// UI-GAME T62: the gauge at 0.9: track `uiElements3` (0, 384, 312 x 24),
+/// fill (0, 408) 280 px (312 x 0.9 = 280.8, cut at whole texels), `90%`;
+/// at 0.004 a 1 px fill and `0%`; at 1.2 the whole 312 px and `100%`.
+// spec: UI-GAME-6.6 (T62)
+#[test]
+fn t62_the_gauge() {
+    assert_eq!(gauge_parts(0.9), (Some([0, 408, 280, 24]), "90%".into()));
+    assert_eq!(gauge_parts(0.004), (Some([0, 408, 1, 24]), "0%".into()));
+    assert_eq!(gauge_parts(1.2), (Some([0, 408, 312, 24]), "100%".into()));
+    assert_eq!(gauge_parts(0.0), (None, "0%".into()));
+    assert_eq!(gauge_parts(0.655), (Some([0, 408, 204, 24]), "66%".into()));
+    let mut p = Panel::new(PanelId::Context, [0.0, 0.0]);
+    gauge(&mut p, GAUGE_AT, 0.9);
+    assert!(matches!(
+        p.widgets[0],
+        Widget::Sprite { atlas: Atlas::Elements3, rect: [0, 384, 312, 24], at, size: None, .. }
+            if at == [136.0, 112.0]
+    ));
+    assert!(matches!(
+        p.widgets[1],
+        Widget::Sprite { atlas: Atlas::Elements3, rect: [0, 408, 280, 24], at, .. }
+            if at == [136.0, 112.0]
+    ));
+    assert!(matches!(
+        &p.widgets[2],
+        Widget::Text { text, font: Font::Body, at, align: Align::Centre, .. }
+            if text == "90%" && *at == [292.0, 121.0]
+    ));
 }
 
 /// UI-GAME T3, 3.1: the flag menu's five portraits from (15, 29) in
@@ -1631,13 +1684,13 @@ fn t57_production_window_captions_and_status_lines() {
         matches!(w, Widget::Sprite { atlas: Atlas::Elements3, rect: [160, 0, 8, 56], at, .. } if at[0] == 264.0)
     });
     assert!(!separator_after_tool);
-    // 4.1a (e), (g): the gauge is the site window's, from (137, 112) to
-    // (443, 128), its value centred in it.
+    // 4.1a (e), (g), 6.6: the gauge is the site window's: the art at
+    // (136, 112), its value centred on it.
     let value = format!("{}%", world.building_at(at).unwrap().productivity);
-    assert!(shown.contains(&(value, [290.0, 120.0], Align::TopCentre, Font::Body)));
+    assert!(shown.contains(&(value, [292.0, 121.0], Align::Centre, Font::Body)));
     assert!(p.widgets.iter().any(|w| matches!(
         w,
-        Widget::Fill { at, size, .. } if *at == [137.0, 112.0] && *size == [306.0, 16.0]
+        Widget::Sprite { atlas: Atlas::Elements3, rect: [0, 384, 312, 24], at, .. } if *at == [136.0, 112.0]
     )));
     // 4.1a (e): three empty slot frames, no input.
     let frames = p
@@ -1720,10 +1773,13 @@ fn the_catapult_window_shows_its_stone_only() {
     for gone in ["!PRODUCT", "!TOOL", "!NEEDED GOODS ", "!PRODUCTIVITY"] {
         assert!(!shown.contains(&gone), "{gone}: {shown:?}");
     }
-    assert!(!p
-        .widgets
-        .iter()
-        .any(|w| matches!(w, Widget::Fill { at, .. } if *at == [137.0, 112.0])));
+    assert!(!p.widgets.iter().any(|w| matches!(
+        w,
+        Widget::Sprite {
+            rect: [0, 384, 312, 24],
+            ..
+        }
+    )));
     let separators = p
         .widgets
         .iter()
@@ -3365,4 +3421,46 @@ fn the_attack_rows_name_as_seen() {
     assert_eq!(message_text(&c, &lost), "Military building lost to enemy!");
     let land = message(10, "Lost Territory.");
     assert_eq!(message_text(&c, &land), "Territory lost to enemy!");
+}
+
+/// UI-GAME-4.3 (Q-184 c; seen E-trace-033): a soldier slot shows the
+/// soldier's rank icon, the rank settler's cell of `uiElements4` (as on the
+/// settlers page, 4.4), not a ware icon of `uiElements1`: the military
+/// window draws a slot's soldier by his profession, a settler good.
+// spec: UI-GAME-4.3, UI-GAME-4.4, UI-GAME-1.6
+#[test]
+fn a_soldier_slot_shows_the_rank_icon() {
+    let (world, _) = guard_house_game();
+    let texts = Texts::parse("");
+    let (private, plank) = (500, 501);
+    let mut catalog = Catalog::default();
+    catalog.settlers.push(private);
+    catalog.good_icons.insert(private, (2, 5));
+    catalog.good_icons.insert(plank, (2, 5));
+    let mut p = Panel::new(PanelId::Context, [0.0, 0.0]);
+    good_icon(
+        &mut p,
+        &ctx(&world, &texts, &catalog),
+        private,
+        [137.0, 45.0],
+        48.0,
+    );
+    good_icon(
+        &mut p,
+        &ctx(&world, &texts, &catalog),
+        plank,
+        [193.0, 45.0],
+        48.0,
+    );
+    assert!(matches!(
+        p.widgets[0],
+        Widget::Sprite { atlas: Atlas::Elements4, rect: [96, 240, 48, 48], at, .. } if at == [137.0, 45.0]
+    ));
+    assert!(matches!(
+        p.widgets[1],
+        Widget::Sprite {
+            atlas: Atlas::Elements1,
+            ..
+        }
+    ));
 }

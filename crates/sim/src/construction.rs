@@ -337,18 +337,35 @@ impl ConstructionSite {
     /// and `main` are the decrements each part has had, `lying` the stock the
     /// file gives, which is what lies there: what the work has used is not in
     /// it, while [`Self::delivered`] counts it too, or the site would order
-    /// it again. The material of a unit under way is used (ECO-HQ-4.6), and
-    /// no builder comes back in the middle of a unit (Q-204), so the work
-    /// goes to that unit's end: the materials left are then exactly the units
-    /// left (stand-in, `docs/stand-ins.md`).
+    /// it again. The material of a unit under way is used (ECO-HQ-4.6).
+    /// FMT-SAV-3.5a (e) "A site in mid-unit always has its builder" (Q-204):
+    /// with `running` (its constructor in a running unit, who goes on with
+    /// it and sets the exact work) the units counted reach that unit's end;
+    /// without, no unit is under way whatever the fraction shows: the work
+    /// stays as the file has it and only the finished units have used
+    /// their material.
     pub(crate) fn restore_work(
         &mut self,
         frame: u32,
         main: u32,
         lying: &[(u32, u32)],
         plank: Option<u32>,
+        running: bool,
     ) {
         let unit = self.unit_ticks.max(1);
+        if !running {
+            let done = if main > 0 {
+                self.frame_end + main
+            } else {
+                frame
+            };
+            let units = done / unit;
+            let frame_units = units.min(total(&self.frame_costs));
+            let main_units = (units - frame_units).min(total(&self.costs));
+            self.work_done = done.min(self.work_total);
+            self.count_used(frame_units, main_units, lying, plank);
+            return;
+        }
         let main_ticks = self.work_total.saturating_sub(self.frame_end);
         let main_units = main.div_ceil(unit).min(total(&self.costs));
         // The main part starts when the frame part has ended (ECO-HQ-4.7).
@@ -363,6 +380,19 @@ impl ConstructionSite {
             (frame_units * unit).min(self.frame_end)
         };
         self.work_done = frame_work + (main_units * unit).min(main_ticks);
+        self.count_used(frame_units, main_units, lying, plank);
+    }
+
+    /// FMT-SAV-3.4b: the stock the file gives lies on the site; the
+    /// material of `frame_units` and `main_units` is used and counts as
+    /// delivered.
+    fn count_used(
+        &mut self,
+        frame_units: u32,
+        main_units: u32,
+        lying: &[(u32, u32)],
+        plank: Option<u32>,
+    ) {
         self.on_site = lying.to_vec();
         let mut used: Vec<(u32, u32)> = Vec::new();
         let mut left = frame_units;
@@ -421,6 +451,29 @@ impl ConstructionSite {
     pub fn progress(&self) -> (f32, f32) {
         let (frame, main) = self.remaining();
         (1.0 - frame, 1.0 - main)
+    }
+
+    /// FMT-SAV-3.4b, 3.5a (e): the decrements a site of an original's save
+    /// has had, from the remaining work of its two parts the file holds:
+    /// the first count whose float32 counting (ECO-HQ-4.6, 4.7) comes
+    /// nearest to them (exactly, for the original's own counting).
+    pub(crate) fn decrements_for(&self, frame_left: f32, main_left: f32) -> u32 {
+        let worth = self.unit_ticks.saturating_sub(1).max(1);
+        let (frame, main) = (total(&self.frame_costs), total(&self.costs));
+        let frame_left = if frame > 0 { frame_left.max(0.0) } else { 0.0 };
+        let main_left = main_left.max(0.0);
+        let mut best = (f32::INFINITY, 0);
+        for done in 0..=self.work_total {
+            let (f, m) = remaining_work(frame, main, self.unit_ticks, worth, done);
+            let off = (f - frame_left).abs() + (m - main_left).abs();
+            if off < best.0 {
+                best = (off, done);
+                if off == 0.0 {
+                    break;
+                }
+            }
+        }
+        best.1
     }
 
     /// ECO-HQ-4.6, 4.7: the remaining work of the frame part and the main

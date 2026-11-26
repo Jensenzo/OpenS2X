@@ -19,6 +19,11 @@
 # LONG_PLAY_MAP plays another free game map, LONG_PLAY_ARGS adds viewer
 # arguments (Windows paths; e.g. a project's --assets and --tree-model) and
 # LONG_PLAY_OUT writes elsewhere: a measurement, not the release's run.
+# LONG_PLAY_EXE runs another build of the viewer (NO_BUILD=1 with it).
+# PROBE_WINDOW=1 opens a second, tiny window of ours beside the game (the
+# same exe, `--probe-window`: one triangle, its own frame log probe.txt with
+# the wall clock, on the left display) to tell a stall of the graphics stack
+# for everyone from one of the game alone (2026-11-24).
 #
 # The limits, for the whole run:
 #   invariants broken            0
@@ -99,6 +104,26 @@ pc_load() {
         if (before) print "long-play:   " before; if (gbefore) print "long-play:   " gbefore
         if (after) print "long-play:   " after; if (gafter) print "long-play:   " gafter
         if (!before && !after) print "long-play:   no sample" }'
+    # The render steps around it (the viewer's R lines, 2026-11-24): each
+    # render frame's slowest step, its CPU and faults.
+    tr -d '\r' <"$dir/log.txt" | awk -v at="$at" '
+      $1 == "R" && $2 + 0 >= at - 0.2 && $2 + 0 <= at + 0.3 {
+        n = split($0, part, /\), /); best = 0; what = ""
+        for (i = 1; i <= n; i++) {
+          if (!match(part[i], /[a-z][a-z ,]* [0-9.]+ \(thread/)) continue
+          s = substr(part[i], RSTART, RLENGTH - 8); v = s; sub(/.* /, "", v)
+          if (v + 0 > best) { best = v + 0; what = part[i] }
+        }
+        sub(/^.*: /, "", what); sub(/^[^:]*MB: /, "", what)
+        ws = $0; sub(/^.*working set /, "", ws); sub(/ MB:.*/, "", ws)
+        printf "long-play:   render frame %s (%s s): slowest %s), working set %s MB\n", $6 + 0, $2, what, ws }'
+    if [[ -s "$dir/probe.txt" ]]; then
+      tr -d '\r' <"$dir/probe.txt" | awk -v w="$(awk -v t="$t0" -v a="$at" 'BEGIN { printf "%.0f", t + a * 1000 }')" '
+        $1 == "F" && $2 + 0 >= w - 1000 && $2 + 0 <= w + 1500 { line = line sprintf(" %+.2f s %s ms,", ($2 - w) / 1000, $3) }
+        $1 == "S" && $2 + 0 >= w - 1000 && $2 + 0 <= w + 2000 { if ($6 + 0 > worst) worst = $6 + 0; seen = 1 }
+        END { if (!seen) print "long-play:   probe window: no record"
+              else printf "long-play:   probe window: worst %.1f ms in the 3 s around it;%s\n", worst, (line ? line : " no frame over 25 ms") }'
+    fi
     if [[ -s "$dir/windows-events.txt" ]]; then
       awk -v w="$(awk -v t="$t0" -v a="$at" 'BEGIN { printf "%.0f", t + a * 1000 }')" '
         $1 + 0 <= w && w - $1 <= 3000 { $1 = sprintf("%.2f s before it:", (w - $1) / 1000); print "long-play:   Windows: " $0 }' "$dir/windows-events.txt"
@@ -177,7 +202,9 @@ if [[ -z "${NO_BUILD:-}" ]]; then
   cargo build --release -p s2-app
 fi
 source scripts/windows-copy.sh
-windows_copy target/x86_64-pc-windows-gnu/release/s2-viewer.exe
+# LONG_PLAY_EXE runs another build of the viewer (the investigation's
+# `--features frame-trace` build: a span log beside the log, a measurement).
+windows_copy "${LONG_PLAY_EXE:-target/x86_64-pc-windows-gnu/release/s2-viewer.exe}"
 # The game data: the Windows side's own copy of the install when it holds
 # the same files (as scripts/play-test.sh: a first read over \\wsl.localhost
 # stalls its frame by 30 to 150 ms).
@@ -227,6 +254,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$PWD/scri
   -Seconds $((seconds + 900)) -Ours "$(basename "$copy" .exe)" \
   </dev/null >"$out/pc-load.log" 2>&1 &
 load_pid=$!
+probe_pid=
+if [[ -n "${PROBE_WINDOW:-}" ]]; then
+  "$copy" --probe-window "$(wslpath -w "$PWD/$out/probe.txt")" --bench-seconds $((seconds + 900)) \
+    </dev/null >"$out/probe.log" 2>&1 &
+  probe_pid=$!
+fi
 "$copy" --game-dir "$(wslpath -w "$game")" \
   --profile-dir "$(wslpath -w "$PWD/$out/profile")" \
   --save-dir "$(wslpath -w "$PWD/$out/profile/saves")" \
@@ -236,7 +269,9 @@ load_pid=$!
   --bench-log "$(wslpath -w "$PWD/$out/log.txt")" \
   </dev/null >"$out/viewer.log" 2>&1 || true
 touch "$load_stop"
+[[ -n "$probe_pid" ]] && touch "$out/probe.txt.stop"
 wait "$load_pid" 2>/dev/null || true
+[[ -n "$probe_pid" ]] && { wait "$probe_pid" 2>/dev/null || true; }
 # Windows' display session changes in the run's time (see the limits).
 powershell.exe -NoProfile -Command "Get-WinEvent -FilterHashtable @{LogName='System'; Id=566; StartTime=[DateTimeOffset]::FromUnixTimeSeconds($started).LocalDateTime; EndTime=[DateTimeOffset]::FromUnixTimeSeconds($(date +%s)).LocalDateTime} -ErrorAction SilentlyContinue | ForEach-Object { '{0:o} {1}' -f \$_.TimeCreated.ToUniversalTime(), (\$_.Message -replace '\s+', ' ') }" \
   2>/dev/null | tr -d '\r' | grep . >"$out/display-events.txt" || true

@@ -360,6 +360,28 @@ same model and animation share one skeleton pose.
   box from the mesh vertices medium; a standing tree (state 2, not shaking) whose
   removal starts redraws its own matrix every frame, and which of the two writes
   wins there was not traced (Q-300).
+- **GFX-ANIM-3.8c1 A felled tree after a load (2026-11-24 c, Q-1087, stand-ins row 14; E-gfx-078,
+  code reading, high unless marked).** A load makes every view object anew: each tree is drawn
+  **standing** (no fall, no sink) until something starts one, and only two things do, both in play
+  ticks after the load, never the load itself:
+  - **The fall** is started by the woodcutter's view (3.8a) in any tick in which his running action
+    is the work action, his job is the woodcutter's, at least 3.0 s of it have passed (elapsed =
+    (total - remaining ticks) x 0.1 s, read from the action the save restored) and his target
+    tree is not already falling. So a woodcutter loaded **before W + 30** fells the tree at W + 30
+    as usual (counted from the saved action, not from the load); one loaded **at W + 30 .. W + 54**
+    starts the fall again from upright in the first tick after the load (the fall that was under
+    way or finished is not restored), about the same axis as in play (the line from the tree to
+    where he stands), with the full acceleration of 3.8a; tick exact to +- 1 (medium, as 3.8a).
+  - **The sink** (3.8c) is started only by the removal-start event of the simulation (the harvest,
+    or ECO-OUT-3.5's fallback). A deposit whose removal was already under way when the game was
+    saved (the removal counter, which the save keeps, between 2 and 19) gets no sink: it is drawn
+    **standing upright and unsunk** until its counter reaches 20, then it goes at once. No fall
+    starts for it either: its woodcutter has left the work action (he is taking the log or walking
+    home).
+  So a tree saved lying (fallen, harvest not yet reached, W + 53 .. W + 54) falls again from
+  upright after the load and starts sinking at the harvest with the box of its pose then (nearly
+  upright: h close to the standing height); a tree saved lying after its harvest stands upright
+  after the load and vanishes when its 18 ticks run out.
 - **GFX-ANIM-3.8d Axe and shovel (F22).** The woodcutter's work clip is
   `woodcutter_chop.gr2` (WorkLoop0Axe, 10.0 s, chops at 1.24 / 2.88 / 4.56 s);
   the forester (WorkLoop0Forester) and the leveller (WorkLoop0Bulldozer) play
@@ -563,6 +585,13 @@ same model and animation share one skeleton pose.
   instance of its own and keeps the last frame until the logic removes it. The dying
   state begins when the hunter arrives at the animal, i.e. at the start of the hunting
   action (ECO-FOOD-5.3); the animal is removed when that action ends (high, E-gfx-008).
+  Re-read 2026-11-24 b (Q-181 b, stand-ins row 10; E-eco-057, code reading, high): the hunt
+  step stops the animal, sets its dying state and starts the 55-tick action **in one update**,
+  the one in which the hunter's approach ends with the animal still there; nothing marks the
+  animal earlier (not when it is reserved, not while he walks) and nothing later (the spear's
+  moment in his clip is a view event only). So Dying starts in the action's first tick, about
+  5.5 s before the animal is removed, and an animal gone before the hunter arrives never plays
+  Dying (ECO-FOOD-5.4). T10a.
 
 ### GFX-ANIM-6 Buildings
 
@@ -758,6 +787,8 @@ same model and animation share one skeleton pose.
 | T8 | ship moving | frame with p = 0 | pitch (sin 0.2 + 1) x 0.04, roll (sin 0.4 + 1) x 0.08, height = water + 0.06 |
 | T9 | mesh with bones {0, 3, 7} referenced | palette | 3 matrices uploaded, vertex indices 0, 1, 2 |
 | T10 | animal dies | tick | Dying plays once on an unshared instance; Stand/Walk poses untouched |
+| T10a | 5.2: a hunter's approach to a reserved deer ends in tick a (the animal still on the map) | the deer's view from a - 1 to a + 56 | a - 1: not Dying (Stand or Walk as before); from a: Dying, once, on its own instance, its last frame held; the deer removed at the end of the 55-tick action (ECO-FOOD-5.3), Dying never restarted. A deer that is gone before a: no Dying at all |
+| T11a | 3.8c1 (Q-1087): saves of one woodcutter's work at a tree, his action begun in tick W, saved at W + 20, W + 40, and 5 ticks after the harvest (W + 60); each loaded and run on | the tree | saved at W + 20: falls from W + 30 as in T11; saved at W + 40: upright at the load, falls from the first tick after it (angle 0.0044 then, the 3.8a sequence) toward the woodcutter's left, starts sinking at the harvest W + 55 with the box of the pose then; saved at W + 60: upright, never falls, never sinks, gone at once 13 ticks after the load (counter 20) |
 | T11 | woodcutter's work action (55 ticks) started in tick W | tree | no fall up to W + 29; in W + 30 (3.0 s elapsed) it starts turning about the horizontal axis tree -> woodcutter; angle after the j-th fall tick = 0.0043633 (1.2^j - 1) / 0.2 rad: 0.0044 (W + 30), 0.1727 (W + 41), 1.1826 (W + 51), 1.4235 (W + 52); in W + 53 (1.7125) it stops and stays at the last drawn angle (just under 1.4235) (3.8a, corrected Run D) |
 | T11a | same; lying birch (RS_TreeBirch01, size 1) with h = 7.413, ground y0 = 10.0 | removal ticks | at W + 55 (harvest) drawn y goes 10.0 -> 9.259 over the tick (target 0.10 h); then targets 10 - 0.05 (k + 2) h: W + 56 8.888, W + 60 7.405, W + 65 5.552, W + 72 2.958; at W + 73 the model is gone; x, z and the rotation never change (3.8c) |
 | T11b | a stone pile's last stone is taken | model | sinks by 0.05 h per tick the same way (h = its box height) and is removed 18 ticks after the take (3.8c) |
@@ -790,6 +821,7 @@ same model and animation share one skeleton pose.
 | E-gfx-018 | code reading | `constructor_hammer.GR2` duration | builder hammer clip and step (3.8f) |
 | E-pt5-001 | code reading | | logic jumps drawn over one tick; builder request per step |
 | E-gfx-008 | code reading | S2DNG.exe | suffix lists, request codes per step, footsteps, door defaults, animal dying, building Working, ship phase rate |
+| E-eco-057 | code reading | | 5.2: the hunt step sets the dying state in the update that starts the 55-tick action (Q-181 b) |
 | E-gfx-013 | code reading | `work_shovel.GR2`, `woodcutter_chop.GR2`, `GO_Shovel01.GR2` | tree fall rate, growth scale, no sink, shake; shovel values |
 | E-pt2-001 | code reading | | pose restart, tree fall (its tool-drawing reading is replaced by E-gfx-010) |
 | E-gfx-014 | code reading | | fall trigger in game seconds, fall step / 10, deposit sink |
@@ -799,6 +831,7 @@ same model and animation share one skeleton pose.
 | E-gfx-072 | code reading | (session 2026-11-16 day) | 2.3: when clip events are scheduled: the building's Working clip at each work start, the settlers' pose pool (a restarted pose schedules with its starter's target, a joiner none) (Q-186 f) |
 | E-gfx-073 | code reading | (session 2026-11-16 day) | 4.3: the evade pair test: walker and stander, two walkers by heading, the shared sign (Q-207 g) |
 | E-gfx-075 | code reading | (session 2026-11-16 day) | 3.1: the in-water test of the settler motion against the global water level (Q-180 g) |
+| E-gfx-078 | code reading | (session 2026-11-24 c) | 3.8c1: the deposit's load and post-load (counter kept, only the shown event), the removal-start event's only callers (harvest, fallback), the woodcutter view's fall trigger (work action codes, job, elapsed from the restored action) (Q-1087) |
 | data | clips | `data/buildings/PB_R_WoodcutterHut01/door_open.GR2`, `door_close.GR2` (and ForesterHut01, Stonemason01, Sawmill01): track groups and track names read by the investigation's GR2 reader; `settings/buildings.xml`; `character/settler_animations.xml` WorkLoop0Forester events; `scripts/properties/sounds.lua` | 6.1a track groups, 3.8d planting (play test 11) |
 
 ## Open questions

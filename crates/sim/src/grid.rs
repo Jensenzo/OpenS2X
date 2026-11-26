@@ -93,6 +93,39 @@ pub fn sample_field_truncating(sample: Point) -> Point {
     (sample.0.saturating_sub(shift) / SAMPLES_PER_FIELD, y)
 }
 
+/// MAP-GRID-4.4: the nearest field of `sample` on a map of `width` by
+/// `height` fields: among the 5 x 5 fields around the truncated one
+/// (MAP-GRID-4.3), inside the map, the one whose own sample is the fewest
+/// sample steps away, at most 4. TRN-CARRY-7.1 (T62, E-trn-045) gives the
+/// order on ties: rows from two after the truncated field to two before,
+/// in each row columns from two after to two before, the first at the
+/// smallest distance. With none at 4 or less, the truncated field clamped
+/// into the map.
+pub fn sample_field_nearest(sample: Point, width: u32, height: u32) -> Point {
+    let (tx, ty) = sample_field_truncating(sample);
+    let mut best: Option<(u32, Point)> = None;
+    for dy in (-2i64..=2).rev() {
+        for dx in (-2i64..=2).rev() {
+            let (x, y) = (i64::from(tx) + dx, i64::from(ty) + dy);
+            if x < 0 || y < 0 || x >= i64::from(width) || y >= i64::from(height) {
+                continue;
+            }
+            let field = (x as u32, y as u32);
+            let d = distance(field_sample(field), sample);
+            if d <= 4 && best.is_none_or(|(b, _)| d < b) {
+                best = Some((d, field));
+            }
+        }
+    }
+    best.map_or(
+        (
+            tx.min(width.saturating_sub(1)),
+            ty.min(height.saturating_sub(1)),
+        ),
+        |(_, f)| f,
+    )
+}
+
 /// MAP-GRID-2.1: number of neighbour steps from `a` to `b`, ignoring
 /// obstacles.
 pub fn distance(a: Point, b: Point) -> u32 {
@@ -167,6 +200,26 @@ mod tests {
 
     fn around(x: u32, y: u32) -> [Option<Point>; 6] {
         neighbours((x, y), 80, 80)
+    }
+
+    // TRN-CARRY T62 (TRN-CARRY-7.1 "its own field", E-trn-045): the
+    // war's sample (129, 85) truncates to (31, 21) but belongs to (32, 21),
+    // whose sample (130, 84) is one step away; (87, 80) belongs to (22, 20),
+    // not to (21, 20). A field's own sample is its own field.
+    // spec: MAP-GRID-4.4, TRN-CARRY-7.1 (TRN-CARRY T62)
+    #[test]
+    fn a_sample_belongs_to_its_nearest_field() {
+        assert_eq!(sample_field_truncating((129, 85)), (31, 21));
+        assert_eq!(distance(field_sample((32, 21)), (129, 85)), 1);
+        assert_eq!(sample_field_nearest((129, 85), 64, 64), (32, 21));
+        assert_eq!(sample_field_truncating((87, 80)), (21, 20));
+        assert_eq!(sample_field_nearest((87, 80), 64, 64), (22, 20));
+        for f in [(0, 0), (5, 7), (63, 63), (10, 10)] {
+            assert_eq!(sample_field_nearest(field_sample(f), 64, 64), f);
+        }
+        // The closing edge's samples: clamped into the map at worst.
+        let edge = sample_field_nearest((256, 256), 64, 64);
+        assert!(edge.0 < 64 && edge.1 < 64);
     }
 
     // T1

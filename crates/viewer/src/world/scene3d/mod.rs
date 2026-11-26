@@ -257,11 +257,18 @@ pub enum Fall {
 /// (1.2^j - 1) / 0.2, drawn fully at the start of the next tick and
 /// interpolated toward it during the tick (GFX-ANIM-4.1); lying from the
 /// tick whose angle would pass pi / 2.
+#[cfg(test)]
 pub fn fall_angle(began: Option<u64>, now: f32) -> Fall {
-    let Some(began) = began else {
+    fall_angle_from(began.map(fall_start), now)
+}
+
+/// GFX-ANIM-3.8a, 3.8c1: [`fall_angle`] for a fall whose first tick is
+/// `start` (none: standing).
+pub fn fall_angle_from(start: Option<u64>, now: f32) -> Fall {
+    let Some(start) = start else {
         return Fall::Standing;
     };
-    let k = now - fall_start(began) as f32;
+    let k = now - start as f32;
     if k < 0.0 {
         return Fall::Standing;
     }
@@ -273,6 +280,31 @@ pub fn fall_angle(began: Option<u64>, now: f32) -> Fall {
         return Fall::Lying;
     }
     Fall::Falling(turned(n) + (turned(n + 1.0) - turned(n)) * f)
+}
+
+/// GFX-ANIM-3.8a, 3.8c1 (Q-1087, E-gfx-078): the first fall tick the view
+/// draws for the tree on `field`, in a game loaded at tick `loaded_at` (none:
+/// a new game, every tick seen). A load restores no fall: a woodcutter still
+/// in his work action fells it again from upright, at W + 30 as in play when
+/// loaded before, else in the first tick after the load; a tree whose
+/// removal was under way at the load never falls.
+pub fn seen_fall_start(world: &World, field: Point, loaded_at: Option<u64>) -> Option<u64> {
+    let began = world.felling_began(field)?;
+    if let (Some(loaded), Some(s2_sim::DepositState::Removing { since, .. })) =
+        (loaded_at, world.deposit(field).map(|d| d.state))
+    {
+        if !sink_seen(since, Some(loaded)) {
+            return None;
+        }
+    }
+    Some(fall_start(began).max(loaded_at.unwrap_or(0)))
+}
+
+/// GFX-ANIM-3.8c1: whether a removal that began in tick `since` sinks in the
+/// view: only one the view saw start, never one under way at the load (it
+/// stands upright and unsunk until it is gone).
+pub fn sink_seen(since: u64, loaded_at: Option<u64>) -> bool {
+    loaded_at.is_none_or(|loaded| since >= loaded)
 }
 
 /// GFX-ANIM-3.8c, T11a, T11b: how far a deposit being removed (since tick
@@ -308,7 +340,7 @@ pub fn root_width_growth(s: f32) -> [f32; 3] {
 /// GFX-ANIM-3.8a: the horizontal axis a tree falls about, from the tree
 /// toward the woodcutter working at it, as a yaw in the game frame (the
 /// angle of the axis from +x toward +z); kept per tree while it is worked
-/// at, felled and lying.
+/// at, felled and lying (GFX-ANIM-3.8c1: never a fixed axis).
 pub fn update_fall_axes(world: &World, frame: &Frame, axes: &mut HashMap<Point, f32>) {
     axes.retain(|&field, _| world.felling_began(field).is_some());
     let views = world.settler_views();
@@ -331,38 +363,8 @@ pub fn update_fall_axes(world: &World, frame: &Frame, axes: &mut HashMap<Point, 
         let (at, _) = fine_point(world, frame, &fine);
         axes.insert(spot, (at[2] - tz).atan2(at[0] - tx));
     }
-    // A tree felled while the view did not see its woodcutter at it (a
-    // game played ahead, a loaded save): while he takes the log he still
-    // stands at his stand, a few lattice steps from the tree (the nearest
-    // felled one within 3), so the axis is the same line.
-    for view in &views {
-        let (true, Some(stand)) = (
-            worker_in(view, s2_sim::view::WorkPhase::TakeWare),
-            view.stand,
-        ) else {
-            continue;
-        };
-        let tree = world
-            .deposits()
-            .filter(|(f, d)| {
-                !axes.contains_key(f)
-                    && world.fall_of(*f).is_some()
-                    && s2_sim::grid::distance(stand, d.position) <= 3
-            })
-            .min_by_key(|(_, d)| s2_sim::grid::distance(stand, d.position))
-            .map(|(f, d)| (f, d.position));
-        if let (Some((field, position)), Some(fine)) = (tree, view.fine) {
-            let [tx, tz] = frame.sample_xz(i64::from(position.0), i64::from(position.1));
-            let (at, _) = fine_point(world, frame, &fine);
-            axes.insert(field, (at[2] - tz).atan2(at[0] - tx));
-        }
-    }
-    // Any other: toward +x (stand-in).
-    for (field, _) in world.deposits() {
-        if !axes.contains_key(&field) && world.fall_of(field).is_some() {
-            axes.insert(field, 0.0);
-        }
-    }
+    // GFX-ANIM-3.8c1: a tree felled before a load whose woodcutter has
+    // left it has no axis: it stands until it is gone.
 }
 
 /// The first flag of a road being built: a yellow ring (a viewer aid,

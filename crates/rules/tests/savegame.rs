@@ -397,6 +397,75 @@ fn autosave_continues_as_far_as_it_reads() {
     }
 }
 
+/// FMT-SAV T15a (row 16, Q-204): the Fight autosave's constructor in a
+/// running unit with (c, r) = (4, 27) goes on with it: 27 decrements in the
+/// first 27 ticks after the load, the unit's extra decrement in the 28th and
+/// the unit ends there; the site's work never jumps to a unit's end at the
+/// load. Every site of the save starts from the work its file holds.
+// spec: FMT-SAV-3.5a, ECO-HQ-4.6a
+#[test]
+fn t15a_a_site_in_mid_unit_goes_on_with_its_builder() {
+    let name = "Autosave.sav";
+    let Some((save, rules)) = load(name) else {
+        return;
+    };
+    let units = s2_rules::saved_builder_units(&save);
+    let Some(&(site, _, _)) = units.iter().find(|&&(_, c, r)| (c, r) == (4, 27)) else {
+        eprintln!("skipped: this autosave has no constructor at (4, 27): {units:?}");
+        return;
+    };
+    let (mut world, _) = s2_rules::restore_game(&save, &rules).unwrap();
+    // At the load: every site's remaining work is the file's, to the last
+    // bit of the float (no jump to a unit's end).
+    for b in save
+        .buildings
+        .iter()
+        .filter(|b| b.construction_left != [0.0, 0.0])
+    {
+        let at = (b.field.x, b.field.y);
+        let Some(s) = world.site(at) else { continue };
+        let [main, frame] = b.construction_left;
+        let (f, m) = s.remaining();
+        assert_eq!((f, m), (frame.max(0.0), main.max(0.0)), "site {at:?}");
+    }
+    // The decrements per tick; a site that is finished by the unit's end
+    // is gone (`None`), its work then complete.
+    let done = |w: &s2_sim::World| w.site(site).map(|s| (s.work_done, s.work_total));
+    let (start, total) = done(&world).expect("the site");
+    eprintln!(
+        "site {site:?}: work {start} of {total}, frame end {:?}, file {:?}",
+        world.site(site).map(|s| s.frame_end),
+        save.buildings
+            .iter()
+            .find(|b| (b.field.x, b.field.y) == site)
+            .map(|b| (b.construction_left, b.building_type))
+    );
+    let mut per_tick = Vec::new();
+    let mut last = start;
+    for _ in 0..30 {
+        world.step();
+        match done(&world) {
+            Some((d, _)) => {
+                per_tick.push(d - last);
+                last = d;
+            }
+            None => {
+                per_tick.push(total - last);
+                break;
+            }
+        }
+    }
+    eprintln!("per tick {per_tick:?}");
+    assert_eq!(per_tick[..27], [1; 27], "{per_tick:?}");
+    assert_eq!(per_tick[27], 1, "the extra decrement: {per_tick:?}");
+    match done(&world) {
+        // The unit ended: no decrement in the next two ticks.
+        Some(_) => assert_eq!(per_tick[28..], [0, 0], "{per_tick:?}"),
+        // The building's last unit: finished with the extra decrement.
+        None => assert_eq!(per_tick.len(), 28, "{per_tick:?}"),
+    }
+}
+
 /// The two saves of the original with a fight in progress (FMT-SAV-3.7a,
 /// E-sav-017), as the investigation named them (`S2_SAVES_DIR` pointing at
 /// a folder with them, outside the repository).

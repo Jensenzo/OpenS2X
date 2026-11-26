@@ -51,6 +51,8 @@ pub struct Placements {
     /// angle it was last drawn at while falling.
     pub(crate) fall_axes: std::collections::HashMap<s2_sim::grid::Point, f32>,
     pub(crate) fall_last: std::collections::HashMap<s2_sim::grid::Point, f32>,
+    /// GFX-ANIM-3.8c1: the tick the game was loaded at, if it was.
+    pub(crate) loaded_at: Option<u64>,
     /// GFX-ANIM-3.8c: the height y0 and box height h of each deposit
     /// being removed, taken when its removal was first seen.
     pub(crate) sinks: std::collections::HashMap<s2_sim::grid::Point, (f32, f32)>,
@@ -305,8 +307,10 @@ fn move_deposits(
         fall_axes,
         fall_last,
         sinks,
+        loaded_at,
         ..
     } = placements;
+    let loaded_at = *loaded_at;
     let removing = world
         .deposits()
         .filter(|(_, d)| matches!(d.state, s2_sim::DepositState::Removing { .. }))
@@ -322,7 +326,10 @@ fn move_deposits(
         };
         let mut moved = old.clone();
         if let Some(&axis) = fall_axes.get(&field) {
-            moved.tilt = match crate::world::scene3d::fall_angle(world.felling_began(field), now) {
+            moved.tilt = match crate::world::scene3d::fall_angle_from(
+                crate::world::scene3d::seen_fall_start(world, field, loaded_at),
+                now,
+            ) {
                 crate::world::scene3d::Fall::Standing => 0.0,
                 crate::world::scene3d::Fall::Falling(angle) => {
                     fall_last.insert(field, angle);
@@ -336,6 +343,10 @@ fn move_deposits(
             moved.tilt_axis = axis;
         }
         if let s2_sim::DepositState::Removing { since, gone_at } = deposit.state {
+            // GFX-ANIM-3.8c1: a removal under way at the load sinks nothing.
+            if !crate::world::scene3d::sink_seen(since, loaded_at) {
+                continue;
+            }
             let Some(&(y0, h)) = sinks.get(&field) else {
                 return false;
             };
@@ -436,7 +447,10 @@ pub fn sync_objects(
     });
     let falling = placements.fall_axes.keys().any(|&f| {
         matches!(
-            crate::world::scene3d::fall_angle(world.felling_began(f), now),
+            crate::world::scene3d::fall_angle_from(
+                crate::world::scene3d::seen_fall_start(world, f, placements.loaded_at),
+                now
+            ),
             crate::world::scene3d::Fall::Falling(_)
         )
     });
@@ -574,27 +588,35 @@ pub fn sync_objects(
             if let Some(&axis) = placements.fall_axes.get(&field) {
                 // GFX-ANIM-3.8a: once lying it keeps the last angle
                 // drawn while falling (pi / 2 if none was).
-                placed.tilt =
-                    match crate::world::scene3d::fall_angle(world.felling_began(field), now) {
-                        crate::world::scene3d::Fall::Standing => 0.0,
-                        crate::world::scene3d::Fall::Falling(angle) => {
-                            placements.fall_last.insert(field, angle);
-                            angle
-                        }
-                        crate::world::scene3d::Fall::Lying => placements
-                            .fall_last
-                            .get(&field)
-                            .copied()
-                            .unwrap_or(std::f32::consts::FRAC_PI_2),
-                    };
+                placed.tilt = match crate::world::scene3d::fall_angle_from(
+                    crate::world::scene3d::seen_fall_start(world, field, placements.loaded_at),
+                    now,
+                ) {
+                    crate::world::scene3d::Fall::Standing => 0.0,
+                    crate::world::scene3d::Fall::Falling(angle) => {
+                        placements.fall_last.insert(field, angle);
+                        angle
+                    }
+                    crate::world::scene3d::Fall::Lying => placements
+                        .fall_last
+                        .get(&field)
+                        .copied()
+                        .unwrap_or(std::f32::consts::FRAC_PI_2),
+                };
                 placed.tilt_axis = axis;
             }
             // GFX-ANIM-3.8c, T11a, T11b: a deposit being removed sinks
             // straight down by 0.05 of its box height per tick, the box
             // taken under its matrix when the removal starts (a felled
             // tree's lying box).
+            // GFX-ANIM-3.8c1: a removal under way at the load sinks nothing.
             if let Some(s2_sim::DepositState::Removing { since, gone_at }) =
-                world.deposit(field).map(|d| d.state)
+                world.deposit(field).map(|d| d.state).filter(|s| match s {
+                    s2_sim::DepositState::Removing { since, .. } => {
+                        crate::world::scene3d::sink_seen(*since, placements.loaded_at)
+                    }
+                    _ => false,
+                })
             {
                 let (y0, h) = *placements.sinks.entry(field).or_insert_with(|| {
                     let h = library

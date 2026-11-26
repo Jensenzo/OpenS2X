@@ -969,7 +969,7 @@ fn a_restored_games_clock_goes_on_from_its_tick() {
 /// has used those materials, so it orders nothing it has had, and the materials
 /// left are the units left: none is over when it is finished (the plank of the
 /// Fight autosave's site (51, 19), gone at tick 36670).
-// spec: FMT-SAV-3.4b, ECO-HQ-4.5, ECO-HQ-4.6, ECO-HQ-4.7
+// spec: FMT-SAV-3.4b, FMT-SAV-3.5a, ECO-HQ-4.5, ECO-HQ-4.6, ECO-HQ-4.7
 #[test]
 fn a_restored_site_orders_what_its_work_has_not_used() {
     use crate::requests::tests::{PLANK, STONE};
@@ -994,26 +994,41 @@ fn a_restored_site_orders_what_its_work_has_not_used() {
     };
     let mut site = new_site();
     // Frame done, 209 of the main part's decrements: one unit under way.
-    site.restore_work(441, 209, &[(STONE, 1)], Some(PLANK));
+    site.restore_work(441, 209, &[(STONE, 1)], Some(PLANK), true);
     assert_eq!(site.work_done, 441 + 221);
     assert_eq!(site.on_site, [(STONE, 1)]);
     assert!(site.shortfall().is_empty(), "{:?}", site.shortfall());
     // A fresh site: nothing used, all is ordered.
     let mut fresh = new_site();
-    fresh.restore_work(0, 0, &[], Some(PLANK));
+    fresh.restore_work(0, 0, &[], Some(PLANK), false);
     assert_eq!(fresh.work_done, 0);
     assert_eq!(fresh.shortfall(), [(PLANK, 2), (STONE, 2)]);
     // A frame half done with the other frame material still to come, and a
     // main material delivered early.
     let mut early = new_site();
-    early.restore_work(221, 0, &[(STONE, 1)], Some(PLANK));
+    early.restore_work(221, 0, &[(STONE, 1)], Some(PLANK), false);
     assert_eq!(early.work_done, 221);
     assert_eq!(early.shortfall(), [(PLANK, 1), (STONE, 1)]);
     // The last unit's end still counts as the whole part.
     let mut done = new_site();
-    done.restore_work(441, 400, &[], Some(PLANK));
+    done.restore_work(441, 400, &[], Some(PLANK), true);
     assert_eq!(done.work_done, 882);
     assert!(done.shortfall().is_empty());
+    // FMT-SAV-3.5a (e) (row 16, Q-204): without a builder in a running unit
+    // no unit is under way: the work stays as the file has it, not at a
+    // unit's end, and only the finished units have used their material.
+    // Two units done (442 decrements: the frame and 1 of the main part).
+    let mut between = new_site();
+    between.restore_work(441, 1, &[(STONE, 1)], Some(PLANK), false);
+    assert_eq!(between.work_done, 442);
+    assert_eq!(between.on_site, [(STONE, 1)]);
+    assert_eq!(between.shortfall(), [(STONE, 1)]);
+    // A fraction left by the first unit's 221st decrement: one unit done,
+    // the second frame material still to come.
+    let mut one = new_site();
+    one.restore_work(221, 0, &[], Some(PLANK), false);
+    assert_eq!(one.work_done, 221);
+    assert_eq!(one.shortfall(), [(PLANK, 1), (STONE, 2)]);
 }
 
 // FMT-SAV-2.2, SIM-START-4.1 (Q-1025): the counter is the save's next number;

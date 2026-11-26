@@ -8,7 +8,106 @@ the working name s2-reborn. The public repository starts with its first
 public release; the sections before it describe releases made in the
 maintainer's working repository, which have no tag or download there.
 
-## Unreleased
+## OpenS2X 0.15.0 (2026-11-26)
+
+What you notice in the game first, then the numbers against the original, then
+what is for projects built on OpenS2X.
+
+### What is new
+
+- **The leveller walks** from field to field around his building site instead
+  of jumping to the next field he levels.
+- **Geologists and scouts** whose road is cut while they walk to their flag go
+  home from the flag where the walk ended, instead of standing there waiting.
+- **The tutorial** moves on only after a click on the one control the original
+  highlights for the step (calling the geologist from the flag menu, the
+  bar's own buttons). A key such as SPACE still does its job but no longer
+  counts as the click. In the first lesson, "select the flag" waits for the
+  highlighted Create Flag button of the small flag menu; any other click shows
+  "Click the highlighted button to continue!".
+- **Typed text:** the euro sign, curly quotes, long dashes and the other signs
+  of the game's character set show in the chat line and a ship's name. As in
+  the original, `<` can no longer be typed, and a letter outside the Western
+  character set shows as `?`.
+- **Trees after loading a game** no longer all lie pointed the same way: a tree
+  that was falling or lying at the save stands upright again; one its
+  woodcutter is still cutting falls again, sideways to him, and one being
+  cleared away stays upright until it vanishes.
+- **Building sites in a loaded save of the original** go on from the exact point
+  the save holds and are finished at the tick the original finishes them (they
+  were one tick early).
+- **Building windows:** the productivity and construction gauges are the game's
+  own art, with the percent centred on them.
+- **Attack dialog:** the slider's left end means one soldier and its right end
+  all of them, the number in between rounds to the nearest (halves up), and the
+  four count buttons set a quarter, a half, three quarters and all.
+- **Select Map:** each row sits on the game's brown bar, which turns blue under
+  the pointer; names are tan for multiplayer maps and pale for single-player
+  ones, in the original's order (Black Hole now comes before Death Valley), and
+  the chosen map is no longer drawn in yellow.
+- **No hitch when a new piece of music starts:** a track's file is read beside
+  the game, so its first start no longer holds a frame (84 ms in a long game).
+- **A switched-off forester** stops planting once his current search for a spot
+  ends without one; before, he went on planting while his hut was off.
+- **Harbours and ships:** a harbour that supplies another one orders one ware
+  more when a ware on its way is only being stored there, and no longer asks for
+  a second builder (or soldier, or any settler) while the first is still
+  walking. For a sea transport a harbour calls the ship already lying at it or
+  sailing to it, or else the free ship nearest its first docking place. A ship
+  lying at another harbour after unloading is not called away from there (an
+  open question, Q-1095: the original may allow it). An expedition calls its
+  ship one round (about 10 seconds) after its last materials are set aside; when
+  its builder comes from the harbour's stock the harbour waits one round more
+  and calls off a builder already asked for, so fewer spare builders walk to it.
+- **Computer players** choose which enemy building to attack as the original
+  does: they weigh a place by the enemy's strength there plus their own, not the
+  enemy's twice, so they attack other buildings than before. They count a
+  building's soldiers on their way in, and plan again for land they lost.
+- **The rest, checked against the original:** a building under attack sends no
+  attackers; soldiers meeting on the field pair in the order the interceptors
+  went out; an interceptor waiting outside keeps his building from being taken;
+  a fallen soldier's skeleton belongs to the field nearest to it; a settler
+  walking home over a road removed as he steps on its end flag walks straight
+  on; wares marked "out" leave warehouses in the order they were built; an order
+  from a building with no share in a ware's distribution table waits; an animal
+  placed mid-walk by a map or save counts from the start time the file holds.
+  Unchanged, as checked: a hunted animal starts to die when the spear action
+  starts; the catapult finishes a search it began when switched off; a letter
+  the font has no picture for leaves no gap; a harbour torn down takes its
+  expedition goods with it.
+- **Saves:** the format is now 100 (the interceptors' order). Saves of earlier
+  versions load as before; interceptors out at the save keep the old order
+  among themselves.
+
+### Equal to the original, tick for tick
+
+(`docs/fidelity.md`; "equal up to" means the first difference comes next.)
+
+- **Weak computer player, long game:** the random numbers to tick 63,126
+  (105 minutes; 60,837 in 0.14.1).
+- **Four-player war** (`MP_4P_Fight`, three Strong computer players): generator
+  26,131, settlers 25,289, buildings 26,589 (42 minutes; 29 and 31 in 0.14.1).
+- Every other compared pair is unchanged: Weak to 40,000, one player to 30,000,
+  Strong generator 58,114.
+
+### For developers
+
+- The long play's log cuts a slow frame's render work into steps with CPU time,
+  page faults and working set; `PROBE_WINDOW=1` opens a small window beside the
+  game to show whether the graphics stack stalled for everyone; an
+  investigation build (`--features frame-trace`) logs the long systems and wgpu
+  calls (`docs/test-coverage.md`, "The long play").
+- In a game the viewer plays ahead (`--scene`, `--run`), a felled tree lies the
+  way it fell instead of always pointing the same way.
+- Development notes: `--look-study` (with `origtoy` and `cel2`) is a switch for
+  studying other looks of the picture; not a feature, off by default.
+
+### For projects built on OpenS2X: breaking changes
+
+- None in the public API. The snapshot format is 100 (99 in 0.14.1); a save of
+  this version does not load in 0.14.1, saves of earlier versions load here.
+  `AI-MIL-5.2` changes which buildings computer players attack, so a game
+  with them plays out differently from 0.14.1 on the same seed.
 
 ## OpenS2X 0.14.1 (2026-11-23)
 

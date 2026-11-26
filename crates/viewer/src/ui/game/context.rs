@@ -381,7 +381,8 @@ pub fn road_menu(ctx: &Ctx, field: Point) -> Panel {
 /// click on the end of the road being built: `!Create Flag.` where a flag
 /// fits (`place-flag`; the logic finishes the road the next tick), then
 /// `!Cancel street construction.` (`cancel-road`), on the
-/// small panel.
+/// small panel. Outside road building (CAM-5.3c's step 0x32 opens it) only
+/// `!Create Flag.`.
 pub fn deploy_flag_menu(ctx: &Ctx, field: Point) -> Panel {
     let mut rows = Vec::new();
     if ctx.world.check_flag(ctx.player, field).is_ok() {
@@ -396,13 +397,15 @@ pub fn deploy_flag_menu(ctx: &Ctx, field: Point) -> Panel {
             true,
         ));
     }
-    rows.push((
-        [240, 144],
-        [240, 192],
-        "!Cancel street construction.",
-        Action::Command(Command::CancelRoute { player: ctx.player }),
-        true,
-    ));
+    if ctx.world.route(ctx.player).is_some() {
+        rows.push((
+            [240, 144],
+            [240, 192],
+            "!Cancel street construction.",
+            Action::Command(Command::CancelRoute { player: ctx.player }),
+            true,
+        ));
+    }
     let size = SMALL_DIALOG;
     let mut p = Panel::new(PanelId::Context, context_origin(ctx, size));
     frame(

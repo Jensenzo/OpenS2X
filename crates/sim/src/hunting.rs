@@ -295,7 +295,8 @@ impl World {
 
     /// ECO-FOOD-5.13: an animal as the map's record holds it: waiting with
     /// the wait left, choosing with its ticket, or walking where it was
-    /// saved (its walk counted from the game's start, Q-233).
+    /// saved (Q-233), its walk started at the record's clock value
+    /// (ECO-FOOD-5.14a, T65: 0.0 in the shipped maps, the game's start).
     pub(crate) fn map_animal(&self, a: &crate::MapAnimal) -> Animal {
         let mut animal = Animal::new(a.kind, a.field);
         animal.home = a.home;
@@ -312,7 +313,7 @@ impl World {
                     crate::movement::step_rate(&self.terrain, kind.speed, a.field, *step, false)
                         .to_bits();
                 AnimalState::Walking {
-                    since: 0,
+                    since: a.walk_start,
                     speed: kind.speed,
                     idle_thousandths: kind.idle_thousandths,
                 }

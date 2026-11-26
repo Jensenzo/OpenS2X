@@ -461,6 +461,14 @@ in `ECO-production-chains.md` (ECO-PROD); building data in
   (5.11b: a float32 sum, so the elapsed time is not exactly 0.1 s per tick). Confidence: high (measured: the draws per tick of
   the original equal the N-draws of T31 plus 0 to 14 walk draws, never fewer, and
   the two path read-outs are the same code; the formula for the wait from code).
+- **ECO-FOOD-5.14a An animal that starts mid-walk (Q-234, answered 2026-11-24 b; E-eco-058,
+  code reading and map data).** The clock value at the walk's start is part of the animal's
+  record: the `f32` that follows the object id (FMT-S2M-5.4) is that start time, written when a
+  walk starts and read back on load (a record older than the first version reads 0). So an
+  animal placed in a map in the walking state ends its walk and computes its wait (5.11) from
+  that value. In all 34 shipped maps (4284 animals, 90 of them walking) the value is **0.0**,
+  the clock's value at a new game's start, so the walk counts as started at tick 0. A save
+  carries the real start time the same way. Confidence: high.
 - **ECO-FOOD-5.15 Respawn (Q-235).** The map's respawn record (FMT-S2M-5.5) holds
   an accumulator, a rate (40 on MP_2P_Storm_Coast) and a cell cursor (x, y). Every
   tick, after the animals' update, the accumulator gains the rate; while it is 1000 or
@@ -751,6 +759,7 @@ Level ground, room at the flags, switched on, unless stated.
 | T62 | 5.7 (released while standing): a deer reserved by a hunter's hut on its walk, standing at the walk's end; the hut is removed in tick R | the deer's state per tick | R: waiting, wait 0 (in the removal's tick); R + 1: choosing, ticket -1; R + 2: ticket 0 (rule 4 with top 0, or rule 1); from R + 3 at the earliest: it chooses and walks (one draw for N and the walk's draws); with no other animal choosing, R + 3 exactly (R6: R = 6631, walk to (57, 18) at 6634) |
 | T63 | 4.5: E-trace-013 (R3, the Hard game), player 1's three fishers' huts on (144, 38), (147, 41) and (146, 40) fishing the same water; in counter 43653 the fisher of (146, 40) takes the last unit of (146, 48), the field the hut on (147, 41) remembers from its spot search; that hut's catch ends in 43751 (its fisher standing on (145, 47); (146, 47) holds 7) | the fish layer; the fish | the catch takes nothing: (146, 47) holds 7 in the heap dumps of 44000 and 45500, 1 unit is left there at 51000 (the original's layer equals the rule's in all 1079 fish fields at 51000 and all 1082 at 30000); the hut still makes a fish (out at 43755). Taking from the first field around the fisherman instead empties (146, 47) at 50273, so the fisher of (146, 40) finds no fishing spot in 51417 and waits for its retry where the original picks a spot (its draw) and fishes there (a fish at 52001): the Hard 150 000 generator first differs at trace tick 51418; with the rule 52437 (experiment build on 0.12.3 with the rules of 2026-11-21; every other pair unchanged) |
 | T64 | ECO-FOOD-2.3 (a field emptied by another mine): E-trace-018 (R5, the Weak game), player 1's iron mines (130, 36) and (128, 35), both digging the field (129, 36) (no reservation, 2.5); the mine (130, 36) has its 101-tick try at counters 56 091, 56 192, ...; (128, 35) takes the field's last unit at 56 009 | the miner of (130, 36) at the start of his next cycle (56 095, after his rest) | his try of 56 091 finds (129, 36) empty, searches and takes (129, 37) (the first iron field of the flood, 7 units; the iron layer in the heap dump of 56 000 equals ours field by field); he begins work at 56 096 (recorded). Keeping the emptied field as current skips the try of 56 091: he waits at the start of his cycle until the try of 56 192 and works from 56 193: the Weak settlers (R5) apart at trace tick 56 440. With the rule (experiment build with every rule of 2026-11-21, 2026-11-22's T26 and AI-CON-9.3): the Weak settlers first differ at 56 717 (the next point, `MIL-building-upgrade.md` MIL-UPG-2.2a); every pair's first difference unchanged (matching generator ticks Weak 56 805 -> 56 822, Hard 54 404 -> 54 400) |
+| T65 | 5.14a: sp02_the_river's walking animals (record state 2, start value 0.0, e.g. the deer with step progress 0.945 at speed 0.045) at a new game | the wait it takes when its walk ends at tick e | the wait of 5.11 computed with the walk's start clock 0.0 and the end clock of tick e (as for a walk started at tick 0); a save made with an animal mid-walk restores the start clock it holds |
 
 ## Evidence
 
@@ -791,6 +800,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-sim-012 | code reading and replay | a check over E-trace-007's heap dump of counter 1023 (heights) and s2-reborn's field states; E-trace-008 `animals.csv.gz` (rabbit 90092) | 5.11a (a), T43, T44 |
 | E-trace-005 | live read of the running game | `animals.csv.gz`: every animal's state, ticket / wait counter, field, step end, goal, registered field and walk-start clock in every trace tick 0 .. 6000 | ECO-FOOD-5.8, 5.9 (T42), 5.10a; Q-334, Q-337 |
 | E-eco-051, E-trace-013 | code reading, memory reads of the running game, experiment build | (session 2026-11-21 pm): R3's heap dumps 30000 .. 51000 (the fish layer), wares table (the fishers' fish) | 4.5 a remembered emptied field gives nothing (T63) |
+| E-eco-058 | code reading and map data | | 5.14a: the record's f32 is the walk's start clock; 0.0 in every shipped map (Q-234) |
 | E-eco-053, E-trace-018 | memory reads of the running game, recording, experiment build | (session 2026-11-22 day): the iron ore layer in R5's heap dump of 56 000 against ours, the settlers table of the miners of (130, 36) and (128, 35) | ECO-FOOD-2.3 a field emptied by another mine (T64) |
 
 ## Open questions

@@ -495,8 +495,11 @@ impl World {
         });
     }
 
-    /// The building on `at` is gone: its harbour record ends and ships
-    /// linked to it lose the link (Q-066: nothing else is traced).
+    /// The building on `at` is gone (SHIP-4.8, T29): its harbour record
+    /// ends with its needs, transfers, docking places and expedition (the
+    /// goods set aside are lost); ships linked to it read the link gone and
+    /// search by their own rules (2.3 to 2.6), their counters kept. Its
+    /// cargo entries aboard ships are dropped: a stand-in until Q-1089.
     pub(crate) fn harbour_removed(&mut self, at: Point) {
         let Some(index) = self.harbours.iter().position(|h| h.at == at) else {
             return;
@@ -664,6 +667,47 @@ impl World {
             }
         }
         best.map(|(_, i)| i)
+    }
+
+    /// SHIP-4.4 'which ship, exactly' (T32): the ship a transfer of harbour
+    /// `h` to `destination` calls. The harbour's docking places in their
+    /// order, skipping one whose sea is none of the destination's docking
+    /// places' seas; per place the ships of `owner` on its sea that are
+    /// linked to this harbour (whatever they do) or free and linked to no
+    /// harbour; the nearest to that place (the first in the ship list on
+    /// ties); the first place with a candidate decides.
+    fn transfer_ship(&self, h: usize, owner: PlayerId, destination: Point) -> Option<usize> {
+        let at = self.harbours[h].at;
+        let seas: Vec<u32> = self
+            .harbour_at(destination)
+            .map(|d| d.docks.iter().map(|x| self.region_of(x.field)).collect())
+            .unwrap_or_default();
+        for dock in self.harbours[h].docks.iter().map(|d| d.field) {
+            let sea = self.region_of(dock);
+            if sea == 0 || !seas.contains(&sea) {
+                continue;
+            }
+            let mut best: Option<(u32, usize)> = None;
+            for i in 0..self.ships.len() {
+                let s = &self.ships[i];
+                if s.owner != owner || self.region_of(s.vessel.walker.at) != sea {
+                    continue;
+                }
+                let linked = s.finished() && s.vessel.harbour == Some(at);
+                let free = s.vessel.harbour.is_none() && self.ship_is_free(i);
+                if !linked && !free {
+                    continue;
+                }
+                let d = grid::distance(s.vessel.walker.at, dock);
+                if best.is_none_or(|(b, _)| d < b) {
+                    best = Some((d, i));
+                }
+            }
+            if let Some((_, i)) = best {
+                return Some(i);
+            }
+        }
+        None
     }
 
     /// A ship is called to a harbour: it leaves what it was doing.
@@ -1231,15 +1275,22 @@ impl World {
                 .goods
                 .get(&good)
                 .is_some_and(|g| g.kind == crate::GoodKind::Settler);
+            // SHIP-4.3 'what is "already on the way"' (T30, Q-1084): the
+            // open orders and the ordered wares on their way (in a helper's
+            // hands too), SHIP-5.2's count; a ware on a storage trip here
+            // does not count.
+            // SHIP-4.3 'already on the way', settlers (T31): the open
+            // requests of the job plus the settlers of the job walking here;
+            // soldiers of the five ranks summed. One request per missing one.
             let coming = if settler {
-                u32::from(self.has_open_request(owner, Requester::Harbour(target)))
+                self.settlers_coming(owner, target, good)
             } else {
-                self.open_orders(at, good) + self.wares_inbound(at, good)
+                self.open_orders(at, good) + self.on_the_way(at, good)
             };
             let missing = count.saturating_sub(stock + coming);
             if settler {
-                if missing > 0 {
-                    self.request(owner, Requester::Harbour(target), good);
+                for _ in 0..missing {
+                    self.file_request(owner, Requester::Harbour(target), good);
                 }
             } else {
                 for _ in 0..missing {
@@ -1247,6 +1298,29 @@ impl World {
                 }
             }
         }
+    }
+
+    /// SHIP-4.3 'already on the way', settlers (T31): the harbour
+    /// `target`'s open requests of the job `good` and the settlers of that job
+    /// sent to it and walking there (a builder who left as a builder for it,
+    /// SHIP-5.2a, or one turned home to it); a soldier rank counts every rank.
+    fn settlers_coming(&self, owner: PlayerId, target: crate::Target, good: u32) -> u32 {
+        let soldier = self.soldier_rank(good).is_some();
+        let same_job = |p: u32| p == good || (soldier && self.soldier_rank(p).is_some());
+        let requests = self.open_requests_of(owner, Requester::Harbour(target), same_job);
+        let walking = self
+            .settlers()
+            .filter(|(_, s)| {
+                s.player == owner
+                    && same_job(s.profession)
+                    && match &s.job {
+                        SettlerJob::Home { target: t } => *t == target,
+                        SettlerJob::ToSite { target: t, .. } => *t == target,
+                        _ => false,
+                    }
+            })
+            .count() as u32;
+        requests + walking
     }
 
     /// SHIP-4.3, 4.4: the need of the harbour at `destination` for `good` as
@@ -1306,13 +1380,14 @@ impl World {
             let stock = self.warehouses.get(&at).map_or(0, |w| w.count(t.good));
             let ready = stock > 0;
             if self.harbours[h].called.is_none() && ready {
-                let destination = t.destination;
-                let ship = self.nearest_free_ship(owner, at, |w, i| {
-                    let field = w.ships[i].vessel.walker.at;
-                    w.reachable_by_sea(at, field) && w.reachable_by_sea(destination, field)
-                });
-                if let Some(ship) = ship {
-                    self.call_ship(ship, at);
+                if let Some(ship) = self.transfer_ship(h, owner, t.destination) {
+                    if self.ships[ship].vessel.harbour == Some(at) {
+                        // SHIP-4.4 'which ship' (T32): a ship linked here is
+                        // only marked called; it keeps lying or sailing here.
+                        self.ships[ship].vessel.called = Some(at);
+                    } else {
+                        self.call_ship(ship, at);
+                    }
                     self.harbours[h].called = Some(ship);
                     // SHIP-4.4 corrections (T26): a call ends the pass.
                     return;
@@ -1478,6 +1553,10 @@ impl World {
             if missing == 0 {
                 continue;
             }
+            // SHIP-5.2a 'no material was missing in this pass' (T33): fewer
+            // set aside than needed at the step's start is missing, even when
+            // this pass sets the rest aside from the stock.
+            nothing_missing = false;
             let stock = self.warehouses.get(&at).map_or(0, |w| w.count(good));
             let take = missing.min(stock);
             if take > 0 {
@@ -1505,32 +1584,38 @@ impl World {
             } else if orders > missing {
                 self.cancel_orders(at, good, (orders - missing).min(open));
             }
-            if missing > 0 {
-                nothing_missing = false;
-            }
         }
-        // The builder.
-        if !self.harbours[h].builder_aside {
-            if let (Some(builder), Some(owner)) = (self.roles.builder, self.harbour_owner(at)) {
-                let in_stock = self
-                    .warehouses
-                    .get(&at)
-                    .is_some_and(|w| w.count(builder) > 0);
-                if in_stock {
-                    self.warehouses
-                        .get_mut(&at)
-                        .expect("a warehouse")
-                        .take(builder);
-                    self.harbours[h].builder_aside = true;
-                } else {
-                    let target = self.target_of(at).expect("a harbour");
-                    self.request(owner, Requester::Harbour(target), builder);
-                }
+        // SHIP-5.2a (E-ship-023): the builder step, in order.
+        // 1. A builder set aside in an earlier pass: with nothing missing in
+        //    this pass, Getting ship.
+        if self.harbours[h].builder_aside {
+            if nothing_missing {
+                self.harbours[h].expedition = ExpeditionState::GettingShip;
+                self.harbours[h].expedition_counter = 0;
             }
+            return;
         }
-        if nothing_missing && self.harbours[h].builder_aside {
-            self.harbours[h].expedition = ExpeditionState::GettingShip;
-            self.harbours[h].expedition_counter = 0;
+        let (Some(builder), Some(owner)) = (self.roles.builder, self.harbour_owner(at)) else {
+            return;
+        };
+        let target = self.target_of(at).expect("a harbour");
+        let in_stock = self
+            .warehouses
+            .get(&at)
+            .is_some_and(|w| w.count(builder) > 0);
+        if in_stock {
+            // 2. One from the stock is set aside and the harbour's first open
+            //    builder request is cancelled; Getting ship waits for the
+            //    next pass.
+            self.warehouses
+                .get_mut(&at)
+                .expect("a warehouse")
+                .take(builder);
+            self.harbours[h].builder_aside = true;
+            self.cancel_first_request(owner, Requester::Harbour(target), builder);
+        } else {
+            // 3. A request only with none open (`request` files none then).
+            self.request(owner, Requester::Harbour(target), builder);
         }
     }
 

@@ -2,8 +2,9 @@
 //! (`specs/UI-game-setup.md`): the main menu, the single-player page with
 //! the free play setup (map, start resources, players: kind, tribe, HQ,
 //! team, computer strength), the game menu, game and sound settings, and
-//! the save and load lists. Layouts are the specs'; where they give none,
-//! the stand-in is said (Q-185, Q-211).
+//! the save and load lists. Layouts are the specs' (Q-185, Q-211 and
+//! Q-1047 answered); what is ours (the Graphics page's one window size, a
+//! project's pages) is said where it is and in `docs/stand-ins.md`.
 
 mod dialogs;
 mod pages;
