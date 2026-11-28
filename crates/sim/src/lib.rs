@@ -1280,23 +1280,39 @@ impl World {
                     .map(|(_, s)| (s.number, s.walker.at, s.walker.is_walking())),
             )
             .collect();
-        let mut now = BTreeMap::new();
-        for (number, at, walking) in movers {
-            match self.mark_movers.get(&number) {
-                Some(&(before, _)) if before != at => {
+        // The records are read as they were at the start of the tick (as a
+        // map built anew beside the old one would read them; test worlds
+        // can number two movers the same), then updated where they stand,
+        // the last of a number winning, and those of movers gone dropped:
+        // the map a new one would be, without building it every tick.
+        let before: Vec<Option<(Point, bool)>> = movers
+            .iter()
+            .map(|(number, _, _)| self.mark_movers.get(number).copied())
+            .collect();
+        for (&(number, at, walking), before) in movers.iter().zip(before) {
+            match before {
+                Some((before, _)) if before != at => {
                     self.field_marks.remove(&before);
                     self.set_mark(at, number, walking);
                 }
-                Some(&(_, was_walking)) => {
+                Some((_, was_walking)) => {
                     if walking && !was_walking {
                         self.field_marks.remove(&at);
                     }
                 }
                 None => self.set_mark(at, number, walking),
             }
-            now.insert(number, (at, walking));
         }
-        self.mark_movers = now;
+        for &(number, at, walking) in &movers {
+            self.mark_movers.insert(number, (at, walking));
+        }
+        let mut numbers: Vec<u32> = movers.iter().map(|m| m.0).collect();
+        numbers.sort_unstable();
+        numbers.dedup();
+        if self.mark_movers.len() != numbers.len() {
+            self.mark_movers
+                .retain(|n, _| numbers.binary_search(n).is_ok());
+        }
     }
 
     fn set_mark(&mut self, at: Point, number: u32, walking: bool) {

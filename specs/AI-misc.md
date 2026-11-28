@@ -72,6 +72,11 @@ of its planning objects does. Models and orders are in `AI-construction.md`
   creating that cell if needed (so the headquarters creates the first cell
   at once), and a catapult raises the catapult count of its territory cell;
   a removed building is dropped (catapult: count halved). Confidence: high.
+  **The announce happens inside the building's creation** (added 2026-11-27,
+  E-ai-090: code reading and E-trace-038, `AI-construction.md` T114): a site
+  placed by one part of a think (AI-2.1a) is in the player's lists, among them the
+  tear-down task's list of AI-2.6, for every later part of the same think, not
+  only from the next tick's update.
 - **AI-MISC-2.3 Re-initialisation.** In the per-tick think the AI is reset
   instead of thinking when it has no cells at all. The reset deletes every
   building record, need, production and cell, resets every part and map,

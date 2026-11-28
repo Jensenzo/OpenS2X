@@ -3376,18 +3376,25 @@ fn a_ship_message_names_the_ship() {
 
 /// UI-GAME-11.1, 11.4 (E-trace-032, seen): "No resources found" names its
 /// building in brackets, as "Building completed (Woodcutter's Hut)" does;
-/// a geologist's find names the geologist's settler type by its display
-/// name, "Iron ore found! (Geologist)" (Q-1068), with or without a building
-/// on the field.
-// spec: UI-GAME-11.1, UI-GAME-11.4
+/// a geologist's find carries the name `Scholar`, translated through the
+/// name table, "Iron ore found! (Geologist)" (Q-1068, T66), with or without
+/// a building on the field; with no `Scholar` entry the name itself shows.
+// spec: UI-GAME-11.1, UI-GAME-11.4 (T66)
 #[test]
 fn no_resources_names_its_building() {
     let world = flat_world(12, 12);
-    let texts = Texts::parse(
-        "!No resources found.\tNo resources found\nhut\tFisherman's Hut\n!Found Iron Ore!\tIron ore found!\ndlg_ScholarSettler\tGeologist\n",
-    );
+    let table = "!No resources found.\tNo resources found\nhut\tFisherman's Hut\n!Found Iron Ore!\tIron ore found!\ndlg_ScholarSettler\tGeologist (info title)\n";
+    let bare = Texts::parse(table);
     let mut catalog = Catalog::default();
     catalog.building_names.insert(1, "hut".into());
+    let mut found = message(10, "Found Iron Ore!");
+    found.building = None;
+    assert_eq!(
+        message_text(&ctx(&world, &bare, &catalog), &found),
+        "Iron ore found! (Scholar)",
+        "not the info title's text"
+    );
+    let texts = Texts::parse(&format!("{table}Scholar\tGeologist\n"));
     let c = ctx(&world, &texts, &catalog);
     let m = message(10, "No resources found.");
     assert_eq!(message_text(&c, &m), "No resources found (Fisherman's Hut)");
@@ -3463,4 +3470,99 @@ fn a_soldier_slot_shows_the_rank_icon() {
             ..
         }
     ));
+}
+
+/// UI-GAME-1.8 addition (T65, E-ui-050): the build menu, the attack dialog
+/// and the ship window each pass their own frame picture, drawn 1:1 from
+/// (8, 8) at the window's origin: `uiDepot` 376 x 464, `uiMediumDialog`
+/// 480 x 224 and `uiBigDialog` 376 x 464; the title is centred at
+/// (w / 2, 14) and the close button at (w - 40, 5); each is placed by 1.9
+/// with that size (its bottom-right corner on the click).
+// spec: UI-GAME-1.8 (T65), UI-GAME-1.9
+#[test]
+fn the_three_windows_own_frames() {
+    use crate::ui::widgets::Atlas;
+    let mut world = flat_world(20, 20);
+    let s = world.debug_add_ship(PlayerId(0), (5, 5));
+    world.debug_launch_ship(s);
+    world.step();
+    let texts = Texts::parse(
+        "!Build Building or Flag\tBuilding selection menu\n!Attack Menu\tAttack menu\n!Ship\tShip\n",
+    );
+    let catalog = Catalog::default();
+    let c = Ctx {
+        click: Some([700.0, 600.0]),
+        ..ctx(&world, &texts, &catalog)
+    };
+    let check = |p: &Panel, atlas: Atlas, w: f32, h: f32, title: &str| {
+        assert!(
+            matches!(
+                p.widgets.first(),
+                Some(Widget::Sprite { atlas: a, rect, at: [0.0, 0.0], size: Some(size), .. })
+                    if *a == atlas && *rect == [8, 8, w as u32, h as u32] && *size == [w, h]
+            ),
+            "{title}: the frame {:?}",
+            p.widgets.first()
+        );
+        assert!(
+            p.widgets.iter().any(|x| matches!(
+                x,
+                Widget::Text { text, at, .. } if text == title && *at == [w / 2.0, 14.0]
+            )),
+            "{title}: the title"
+        );
+        assert!(
+            p.buttons()
+                .any(|b| *b.0 == Action::CloseContext && b.1 == [w - 40.0, 5.0]),
+            "{title}: the close button"
+        );
+        assert_eq!(p.at, [700.0 - w, 600.0 - h], "{title}: placed by 1.9");
+    };
+    check(
+        &build_menu(&c, (8, 8), 5),
+        Atlas::Depot,
+        376.0,
+        464.0,
+        "BUILDING SELECTION MENU",
+    );
+    check(
+        &attack_dialog(&c, (10, 10), 0.5, false),
+        Atlas::MediumDialog,
+        480.0,
+        224.0,
+        "ATTACK MENU",
+    );
+    check(
+        &ship_window(&c, s).unwrap(),
+        Atlas::BigDialog,
+        376.0,
+        464.0,
+        "SHIP",
+    );
+}
+
+/// UI-GAME-4.3a (T64, Q-1091): a building window's portrait is the frame
+/// (344, 216, 88 x 88) at (22, 43) with the portrait picture, the view of
+/// the world at the building, over it: 80 x 80 at (26, 47); no icon of the
+/// type, no mask, no other art in that square.
+// spec: UI-GAME-4.3a (T64)
+#[test]
+fn t64_the_portrait_is_the_world_view() {
+    use crate::ui::widgets::{Atlas, Picture};
+    let (world, at) = hut_game();
+    let (texts, catalog) = (Texts::default(), Catalog::default());
+    let p = production_window(&ctx(&world, &texts, &catalog), at);
+    let frame = p.widgets.iter().position(|w| {
+        matches!(w, Widget::Sprite { atlas: Atlas::Elements3, rect: [344, 216, 88, 88], at, .. } if *at == [22.0, 43.0])
+    });
+    let picture = p.widgets.iter().position(|w| {
+        matches!(w, Widget::Picture { picture: Picture::BuildingView, at, size } if *at == [26.0, 47.0] && *size == 80.0)
+    });
+    assert!(frame.is_some() && picture.is_some(), "frame and picture");
+    assert!(picture > frame, "the picture over the frame");
+    let inside = |a: &[f32; 2]| (26.0..106.0).contains(&a[0]) && (47.0..127.0).contains(&a[1]);
+    assert!(
+        !p.widgets.iter().any(|w| matches!(w, Widget::Sprite { at, rect, .. } if inside(at) && *rect != [344, 216, 88, 88])),
+        "no icon in the portrait"
+    );
 }

@@ -247,6 +247,9 @@ pub(crate) struct Viewer {
     /// The last refusal of one of the player's commands, for the
     /// interface's message box (UI-GAME-1.4).
     pub(crate) refusal: Option<String>,
+    /// A notice for the player (CAM-3.2 a defeated computer player, a
+    /// script's error), shown for 5 seconds.
+    pub(crate) notice: Option<String>,
     /// `--open`, `--open-global`: dialogs to open once the game runs.
     pub(crate) open: Option<(u32, u32)>,
     pub(crate) open_tab: Option<u8>,
@@ -537,7 +540,7 @@ pub(crate) fn advance_world(
         menu.settings.save();
     }
     if let Some(notice) = mission.notice.take() {
-        viewer.refusal = Some(notice);
+        viewer.notice = Some(notice);
     }
     // The game pauses with P (UI-GAME-12.1, `crate::ui::game_keys`); the debug
     // mode with Space.

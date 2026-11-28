@@ -241,7 +241,8 @@ castle standing on the castle's door field, the simulation generator at its seed
   on a road; Q-263 b, E-sim-007): the road is split by removing it and making
   two new roads, never by keeping its number. In this order: the old road's removal
   (4.3 (c): the ware ids of both ends if it had a carrier and no donkey, then the land
-  and all-roads ids of one end); the new flag and its three ids; the first half, from the
+  and all-roads ids of one end; a road whose donkey the split releases counts as one
+  with a carrier and no donkey, `TRN-roads-flags.md` TRN-ROAD-4.2 T35, E-trn-050); the new flag and its three ids; the first half, from the
   old road's first flag to the new flag, and its join renumberings (4.3 (a)); the second
   half, from the old road's second flag to the new flag (its field list runs from that
   flag), and its join renumberings; then the old carrier is given to the half holding

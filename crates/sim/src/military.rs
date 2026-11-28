@@ -400,6 +400,7 @@ impl World {
     /// building on `at`, whatever their good: those open, and those served
     /// whose ware is on its way (filed with the ware on a flag or with a
     /// carrier, or with the warehouse helper carrying it out).
+    #[cfg(test)]
     pub(crate) fn orders_filed_for(&self, at: Point) -> usize {
         let open = self.orders.iter().filter(|o| o.target.at == at).count();
         let on_roads = self
@@ -417,6 +418,20 @@ impl World {
             })
             .count();
         open + on_roads + carried_out
+    }
+
+    /// Whether [`World::orders_filed_for`] is above 0, stopping at the first
+    /// order found (the wares before the settlers, the shorter list).
+    pub(crate) fn any_order_filed_for(&self, at: Point) -> bool {
+        self.orders.iter().any(|o| o.target.at == at)
+            || self
+                .wares
+                .iter()
+                .flatten()
+                .any(|w| w.order.is_some_and(|o| o.target.at == at))
+            || self.settlers.iter().flatten().any(|s| {
+                matches!(s.job, SettlerJob::CarryOut { order: Some(o), .. } if o.target.at == at)
+            })
     }
 
     /// MIL-PROM-3.1, 3.2
@@ -444,7 +459,7 @@ impl World {
         // empty, whatever the good; a served order stays on it until its
         // ware is delivered (ECO-REQ-5.3f), so no coin is ordered while one
         // is on its way.
-        if self.orders_filed_for(at) > 0 {
+        if self.any_order_filed_for(at) {
             return;
         }
         let building = self.building_at(at).expect("a building");

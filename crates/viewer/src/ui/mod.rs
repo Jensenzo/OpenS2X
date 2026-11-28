@@ -949,7 +949,9 @@ pub fn apply_actions(
             &mut exit,
         );
     }
-    // UI-GAME-1.4: a refused command's message for 5 seconds.
+    // UI-GAME-1.4 (Q-317, T67): a refused command plays `uiCancel`; free
+    // games and missions show no red text (its reason is kept 5 s for the
+    // harness, not drawn). A notice (CAM-3.2) shows for 5 seconds.
     let now = time.elapsed_secs_f64();
     if let Some(text) = viewer.refusal.take() {
         events.sounds.push("uiCancel");
@@ -957,6 +959,19 @@ pub fn apply_actions(
     }
     if ui.error.as_ref().is_some_and(|(_, until)| *until < now) {
         ui.error = None;
+    }
+    if let Some(text) = viewer.notice.take() {
+        ui.notice = Some((text, now + 5.0));
+    }
+    if ui.notice.as_ref().is_some_and(|(_, until)| *until < now) {
+        ui.notice = None;
+    }
+    // UI-GAME-1.4 (T67): the tutorial's red text: `uiCancel` as it is set,
+    // gone 5.0 s later.
+    if let Some(t) = mission.tutorial.as_mut() {
+        if t.error_timer((now * 1000.0) as u64) {
+            events.sounds.push("uiCancel");
+        }
     }
 }
 

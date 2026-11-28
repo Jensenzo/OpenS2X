@@ -149,7 +149,93 @@ pub struct Evader {
 /// negative when the sum of their leans is, else positive (facing opposite
 /// ways, they pass on opposite sides); two going the same way, or two
 /// standing, nothing. The pairs add up.
+///
+/// The pairs within R are found by neighbourhood (a grid of cells wider than
+/// R: a pair within R lies in one cell or two next to each other), and each
+/// settler's contributions are added in the order of its partners' places
+/// in `evaders`, the order the test of every pair adds them in
+/// ([`evade_every_pair`]): the same sums to the last bit, without the
+/// n x n pairs of a late game's thousands of settlers every tick.
 pub fn evade(evaders: &[Evader], start: f32, radius_scale: f32, scale: f32, dt: f32) -> Vec<f32> {
+    let r = start * scale;
+    let finite = evaders
+        .iter()
+        .all(|e| e.at[0].is_finite() && e.at[1].is_finite());
+    if evaders.len() < 64 || !finite || r <= 0.0 || !r.is_finite() {
+        return evade_every_pair(evaders, start, radius_scale, scale, dt);
+    }
+    let decay = 0.75 * dt;
+    let mut out: Vec<f32> = evaders
+        .iter()
+        .map(|e| e.offset.signum() * (e.offset.abs() - decay).max(0.0))
+        .collect();
+    let cell = r * 1.25;
+    let key = |at: [f32; 2]| ((at[0] / cell).floor() as i64, (at[1] / cell).floor() as i64);
+    let mut cells: std::collections::HashMap<(i64, i64), Vec<u32>> =
+        std::collections::HashMap::new();
+    for (i, e) in evaders.iter().enumerate() {
+        cells.entry(key(e.at)).or_default().push(i as u32);
+    }
+    // (settler, partner, what the pair adds to the settler)
+    let mut adds: Vec<(u32, u32, f32)> = Vec::new();
+    let dir = |h: f32| [h.sin(), h.cos()];
+    let sign = |lean: f32| if lean < 0.0 { -1.0 } else { 1.0 };
+    for (i, a) in evaders.iter().enumerate() {
+        let (cx, cz) = key(a.at);
+        for x in cx - 1..=cx + 1 {
+            for z in cz - 1..=cz + 1 {
+                let Some(list) = cells.get(&(x, z)) else {
+                    continue;
+                };
+                for &j in list {
+                    let j = j as usize;
+                    if j <= i {
+                        continue;
+                    }
+                    // As in `evade_every_pair`, a the first of the pair.
+                    let b = &evaders[j];
+                    if !a.moving && !b.moving {
+                        continue;
+                    }
+                    let (dx, dz) = (b.at[0] - a.at[0], b.at[1] - a.at[1]);
+                    let d2 = dx * dx + dz * dz;
+                    if d2 >= r * r {
+                        continue;
+                    }
+                    let full = (1.0 - d2 / (r * r)) * scale * radius_scale;
+                    let (i, j) = (i as u32, j as u32);
+                    match (a.moving, b.moving) {
+                        (true, false) => adds.push((i, j, sign(a.offset) * full)),
+                        (false, true) => adds.push((j, i, sign(b.offset) * full)),
+                        _ => {
+                            let (da, db) = (dir(a.heading), dir(b.heading));
+                            if da[0] * db[0] + da[1] * db[1] > 0.0 {
+                                continue;
+                            }
+                            let side = sign(a.offset + b.offset);
+                            adds.push((i, j, side * full / 2.0));
+                            adds.push((j, i, side * full / 2.0));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    adds.sort_unstable_by_key(|&(at, partner, _)| (at, partner));
+    for (at, _, add) in adds {
+        out[at as usize] += add;
+    }
+    out
+}
+
+/// GFX-ANIM-4.3: [`evade`] by testing every pair, in the order of `evaders`.
+pub(crate) fn evade_every_pair(
+    evaders: &[Evader],
+    start: f32,
+    radius_scale: f32,
+    scale: f32,
+    dt: f32,
+) -> Vec<f32> {
     let decay = 0.75 * dt;
     let mut out: Vec<f32> = evaders
         .iter()

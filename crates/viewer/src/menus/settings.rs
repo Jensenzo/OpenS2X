@@ -44,6 +44,10 @@ pub struct Settings {
     /// SET-2 field 22, UI-MENU-3.3: the autosave on leaving, off by default.
     pub(crate) autosave_on_leave: bool,
     pub(crate) day_night: bool,
+    /// SET-5.2 `MODE`: Fullscreen (true) or Windowed. Ours keeps it in the
+    /// program's own file: the profile's display-mode field (SET-4a field
+    /// 4) is shared with the original and its values are not read (Q-1097 d).
+    pub(crate) fullscreen: bool,
     /// SND-5.1: master, music, UI, sound.
     pub(crate) volumes: [f32; 4],
     /// The profile file as read, with the fields above copied in on save
@@ -150,6 +154,7 @@ impl Settings {
             autosave_on_leave: u.autosave_on_leave != 0,
             // GFX-VIEW-2.3c: the DayNightCycle option is on by default.
             day_night: true,
+            fullscreen: false,
             volumes: [u.volumes[0], u.volumes[1], u.volumes[2], u.volumes[3]],
             cfg,
         }
@@ -176,6 +181,7 @@ impl Settings {
                 "game_dir" if !value.is_empty() => self.game_dir = Some(PathBuf::from(value)),
                 "profile" if !value.is_empty() => self.profile = value.to_owned(),
                 "day_night" => self.day_night = value == "1",
+                "fullscreen" => self.fullscreen = value == "1",
                 _ => {}
             }
         }
@@ -183,13 +189,14 @@ impl Settings {
 
     pub(crate) fn own_text(&self) -> String {
         format!(
-            "game_dir={}\nprofile={}\nday_night={}\n",
+            "game_dir={}\nprofile={}\nday_night={}\nfullscreen={}\n",
             self.game_dir
                 .as_ref()
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_default(),
             self.profile,
             u8::from(self.day_night),
+            u8::from(self.fullscreen),
         )
     }
 
@@ -503,6 +510,24 @@ mod tests {
         // Old lines of the program's earlier file are ignored.
         back.parse_own("volume_music=7\nnonsense\nmap=campaign01,1,1");
         assert_eq!(back.volumes, Settings::default().volumes);
+    }
+
+    /// SET-5.2 `MODE`, kept in the program's own file (Q-1097 d): a file
+    /// without the line, an earlier version's, opens windowed.
+    // spec: SET-5.2
+    #[test]
+    fn the_display_mode_lasts_from_start_to_start() {
+        let s = Settings {
+            fullscreen: true,
+            ..Settings::default()
+        };
+        assert!(s.own_text().contains("fullscreen=1\n"));
+        let mut back = Settings::default();
+        back.parse_own(&s.own_text());
+        assert!(back.fullscreen);
+        let mut old = Settings::default();
+        old.parse_own("game_dir=C:/S2\nprofile=default01\nday_night=1\n");
+        assert!(!old.fullscreen);
     }
 
     // spec: SET-4, GFX-WATER-2.5

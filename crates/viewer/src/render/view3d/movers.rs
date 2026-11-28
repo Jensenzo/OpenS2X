@@ -606,12 +606,12 @@ pub(crate) fn repose(
     part_materials: &mut Query<&mut MeshMaterial3d<crate::render::models3d::ObjectMaterial>>,
     assets: ObjectAssets,
 ) {
-    let Some(model) = state.model.clone() else {
+    let Some(model) = state.model.as_ref() else {
         return;
     };
     let unique_clip =
         state.idle.is_none() && matches!(state.anim, crate::world::scene3d::MoverAnim::Unique(_));
-    let wanted = wanted_pose(&model, state.clip(), unique_clip);
+    let wanted = wanted_pose(model, state.clip(), unique_clip);
     let same = match (&state.pose, &wanted) {
         (Some(pose), Some(want)) => pose.holds(want),
         (None, None) => true,
@@ -620,6 +620,9 @@ pub(crate) fn repose(
     if same && !restart {
         return;
     }
+    // The model copied only for a change (most frames of most settlers
+    // keep their pose).
+    let model = model.clone();
     // GFX-ANIM-2.4 (c): leave the old pose before taking the new (T19c).
     if let Some(old) = state.pose.take() {
         animator.detach(&old, &state.look);

@@ -192,38 +192,15 @@ fn engine_page(p: &mut Panel, menu: &MenuState, texts: &Texts, o: [f32; 2]) -> V
 
 /// SET-5.2: the Graphics page: `RESOLUTION` (152 x 20) at (168, 72)
 /// showing the mode as `<w> x <h>`, `MODE` (shown DISPLAY MODE) at (168,
-/// 104), Fullscreen / Windowed; no Reset. Ours (a stand-in): the mode is the
-/// window's size and its list holds that size only, the window is Windowed,
-/// and a choice changes nothing (the game window is not a display device
-/// mode). Returns the drop-downs with their rows; RESOLUTION's open list is
-/// drawn here.
-fn graphics_page(
-    p: &mut Panel,
-    menu: &MenuState,
-    texts: &Texts,
-    o: [f32; 2],
-    screen: [f32; 2],
-) -> Vec<(Drop, f32)> {
-    let mode = format!("{} x {}", screen[0].round(), screen[1].round());
+/// 104), Fullscreen / Windowed; no Reset. Ours: the list is the window's
+/// sizes (`menus::display::resolutions`), full screen a borderless window
+/// of the monitor's size. Returns the drop-downs with their rows.
+fn graphics_page(p: &mut Panel, menu: &MenuState, texts: &Texts, o: [f32; 2]) -> Vec<(Drop, f32)> {
     settings_label(p, texts, o, "!RESOLUTION", 72.0);
-    let bar = |p: &mut Panel, y: f32, action: MenuAction| {
-        p.widgets.push(Widget::BarButton {
-            text: mode.clone(),
-            font: Font::Body,
-            at: [o[0] + 168.0, o[1] + y],
-            bar: crate::ui::widgets::SLOT_BAR,
-            raise: 0.0,
-            action: Action::Menu(action),
-            enabled: true,
-        });
-    };
-    bar(p, 72.0, MenuAction::OpenDrop(Drop::Resolution));
+    settings_drop(p, menu, texts, o, Drop::Resolution, 72.0);
     settings_label(p, texts, o, "!MODE", 104.0);
     settings_drop(p, menu, texts, o, Drop::DisplayMode, 104.0);
-    if menu.drop == Some(Drop::Resolution) {
-        bar(p, 72.0 + 19.0, MenuAction::Choose(Drop::Resolution, 0));
-    }
-    vec![(Drop::DisplayMode, 104.0)]
+    vec![(Drop::Resolution, 72.0), (Drop::DisplayMode, 104.0)]
 }
 
 /// SET-5.5: the Input page: `SCROLL SPEED` a slider at (168, 72) (field 7)
@@ -327,7 +304,7 @@ pub fn settings_screen(menu: &MenuState, texts: &Texts, screen: [f32; 2], page: 
     settings_tabs(&mut p, texts, o, page.min(5));
     let mut drops: Vec<(Drop, f32)> = Vec::new();
     if page == 3 {
-        drops = graphics_page(&mut p, menu, texts, o, screen);
+        drops = graphics_page(&mut p, menu, texts, o);
     } else if page == 4 {
         drops = input_page(&mut p, menu, texts, o);
     } else if page == 5 {

@@ -90,6 +90,15 @@ atlas rectangles, the tooltip keys and the command each control sends.
   constant (`T01_ERROR_...` and the H-key hint), and nothing else (no script function) reaches
   it, so free games and missions never show a red message; their refusals only play `uiCancel`
   (SND-4). Confidence: high (code, E-tool-005); not checked in play.
+  **How the red text is drawn (2026-11-26 a, Q-199 c narrowed; E-ui-052, code reading):** the
+  message is the translated key with a colour tag for pure red (1, 0, 0, opaque) in front. It is
+  set into **one text label that the game screen keeps for the tutorial's panel** (the label is
+  placed from that panel's origin, which in the tutorial lies at (20, 20), 1.9). The label is in
+  the font `light_system`, not outlined, and has **no box or picture of its own**. Setting it
+  starts a 5.0-second timer and plays `uiCancel`. When the timer runs out the label is cleared.
+  Confidence: high for the colour, the font, the 5 s and the sound. Medium for "no box of its own"
+  and for the label belonging to the tutorial panel. Its exact offset inside that panel was not
+  read. Test T67.
 - **UI-GAME-1.5 Disabled controls** are drawn greyed and do not fire.
   Confidence: high.
 - **UI-GAME-1.6 Icons of goods, tools and settlers** are 48 x 48 cells of
@@ -130,6 +139,19 @@ atlas rectangles, the tooltip keys and the command each control sends.
   flag, road and deploy-flag menus `uiSmallDialog` (8, 8, 304 x 96). The picture is drawn 1:1 with
   its top-left at the window's origin. `uiMediumDialog`'s dark header bar covers about the top 24 px
   of the picture; its body is teal with a thin gold border. Not the big sheet.
+  **The build menu, the attack dialog and the ship window (2026-11-26 a; E-ui-050, code reading;
+  high):** these three windows also pass their own frame picture, drawn the same way, 1:1 from
+  (8, 8) of the sheet with its top-left at the window's origin:
+  - the **build menu** (3.2): `uiDepot` (8, 8, 376 x 464), the tabbed frame of the game settings
+    (`UI-menus.md` UI-MENU-4). The window is 376 x 464.
+  - the **attack dialog** (5.1): `uiMediumDialog` (8, 8, 480 x 224), the production window's frame.
+    The window is 480 x 224.
+  - the **ship window** (4.5): `uiBigDialog` (8, 8, 376 x 464), the Select Map and game menu frame
+    (`UI-menus.md` UI-MENU-3.1b). The window is 376 x 464.
+  Their title and close button follow the rule above: the title is centred at (w / 2, 14) and the
+  close button sits at (w - 40, 5), so it is at (336, 5) on the build menu and the ship window, and
+  at (440, 5) on the attack dialog. Each window's place follows 1.9, computed with its own w and h.
+  Test T65.
 - **UI-GAME-1.9 Placement.** Context dialogs (flag, road, deploy-flag, build
   menu, building, military, attack, ship) open **at the click**: the
   dialog's bottom-right corner is put on the clicked screen point, so the
@@ -671,6 +693,37 @@ Headings use the heading font (1.7). The window is placed next to the bar.
   building has claimed land, MIL-SOL-3.2), upgrade, destroy and attack.
   While move-out is on, the building shows the `Sleep_NoSoldier` icon
   (GFX-OBJ-8.3).
+- **UI-GAME-4.3a The building portrait (2026-11-26 a, Q-1091 answered; E-ui-049: code reading and two
+  pictures of the original).** This applies to the production (4.1), site (4.2) and military (4.3) windows.
+  The picture inside the frame `uiElements3` (344, 216, 88 x 88) at (22, 43) is the same kind of picture
+  as the ship window's view (4.5 a): a **128 x 128** colour picture with a depth buffer, drawn
+  **stretched to 80 x 80** at (26, 47) over the frame. There is no mask and no other art over or under
+  it.
+  (a) **What it shows.** The picture renders the **world scene**, not the building's model by itself.
+  The portrait camera of 4.5 a (the main camera's viewing direction and field of view, aimed at the
+  centre of the building's bounding box from 1.25 x its largest side / tan(field of view), near 0.1,
+  far 200) looks at the building where it stands. So the portrait shows the building with its own
+  ground and whatever lies in that view: the ground, roads, flags, neighbouring buildings, trees,
+  settlers and animals. Two pictures show this. The sawmill's window shows a corner of the
+  headquarters behind it, grass, a flag and a donkey. The barracks' window shows a road and a
+  neighbouring building's wall. Where the view reaches beyond the far plane, the background shows: a
+  pale sky blue in the barracks picture's upper left corner (medium). Confidence: high for the
+  rendered scene and the sizes (code and pictures), medium for the fill.
+  (b) **A construction site** gets the same picture of its own visual at its place. That is the
+  site's present stage as the world shows it (levelled ground first, then the growing frame;
+  `GFX-objects.md`), with its surroundings, not the finished type's model (code reading: the
+  windows pass the building object's own visual; high).
+  (c) **When.** The picture is made **once, when the window is built**. It is not redrawn every
+  frame, so settlers in it stand still and a site's portrait does not grow while the window stays
+  open (high). All portraits (the building windows' and the ship's) share **one** picture, which
+  keeps the last view made. A second building window opened while the first is still open therefore
+  shows its own building in the first window's portrait too (medium: code reading, not seen in a
+  picture).
+  (d) If the building's visual has no model, no picture is made and only the frame shows (high).
+  Test T64.
+  The ship window's "the ship's model alone (no water, terrain or other objects)" (4.5 a) comes from
+  the same drawing step. By this reading the porthole would show the water and anything near the
+  ship. That was not checked against a ship window picture: Q-1096.
 - **UI-GAME-4.4 Headquarters and storehouses** (help `dialog3_0` ..
   `dialog3_3`). Tabs at (15, 25) stepping 40 px: 9 `!List of all goods in
   depot.`, 10 `!List of all settlers in depot.`, 11 `!Military management.`
@@ -1455,8 +1508,13 @@ are these four pages).
   geologist's report, so all five carry the same name: the geologist's own settler type, shown
   as its display name, "Geologist" in English (the text of the type's info title,
   `dlg_ScholarSettler`; the scripts name the type `Scholar`, Jobs.lua). Seen: "Iron ore found!
-  (Geologist)". How the program gets from the type to that text was not found (medium); a
-  program that shows the settler type's display name gives the row as seen. A report that finds
+  (Geologist)". **How the name becomes that text (2026-11-26 a, Q-1068 answered; E-ui-051: code
+  reading and data; high):** the message carries the good's rules name as it stands, `Scholar` (the
+  geologist's profession good, set by Jobs.lua). The row translates that name like any key, in the
+  same lookup as the text. `language/<lang>/controls.txt` holds the key `Scholar` with the value
+  "Geologist" (English), beside the buildings' names such as `WoodcutterHut` -> "Woodcutter's
+  Hut". It is not taken from the info title `dlg_ScholarSettler`. A name with no entry in the
+  loaded table shows as the name itself. Test T66. A report that finds
   nothing posts no "found" message. The duplicate test of a find (kind, text, about the same
   field) does not look at the name (high). The scout's messages were not read.
   Duplicates: "found", "no resources", "building without worker" and "lost
@@ -1803,6 +1861,10 @@ are these four pages).
 | T61 | 6.5: an economy slider (200 x 20) at value 0.5, enabled; then at 0.2 disabled; a settings slider (152 x 24) at 1.0 | pixels drawn | 0.5: bar (0, 0, 200 x 20) of `uiElements2`; fill `uiElements2` (0, 104, 100 x 20) over the slider's x 0 .. 99, plain; knob `uiElements0` (8, 104, 20 x 20) at x 90.5 .. 110.5 (left 2 + 88.5); 0.2: fill row 80, 40 px wide, tinted (170, 170, 255) at alpha 170/255; knob left at 37.4; settings slider at 1.0: bar `uiElements0` (264, 344, 152 x 24), no fill, knob left at 131 (right edge 151) |
 | T62 | 6.6: a building window's gauge at v = 0.9, then 0.004, then 1.2 | draw | 0.9: track `uiElements3` (0, 384, 312 x 24); fill (0, 408, 280.8 x 24) from the gauge's left edge; label `90%`; 0.004: fill 1.248 px, label `0%`; 1.2: fill 312 px, label `100%` |
 | T63 | 5.2: A = 7 | slider at 0, 0.25, 0.5, 0.75, 1 | label 1, 3 (0.25 x 6 + 1.5 = 3.0), 4 (4.5 -> 4), 6 (6.0), 7; `!ATTACK` at 0.5 sends `attack-building` with 4 |
+| T64 | 4.3a: open the window of a sawmill standing next to the headquarters, with a donkey on the road in front of it; then open a second building's window without closing the first | the portrait | an 80 x 80 picture at (26, 47) in the frame (344, 216, 88 x 88) at (22, 43), stretched from 128 x 128, showing the sawmill from the main camera's direction with the headquarters' corner, the road and the donkey as they were when the window opened (not moving afterwards); a construction site's window shows the site's current stage at its place; after the second window opens, both portraits show the second building (medium) |
+| T65 | 1.8 (E-ui-050): open the build menu on a free field, the attack dialog on an enemy military building, and the ship window | each frame | build menu: `uiDepot`'s (8, 8, 376 x 464) drawn 1:1, title `!Build Building or Flag`, which reads BUILDING SELECTION MENU in English (as in the original's pictures, E-trace-030), centred at (188, 14), close button at (336, 5); attack dialog: `uiMediumDialog` (8, 8, 480 x 224), title ATTACK MENU at (240, 14), close button at (440, 5); ship window: `uiBigDialog` (8, 8, 376 x 464), title SHIP at (188, 14), close button at (336, 5); each placed by 1.9 with that size |
+| T66 | 11.1 (Q-1068): English; a geologist finds iron ore; then the same with the `Scholar` entry removed from the loaded `controls.txt` | the message row | "Iron ore found! (Geologist)"; without the entry "Iron ore found! (Scholar)" |
+| T67 | 1.4 (Q-199 c): tutorial one, click a field other than the marked one when the tutorial asks for it | the message | the tutorial's text `T01_ERROR_SelectMarkedPosition` translated, in pure red, font `light_system` without outline, with no box behind it, in the tutorial panel's area; `uiCancel` plays; the text is gone 5 s later |
 
 ## Evidence
 
@@ -1849,6 +1911,10 @@ are these four pages).
 | E-ui-039 | code reading, a picture | (session 2026-11-16 night) | 4.5 (b): the ship window's two separators are `uiElements3` (0, 432, 350 x 8); E-trace-030's ship window pixel equal |
 | E-ui-046 | code reading, data, a picture | (session 2026-11-24 night) | 6.6: the gauge control's size, its two pictures, the value's clamp, the label's text and place; checked on E-trace-028's farm window |
 | E-ui-047 | code reading | (session 2026-11-24 night) | 5.2: the attack dialog's count from the slider and the available soldiers, the label's refresh, the ATTACK click's count |
+| E-ui-049 | code reading, two pictures | (session 2026-11-26 a): the building windows' portrait (one shared 128 x 128 picture of the world scene through the portrait camera); the sawmill's and the barracks' windows | 4.3a (Q-1091), T64 |
+| E-ui-050 | code reading | (session 2026-11-26 a): the frame picture and size passed by the build menu's, the attack dialog's and the ship window's constructors | 1.8 (T65) |
+| E-ui-051 | code reading, data | (session 2026-11-26 a): the find message's name (the good's rules name) and the row's translation; `controls.txt` `Scholar` | 11.1 (Q-1068), T66 |
+| E-ui-052 | code reading | (session 2026-11-26 a): the error message's colour tag, label, font, timer and sound | 1.4 (Q-199 c), T67 |
 | E-trace-031 | pictures of the original | (session 2026-11-16 night) | the interface catalogue part 4: message kinds (misc, military, chat), the build menu's disabled tooltip, the attack menu with no attackers, the campaign map with a mission won, the forester's dust |
 | E-trace-032 | pictures of the original | (session 2026-11-16 day) | 11.4: the geologist, economic and lost-territory message rows; the headquarters window's three pages; the barracks window; the road-building cursor marks |
 | E-trace-028 | pictures of the original | (session 2026-11-15 night) | the interface catalogue part 1: the windows and dialogs seen in UI-GAME-2.4, 2.5, 4.1a (f), 4.2, 4.4, 6, 8.1a |

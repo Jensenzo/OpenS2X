@@ -495,8 +495,14 @@ ticks each. Roads and flags as in `TRN-roads-flags.md`.
   compares the ware's score `s` with the bar `b`: if `s > b` the bar becomes
   `s` and the ware may not enter yet; if `s < b` it may not enter; if `s = b`
   it is admitted (reserved, 4.3) and the bar is reset to -1. The bar is also
-  reset to -1 whenever a ware leaves the flag (picked up or destroyed) and when
-  two carriers swap roads (3.6). Effects: a lone carrier walking to a flag with
+  reset to -1 whenever a ware leaves the flag (picked up or destroyed) and
+  **whenever a road's carrier or donkey is unlinked from its road: then the bars
+  of both end flags of that road** (corrected 2026-11-27, E-trn-052: code reading
+  and E-trace-038, T64). That covers a road split by a flag (its carrier leaves
+  the old road), a road removed with its carrier or donkey, a retired carrier,
+  and a road swap (3.6), where both carriers leave their roads, so the end flags
+  of both roads (it was "when two carriers swap roads", read as the full flag
+  only). Setting a carrier on a road resets no bar. Effects: a lone carrier walking to a flag with
   room is admitted at its second check (the next tick, so no visible delay);
   among several wares waiting for a flag that just got room, the one with the
   highest score is admitted first and the others bid again after it; with
@@ -511,7 +517,16 @@ ticks each. Roads and flags as in `TRN-roads-flags.md`.
   the flag of its destination, among roads of the same network (land roads
   and waterways are separate for this search; how a waterway's boat carrier
   reaches its flags and whether wares cross from one network to the other at
-  a shared flag stays open, Q-198 a).
+  a shared flag stays open, Q-198 a). **Answered 2026-11-26 a (Q-198 a; bookkeeping of
+  SIM-START-4.3, ECO-REQ-3 and TRN-FREE-6.1, and the road's marks, E-sim-010, code reading;
+  medium for wares):** "separate" applies to the **walkers**, not to wares. Wares search the
+  **ware network**, the roads with an assigned carrier (5.1a). A waterway joins it when its boat
+  carrier is assigned, as a land road does, so a ware crosses from a land road to a waterway at
+  a shared flag. Settlers walk and are requested over **land roads only** (the land network).
+  The **boat carrier** is requested from, and walks in, the **all-roads network** (every road and
+  every waterway; `ECO-requests-dispatch.md` ECO-REQ-3, `TRN-free-walk.md` TRN-FREE-6.1). It can
+  therefore reach a waterway whose flags lie on other waterways only, coming from a warehouse
+  joined to them by any mix of roads and waterways. Test T63.
 - **TRN-CARRY-5.1a Which roads a ware may use (E-sim-007, 2026-10-24).** The search of
   5.1 runs only over roads that have their carrier or donkey **assigned**: a road gets
   one in the tick its carrier request is served (the carrier made at the warehouse door,
@@ -891,6 +906,8 @@ one tick off (confidence medium), totals within 2 ticks.
 | T60 | 3.3, the building gone while he walks in (Q-230 c): E-trace-019 (R6), player 1's carrier 16778 of the road from the flag (57, 59), carrying ware 16677 for the site 16688 on (57, 60); the site removed during counter 8399 while he walks in (counters 8392 .. 8412 at 0.045 a tick) | his and the ware's rows (counters) | on the building's field in 8413 (the hand-over tick: no delivery, the ware stays his, its destination already empty since 8402); walking out from 8414 at progress 0 (0.027 a tick), on the flag in 8452 (as trace rows, tick = counter + 1: Walk 99 at 8413, Stand 0 on the building's field at 8414, Walk 0 still on the field at 8415, the first move at 8416: **one** standing row; a build that orders the walk out a tick after the hand-over stands two rows and differs from 8416, measured by the tick-exact work 2026-11-17 night); putting it down 8452 .. 8461 (3.3a: standing 8452 and 8453, drop-time 8454 .. 8457, the ware lying at the flag 16689 from 8458, pickup-time 8458 .. 8461; corrected 2026-11-17 night, was "at the flag in 8456"); its destination the headquarters 14158 from 8460 (storage, ECO-REQ-5.5); standing in 8462; from 8463 taking the ware again (drop-time 8463 .. 8466, the ware in his hands from 8467, pickup-time 8467 .. 8470); walking with it at progress 0 in 8471 (trace rows: Stand 8453, 8454; PutDown 8455 .. 8458; Pickup 8459 .. 8462; Stand 8463; PutDown 8464 .. 8467; Pickup 8468 .. 8471; Walk 0 at 8472). Not sent home. A build that sends him home (or loses the ware) differs from the fight game's generator at trace tick 8456 (experiment) |
 | T61 | 7.1a, a step ending in the notice update: E-trace-019 (R6, the war), player 3's carrier 15285 carrying on his road from the flag (30, 21) towards (32, 20), step (30, 21) -> (31, 20) at progress 0.99 in counter 13448; the take-over of (31, 21) in counter 13448 removes the roads of the lost land | his ticks | the going-home state in 13449, standing on (31, 20) (no road field any more) in 13449, 13450, 13451; his walk home (31, 20) -> (30, 21) at progress 0 in 13452, +0.045 per tick from 13453. Walking on to the next flag (32, 20): war settlers first differ at trace tick 13450; with the rule 13460 (experiment build on 0.12.3 with MIL-ATK T36, T37; buildings and generator unchanged; every Storm Coast pair unchanged) |
 | T62 | 7.1 the skeleton's own field (E-trn-045): E-trace-019 (R6, the war): soldier 16579 dies on sample (129, 85) beside player 3's guard house on (31, 21) (counter 12924; skeleton at 12938); the guard house is taken over at counter 13448; soldier 19304 dies on the same sample at counter 17451 | the skeleton's field; whether it stays; whether 19304 gets one | the field is (32, 21) (its sample (130, 84) is 1 step away; (31, 21)'s (126, 84) is 4 by MAP-GRID-2.1 on the sample lattice, within the limit of 4 but farther), so the take-over of (31, 21) does not remove it; 19304 finds it there and gets none (no object number at 17465, as recorded). With the truncated field (31, 21) the take-over removes it, 19304 gets a new one, and every later object number is one higher (the war's settlers first differ at trace tick 18100, a carrier's idle look one tick early); with the rule 18350 (experiment build on top of the forty-four rules and rules 45, 46; every Storm Coast pair unchanged). Sample (87, 80) belongs to (22, 20) (its own sample), not (21, 20): a road on (22, 20) at counter 17263 removes both skeletons there, as recorded |
+| T63 | 5.1 (Q-198 a): warehouse W on island A with a flag F1 on A's coast; waterway R1 from F1 to a flag F2 on a rock B with no land road to anything else; waterway R2 from F2 to a flag F3 on island C; a site on C at F3 needing planks, W holding planks, helpers and a boat carrier | the requests and the wares | R1's boat carrier comes from W (all-roads network); once R1 has it, R2's boat carrier walks from W over R1 to F2 and onto R2; once both have carriers a plank goes F1 -> R1 -> F2 -> R2 -> F3 (ware network); the site's builder (a walking settler) is not sent from W (no land road joins W to C), so it waits for a warehouse or harbour on C |
+| T64 | 4.4 (a bar reset by a split): E-trace-038 (MP_6P_the_others), player 5's woodcutter 19241 walking back from his tree with the wood, his flag (98, 38) empty; his place check when the walk back starts (counter 9 085) raises the flag's bar to 0; road 20420 "99,37 100,38 99,39 98,39 98,38", ending at (98, 38), is split by the flag 21872 on (99, 39) between counters 9 080 and 9 089 | his lattice walk's end on (98, 37) at counter 9 130 (ECO-OUT-3.8a (2)) | refused at 9 130 (the split reset the bar, his check raises it again): standing; admitted at 9 131, the step to the flag at progress 0 in 9 131 (0.36 at 9 139, recorded); the wood listed at the flag from 9 139. Keeping the bar through the split admits him at 9 130 (one tick early from there). Experiment build: the game's settlers 9 140 -> 13 040, buildings 11 970 -> 13 030, generator 9 484 -> 13 483; every other pair unchanged |
 
 ## Evidence
 
@@ -942,6 +959,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-trn-036 | code reading | session 2026-11-16 day: the going-home start's held-ware step shared by all settlers; the pickup action that makes a worker's product | TRN-CARRY-7.2a (Q-230 a, b) |
 | E-trn-038 | code reading and recording | session 2026-11-16 day: the carrier's states into a building, the hand-over (no order: no delivery), back out, put down; E-trace-019's carrier 16778 | TRN-CARRY-3.3 (Q-230 c), T60 |
 | E-trn-045 | code reading, recording, experiment build | session 2026-11-23 b: the doodad's own field (nearest field of its sample), the "already there" lookup over all doodads; R6's skeletons at counters 12938 .. 17465 | TRN-CARRY-7.1 (T62, Q-1072) |
+| E-trn-052, E-trace-038 | code reading, recording, experiment build | (session 2026-11-27 rec): the carrier's and the donkey's unlink from a road set both end flags' bars to -1 (the carrier's link set does not); woodcutter 19241's rows and flag (98, 38) at counters 9 069 .. 9 179, road 20420's split | TRN-CARRY-4.4, T64 |
 
 ## Open questions
 

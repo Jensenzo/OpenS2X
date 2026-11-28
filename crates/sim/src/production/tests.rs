@@ -662,6 +662,35 @@ fn woodcutter_stands_at_the_tree() {
     panic!("the tree was not felled");
 }
 
+// GFX-ANIM-3.8a: the fellings of the whole map in one pass over the settlers
+// are each tree's own felling start, tick by tick, while two woodcutters
+// work at their trees, fell them and the trees lie and go; a forester's
+// sapling is in neither.
+// spec: GFX-ANIM-3.8a, ECO-OUT-4.7
+#[test]
+fn the_fellings_are_each_trees_felling_start() {
+    let each = |world: &World| -> Vec<(Point, Tick)> {
+        world
+            .deposits()
+            .filter_map(|(f, _)| Some((f, world.felling_began(f)?)))
+            .collect()
+    };
+    let trees = [(13, 8), (14, 9)];
+    let (mut world, _) = hut_with(&trees);
+    let mut seen = 0;
+    for _ in 0..1500 {
+        world.step();
+        assert_eq!(world.fellings(), each(&world), "tick {}", world.tick());
+        seen += world.fellings().len();
+    }
+    assert!(seen > 100, "felling seen in {seen} tick-trees");
+    let (mut world, _) = nursery(Some(1));
+    for _ in 0..600 {
+        world.step();
+        assert_eq!(world.fellings(), each(&world));
+    }
+}
+
 // GFX-ANIM-3.8 (Run D): the woodcutter's work arms a removal timer of
 // work time + 5 (60) ticks on his tree: interrupted (his hut torn down
 // mid-chop), the tree still starts its removal in W + 60 and is gone 19

@@ -262,8 +262,11 @@ pub struct GameUi {
     pub waterway: bool,
     /// The tick road building was started in, until the route exists.
     pub road_since: Option<u64>,
-    /// UI-GAME-1.4: a refused action's message and when it goes (seconds).
+    /// UI-GAME-1.4: a refused action's reason and when it goes (seconds);
+    /// not drawn (Q-317: only the tutorial shows red text, T67).
     pub error: Option<(String, f64)>,
+    /// CAM-3.2: a notice and when it goes (seconds).
+    pub notice: Option<(String, f64)>,
     /// UI-GAME-8.1: the "For all wares." modes of the goods and settlers
     /// pages, 0 -> 1 -> 2 -> 0.
     pub depot_modes: [u8; 2],
@@ -658,6 +661,30 @@ fn frame(p: &mut Panel, ctx: &Ctx, title: &str, size: [f32; 2], close: Action) {
     frame_title(p, ctx, title, size[0], close);
 }
 
+/// UI-GAME-1.8 addition (T65, E-ui-050): a window whose constructor passes
+/// its own frame picture: `rect` of `atlas` drawn 1:1 at the window's
+/// origin, the window as large as the picture, the title at (w / 2, 14)
+/// and the close button at (w - 40, 5): the build menu on `uiDepot`, the
+/// attack dialog on `uiMediumDialog`, the ship window on `uiBigDialog`.
+pub(crate) fn frame_on(
+    p: &mut Panel,
+    ctx: &Ctx,
+    title: &str,
+    (atlas, rect): (Atlas, Rect),
+    close: Action,
+) {
+    let size = [rect[2] as f32, rect[3] as f32];
+    p.sized(atlas, rect, [0.0, 0.0], size);
+    frame_title(p, ctx, title, size[0], close);
+}
+
+/// UI-GAME-1.8 addition (T65): the build menu's frame, `uiDepot` (8, 8,
+/// 376 x 464), and the ship window's, `uiBigDialog` (8, 8, 376 x 464); the
+/// attack dialog's is [`MEDIUM_DIALOG`]'s `uiMediumDialog` (8, 8, 480 x 224).
+pub(crate) const BUILD_MENU_FRAME: (Atlas, Rect) = (Atlas::Depot, [8, 8, 376, 464]);
+pub(crate) const SHIP_FRAME: (Atlas, Rect) = (Atlas::BigDialog, [8, 8, 376, 464]);
+pub(crate) const ATTACK_FRAME: (Atlas, Rect) = (Atlas::MediumDialog, [8, 8, 480, 224]);
+
 /// UI-GAME-1.8: a frame's title at (w / 2, 14) in font_big_white, whose
 /// sheet has only capitals: centred in x, its top at 14, below the sheet's
 /// transparent top rows (the photo build-menu-flag.jpg, Q-209); the close
@@ -787,7 +814,7 @@ pub fn panels(ctx: &Ctx, ui: &GameUi, borders: bool) -> Vec<Panel> {
     if let Some(line) = &ui.chat {
         out.push(chat_line(ctx, line));
     }
-    if let Some((text, _)) = &ui.error {
+    if let Some((text, _)) = &ui.notice {
         out.push(error(ctx, text));
     }
     out

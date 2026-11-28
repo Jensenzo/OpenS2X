@@ -4,5 +4,6 @@
 pub(crate) mod campaign;
 #[cfg(test)]
 mod campaign_tests;
+pub(crate) mod display;
 pub(crate) mod menu;
 pub(crate) mod settings;

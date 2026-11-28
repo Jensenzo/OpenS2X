@@ -192,9 +192,16 @@ attacking and defending are plan 4.4.
   flag and enters (as a worker does, ECO-REQ-3.6); it is linked to the
   building from the start, so it counts in `S` while walking.
   Confidence: high for the choice; medium for the walk being the worker's.
+  **With no such warehouse** the request is attached to a harbour as an overseas need
+  (`SHIP-ships-expeditions.md` SHIP-4.1, T36; 2026-11-27, E-ship-030).
 - **MIL-SOL-4.7a The soldier's first tick.** Unlike a worker, builder or
   leveller sent for a request (`ECO-time-units.md` ECO-TIME-1.5: they move in
-  their creation tick), the soldier **stands in its creation tick** on the
+  their creation tick), the soldier **stands in its creation tick** (also one a warehouse sends for a
+  harbour's request, the soldier gathered for an overseas need: SHIP-4.3, T36 there;
+  2026-11-27, E-ship-030, measured; **such a soldier then leaves as a released one, MIL-SOL-4.5:
+  he walks out to the warehouse's own flag and is sent home on arriving there, T being that
+  arrival tick, his home the requesting harbour; he stands in T, T + 1 and T + 2 and walks to the
+  harbour from T + 3**, `TRN-free-walk.md` TRN-FREE-6.4a; added 2026-11-27, E-mil-047, T21) on the
   warehouse's door field point with the walk animation at progress 0 and takes
   its first step (door field -> building field) in the next tick; from then on
   its walk is a settler's way out of a warehouse (`ECO-worker-cycle.md`
@@ -353,6 +360,7 @@ attacking and defending are plan 4.4.
 | T18 | E-trace-011 (`specs/traces/original-dense-20000*`): player 1's guard house 90300 at (138, 57), upgrading since counter 5582, one present soldier (90744), enemy far (wanted 1); the upgrade's builder request 90823 filed at counter 6317 | allocation pass of counter 6320 (20 + 21 x 300) | d = 1 - 1 - 1 = -1: request 90823 is cancelled (in the objects table its link is already none in the snapshot of 6320); counter 6321: the upgrade files builder request 90824 and the queue deletes 90823 unserved; 90824 is served at 6335 by builder 90825, made from a helper and a hammer of castle 90180 (helpers 83 -> 82, hammers 16 -> 15); later numbers are as recorded, e.g. road 90837's carrier is 90841 (counting soldier requests only gives 90840; settlers' first difference against E-trace-011 7420 -> 7702) |
 | T19 | MIL-SOL-4.5, TRN-FREE-6.4a: E-trace-013 (Hard game, every tick recorded from counter 0; the same game as E-trace-012) and E-trace-012, player 1's soldier 90700 garrisoned in the military building on (138, 57), flag (139, 56), released | its ticks | garrison state to counter 4744; the step to (139, 56) at progress 0 in 4745, on the flag's point and standing in 4768, 4769, 4770; the walk home (towards (140, 56)) at progress 0 in 4771, 0.045 in 4772. E-trace-012 (every 10 ticks there): standing on (139, 56) in trace tick 4770, at fine (557440, 224000) in 4780. Experiment build: the Hard pair's settlers 4770 -> 4830 (a walk home searched inside the building and walked without the stand passes the flag at once) |
 | T20 | 6.2 (the door wait): E-trace-019 (R6, MP_4P_Fight, players 1 .. 3 Hard), player 3's castle (26, 24), door field (25, 25); its computer player raises the castle reserve in counter 598 (`AI-military.md` AI-MIL-4.6, (598 + 15) mod 613 = 0) | the soldiers present at the door, by trace tick | 2 from 599, 3 from 629, 4 from 659, 5 from 689 (one every 30 ticks); the warehouse's take-out draw of counter 602 (ECO-DIST-1.7) is skipped for this castle (2 draws, not 3). Bringing one out every tick (5 more by 604) differs from settlers 600 and generator 603; with the door wait (experiment build): settlers 784, buildings 1156, generator 1660; every Storm Coast pair unchanged |
+| T21 | 4.7a, the harbour's soldier on the warehouse's flag: E-trace-037 (the Weak game again, every table from counter 62 950), soldier 97690 made in the castle (139, 52) for the harbour (144, 47)'s request 97689 (SHIP T36) | his rows from trace tick 63 124 | walking out (soldiers.23) from the door field (556 000, 208 000) in 63 124; on the castle's flag (140, 50) (560 000, 200 000) in 63 170, going-home state (soldiers.3) from then; standing in 63 170, 63 171, 63 172; the walk on towards the harbour at progress 0 in 63 173 (560 180 in 63 174). One walk from the door to the harbour passes the flag without a stop (the dense window's settlers first differ at 63 171). Experiment build: the dense window equal in settlers and buildings to its end (63 300); every other pair unchanged |
 
 ## Evidence
 
@@ -376,6 +384,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-mil-002 | strings | | dialog labels |
 | E-mil-008, E-trace-019 | code reading and recording | R6 settlers table (player 3's door field (25, 25)) | MIL-SOL-6.2, 6.3, T20 |
 | E-mil-019 | code reading | (session 2026-11-17 day): the soldier's update and its four links, the interceptor link, the release, the soldier list emptied when its building goes | MIL-SOL-4.4 (a) to (c) (Q-1071); MIL-ATK-4.4's fourth link |
+| E-mil-047, E-trace-037 | recording and experiment build | (session 2026-11-27 rec): soldier 97690's rows 63 124 .. 63 180 in E-trace-037's dense window | MIL-SOL-4.7a, T21 |
 | E-trace-002 | live read of the running game | `settlers.csv.gz` (objects 90186, 90187), `specs/traces/original.s2trace.gz` ticks 1 .. 5000 | present soldiers on the door field; player 1's gone at trace tick 609 |
 | E-sim-001 | code reading | | soldier death outside a fight (ECO-WORK-6) |
 | E-trace-013 | live read of the running game | TRACED plan R3, recorded 2026-10-27 from 01:18, MP_2P_Storm_Coast, player 1 computer Hard, every tick from counter 0, heap dumps every 500 | the Hard game tick by tick (T19) |

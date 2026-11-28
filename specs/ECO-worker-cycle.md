@@ -69,6 +69,13 @@ order:
   to waiting; his first check (3.1) comes in the tick after that. So with inputs in
   stock the work action starts **two ticks after the switch**, one later than a
   plain input wait. Confidence: medium (one measured case, T11).
+  **Only a worker who comes to his check while it is off enters that state**
+  (added 2026-11-27, E-eco-061: E-trace-038, E-trace-011 and an experiment build;
+  medium, one case each): after his rest, on arriving, or back from carrying out
+  his product. A worker already in his input wait (3.1) when production is
+  switched off stays in it; his checks fail while it is off, and in the tick
+  after the switch-on his check starts the work, **one tick after the switch**
+  (T12). T11's worker had come back in after the switch-off.
 - **ECO-WORK-3.2 Work.** A timed action lasting the building's production time
   (`bp_setProductionTime`). This is the visible work animation. In the tick it
   ends, the building consumes its inputs and the product exists.
@@ -286,6 +293,7 @@ order:
 | T9 | rest time 222, otherwise as T1 | gap between work actions | 290 ticks |
 | T10 | timed action of 3.3 started in tick N | when does it end | tick N+4 |
 | T11 | 3.1b: E-trace-011, player 1's locksmithery 90685 (135, 48), its production switched off by the computer player from counter 11789 and on again at 19540 (buildings table), worker 91031 standing inside, inputs in stock | when the work starts | WorkLoop from trace tick 19543 (counter 19542); starting from the tick after the switch (an experiment build) works from 19542 (settlers, view columns left out, first differ at 19886; with the rule at 19889) |
+| T12 | 3.1b, a worker waiting when switched off: E-trace-038 (MP_6P_the_others), player 4's locksmith 21113 in the locksmithy (55, 21), waiting for inputs (worker state 33) since counter 8 939; the computer player switches production off at 9 078 and on at 18 177 (its tools part, every 337 ticks; the buildings table's enabled column 0 from 9 079, 1 from 18 179) | his state and work | state 33 through the whole stretch (the switched-off state never shows); the work animation from counter 18 178 (333 ticks, 332 left at 18 179); his walk out with the tools at progress 0 in 18 521 (0.36 at 18 529). At the second switch-off (about 18 859) he was working: he finished, carried the tools out, came back and stood in the switched-off state by 19 089. Moving him to that state at the switch-off starts the work at 18 179 and puts his walk out one tick late. Experiment build: the game's settlers 18 530 -> 19 250; every other pair (T11's Weak game included) unchanged |
 | T-door-1 | castle at (139, 51), a constructor sent out | its first walking tick | field (139, 52), the castle's door field; never (139, 51) |
 | T-door-3 | ECO-WORK-3.8c: E-trace-010 (two-player game), hunter 90379 sent from the castle to the hunter's hut (140, 49), its road walk (140, 50) -> (141, 50) -> (141, 49) -> (141, 48) | its arrival on the hut's flag | trace tick 1815: on the flag's sample (564000, 192000), walk animation; 1816: one tick along the step to (140, 49) (rise 943, factor 0.6: (563945, 192108)); standing on (140, 49) in 1853. Running on with the excess would give (563969, 192060) in 1815 and the arrival in 1852 |
 | T-door-4 | 3.8, 3.8a, 3.8b: E-trace-011, player 1's farm 90538 on (136, 58) (door north-west: (135, 59)), its first farmer 91017 made at the castle at counter 9562 | his arrival and first trip | trace tick 9904: on the farm's field, the step to the door at progress 0; 9927: on (135, 59), standing; the sowing step's 51-tick wait there; 9979: the step back onto (136, 58) from progress 0, arriving 10002; then to the flag (136, 57) from progress 0, arriving 10025, and on to his spot (sowing from 10118) (measured). Without the door steps the farmer waits on (136, 58) and is 46 ticks early (experiment build: settlers first differ at 9904; with the rule 10015) |
@@ -317,6 +325,7 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-sim-001 | code reading | | ECO-WORK-6 |
 | E-trace-002 | live read of the running game | `settlers.csv.gz` object 98253, `buildings.csv.gz` (111, 42) | ECO-WORK-6.3 |
 | E-trace-011 | recording | `wares.csv.gz`, `settlers.csv.gz` (miller 91002, flour 91303, flag 90597 (141, 52), counters 13515 .. 13521) | ECO-WORK-3.4 (T-room-1) |
+| E-eco-061, E-trace-038 | recording and experiment build | (session 2026-11-27 rec): locksmith 21113's worker states and animation columns at counters 8 939 .. 19 109 and the locksmithy's enabled column | ECO-WORK-3.1b, T12 |
 | E-trn-021, E-trace-013 | code reading and recording | the entry check with the bar; the wares table of E-trace-013 (counters 10836 .. 10842) | ECO-WORK-3.4 (T-room-2) |
 
 ## Open questions

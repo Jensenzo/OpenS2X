@@ -1070,18 +1070,24 @@ fn t19_world() -> World {
 
 /// T19's world with `helpers` helpers in H2's stock.
 fn t19_world_with(helpers: u32) -> World {
+    t19_world_of(helpers, 3, 2)
+}
+
+/// T19's world with `helpers` helpers in H2's stock, `planks` planks in
+/// H1's warehouse and a hut needing `hut_planks` planks.
+fn t19_world_of(helpers: u32, planks: u32, hut_planks: u32) -> World {
     let mut w = sea_world();
     w.building_types.insert(
         HUT,
         crate::BuildingType {
-            frame_costs: vec![(PLANK, 2)],
+            frame_costs: vec![(PLANK, hut_planks)],
             ..crate::BuildingType::new(HUT, BuildingSize::Small)
         },
     );
     warehouse(&mut w, (4, 10));
     harbour(&mut w, P0, WEST_HARBOUR);
     harbour(&mut w, P0, EAST_HARBOUR);
-    stock(&mut w, (4, 10), PLANK, 3);
+    stock(&mut w, (4, 10), PLANK, planks);
     stock(&mut w, (4, 10), HELPER, 10);
     stock(&mut w, EAST_HARBOUR, HELPER, helpers);
     road_between(&mut w, (4, 10), WEST_HARBOUR);
@@ -1123,16 +1129,15 @@ fn hut_orders(w: &World) -> Vec<Option<Point>> {
 // network by ship: the hut's two plank orders attach to H2 (SHIP-4.1), H2
 // asks H1, the planks are gathered, shipped and unloaded into H2, and the
 // next passes serve the orders from H2's stock, which detaches them: the
-// need is gone and the hut gets its planks. (H1 holds both planks, so one
-// trip takes them: after it, the ship lies at H2, linked there, and is no
-// candidate for a call of H1, SHIP-4.4 'which ship', T32; gathering: T14,
-// T28, T30.)
+// need is gone and the hut gets its planks. The planks reach H1 one at a
+// time, so the one ship makes two trips: after the first unloading it lies
+// idle at H2 with no transfer-call link and H1 calls it back (SHIP-4.4
+// 'which link, exactly', T34).
 // spec: SHIP-4.1, SHIP-4.2, SHIP-4.3, SHIP-4.4, SHIP-4.6 (T12)
 #[test]
 fn ship_t12_transfer_between_harbours() {
     let mut w = t19_world();
-    stock(&mut w, WEST_HARBOUR, PLANK, 2);
-    let s = ship(&mut w, P0, (16, 10));
+    let s = ship(&mut w, P0, (20, 10));
     // H2 asks H1 in its first pass.
     run(&mut w, 102);
     assert_eq!(
@@ -1155,12 +1160,30 @@ fn ship_t12_transfer_between_harbours() {
     };
     assert_eq!(planks(&w).unwrap().supplier, Some(WEST_HARBOUR));
     assert_eq!(need(&w, BUILDER), 1);
-    // Within a while: a ship is called, loads,
-    // sails and unloads at H2; the passes send them on to the hut.
-    step_until(&mut w, 8000, |w| hut_orders(w).is_empty());
+    // Within a while: the planks arrive at H1, the ship is called, loads,
+    // sails and unloads at H2, twice; the passes send them on to the hut.
+    let mut loads = Vec::new();
+    let mut aboard = false;
+    for _ in 0..12_000 {
+        if hut_orders(&w).is_empty() {
+            break;
+        }
+        w.step();
+        let now = !w.ships()[s].vessel.cargo.is_empty();
+        if now && !aboard {
+            loads.push(w.ships()[s].vessel.cargo.clone());
+        }
+        aboard = now;
+    }
+    assert!(hut_orders(&w).is_empty(), "the hut's orders are served");
+    let one = vec![crate::navy::Cargo {
+        destination: EAST_HARBOUR,
+        goods: vec![(PLANK, 1)],
+    }];
+    assert_eq!(loads, [one.clone(), one], "one plank per trip, one ship");
     assert_eq!(need(&w, PLANK), 0);
     assert_eq!(count(&w, WEST_HARBOUR, PLANK), 0);
-    assert_eq!(count(&w, (4, 10), PLANK), 3);
+    assert_eq!(count(&w, (4, 10), PLANK), 1);
     assert!(w.harbour_at(WEST_HARBOUR).unwrap().transfers.is_empty());
     assert!(w.ships()[s].vessel.cargo.is_empty());
 }
@@ -1236,15 +1259,24 @@ fn ship_t26_passes_held_goods_and_the_call() {
     );
 }
 
-// T32 (SHIP-4.4 'which ship, exactly'): (a) ship A sails to H1 (linked to
-// it) when H1's pass finds a plank ready for H2: A is called and keeps its
-// route (no new route, the walk's goal unchanged); it docks and is loaded at
-// a later pass. (b) Ship B lies idle at H2, linked to H2, free in every other
-// way: H1 does not call it (only ships linked to H1, or free ones linked to
-// no harbour, are candidates).
+// T32 (SHIP-4.4 'which ship, exactly', narrowed by 'which link, exactly'):
+// (a) ship A sails to H1 after its own search when H1's pass finds a plank
+// ready for H2: A has no transfer-call link and is moving, so it is not
+// called; once it lies docked at H1 the next pass calls it (it stays) and a
+// later one loads it. (a') A ship sailing to H1 that already holds H1's
+// transfer-call link is called and keeps its route (no new route, the
+// walk's goal unchanged). (b) Ship B lies idle at H2 after its search,
+// free, with no transfer-call link: H1 calls it and it sails to H1.
 // spec: SHIP-4.4 (T32)
 #[test]
 fn ship_t32_which_ship_a_transfer_calls() {
+    let set_pass = |w: &mut World| {
+        w.harbours
+            .iter_mut()
+            .find(|h| h.at == WEST_HARBOUR)
+            .unwrap()
+            .counter = 100;
+    };
     // (a)
     let mut w = t19_world();
     let a = ship(&mut w, P0, (16, 10));
@@ -1254,15 +1286,33 @@ fn ship_t32_which_ship_a_transfer_calls() {
     assert_eq!(w.ships()[a].vessel.harbour, Some(WEST_HARBOUR));
     assert!(!w.harbour_at(WEST_HARBOUR).unwrap().transfers.is_empty());
     stock(&mut w, WEST_HARBOUR, PLANK, 2);
+    set_pass(&mut w);
+    w.step();
+    assert_eq!(
+        w.harbour_at(WEST_HARBOUR).unwrap().called,
+        None,
+        "a ship sailing after its own search is no candidate"
+    );
+    assert_eq!(w.ships()[a].vessel.called, None);
+    step_until(&mut w, 400, |w| {
+        w.harbour_at(WEST_HARBOUR).unwrap().called == Some(a)
+    });
+    assert_eq!(state_of(&w, a), ShipState::Idle, "lies docked at H1");
+    assert_eq!(w.ships()[a].vessel.harbour, Some(WEST_HARBOUR));
+    step_until(&mut w, 400, |w| !w.ships()[a].vessel.cargo.is_empty());
+
+    // (a')
+    let mut w = t19_world();
+    let a = ship(&mut w, P0, (16, 10));
+    step_until(&mut w, 400, |w| {
+        state_of(w, a) == ShipState::ToHarbour && w.ships()[a].vessel.walker.is_walking()
+    });
+    w.ships[a].vessel.called = Some(WEST_HARBOUR);
+    stock(&mut w, WEST_HARBOUR, PLANK, 2);
     let goal = w.ships()[a].vessel.walker.destination();
-    w.harbours
-        .iter_mut()
-        .find(|h| h.at == WEST_HARBOUR)
-        .unwrap()
-        .counter = 100;
+    set_pass(&mut w);
     w.step();
     assert_eq!(w.harbour_at(WEST_HARBOUR).unwrap().called, Some(a));
-    assert_eq!(w.ships()[a].vessel.called, Some(WEST_HARBOUR));
     w.step();
     assert_eq!(state_of(&w, a), ShipState::ToHarbour, "keeps sailing here");
     assert_eq!(
@@ -1282,10 +1332,60 @@ fn ship_t32_which_ship_a_transfer_calls() {
         !w.harbour_at(WEST_HARBOUR).unwrap().transfers.is_empty()
     });
     stock(&mut w, WEST_HARBOUR, PLANK, 2);
-    run(&mut w, 300);
-    assert_eq!(w.harbour_at(WEST_HARBOUR).unwrap().called, None);
-    assert_eq!(w.ships()[b].vessel.called, None);
-    assert_eq!(w.ships()[b].vessel.harbour, Some(EAST_HARBOUR));
+    step_until(&mut w, 300, |w| {
+        w.harbour_at(WEST_HARBOUR).unwrap().called.is_some()
+    });
+    assert_eq!(w.harbour_at(WEST_HARBOUR).unwrap().called, Some(b));
+    assert_eq!(w.ships()[b].vessel.called, Some(WEST_HARBOUR));
+    w.step();
+    assert_eq!(state_of(&w, b), ShipState::ToHarbour, "sails to H1");
+    assert_eq!(w.ships()[b].vessel.harbour, Some(WEST_HARBOUR));
+    step_until(&mut w, 600, |w| !w.ships()[b].vessel.cargo.is_empty());
+}
+
+// T34 (SHIP-4.4 'which link, exactly', Q-1095): one ship nearer to H2 than
+// to H1, a hut on H2's island needing 4 planks, H1's warehouse holding 1
+// plank at the start and getting 1 more after each unloading at H2. The
+// ship's search docks it at H2; each of H1's calls takes it from there
+// (free, no transfer-call link, though docked at H2): 4 deliveries of one
+// plank, one after another, and the hut's orders are served.
+// spec: SHIP-4.4 (T34)
+#[test]
+fn ship_t34_one_ship_four_deliveries() {
+    let mut w = t19_world_of(2, 1, 4);
+    let s = ship(&mut w, P0, (24, 10));
+    step_until(&mut w, 600, |w| {
+        state_of(w, s) == ShipState::Idle && w.ships()[s].vessel.harbour == Some(EAST_HARBOUR)
+    });
+    let mut deliveries = 0;
+    let mut called_at_h2 = 0;
+    let mut aboard = false;
+    let mut was_called = false;
+    for _ in 0..20_000 {
+        if hut_orders(&w).is_empty() {
+            break;
+        }
+        let lying = w.ships()[s].vessel.harbour;
+        w.step();
+        let v = &w.ships()[s].vessel;
+        let called = v.called == Some(WEST_HARBOUR);
+        if called && !was_called && lying == Some(EAST_HARBOUR) {
+            called_at_h2 += 1;
+        }
+        was_called = called;
+        let now = !v.cargo.is_empty();
+        if aboard && !now {
+            deliveries += 1;
+            if deliveries < 4 {
+                stock(&mut w, (4, 10), PLANK, 1);
+            }
+        }
+        aboard = now;
+    }
+    assert!(hut_orders(&w).is_empty(), "the hut's 4 orders are served");
+    assert_eq!(deliveries, 4);
+    assert_eq!(called_at_h2, 4, "each call takes the ship lying at H2");
+    assert_eq!(count(&w, (4, 10), PLANK), 0);
 }
 
 /// SHIP-4.3: the planks H1 has gathered or ordered: in stock, on their way
@@ -1853,4 +1953,105 @@ fn ship_t29_a_torn_down_harbour_sends_its_ship_searching() {
         tries += usize::from(v.state == ShipState::Search && v.counter == 0);
     }
     assert!((9..=11).contains(&tries), "{tries} searches in 1010 ticks");
+}
+
+/// T35's world: land everywhere but a channel of Water one field wide,
+/// the row y = 10 from x = 14 to x = 25.
+fn channel_world() -> World {
+    let mut w = sea_world();
+    for field in w.terrain.fields().collect::<Vec<_>>() {
+        let (x, y) = field;
+        if (14..=25).contains(&x) && y != 10 {
+            set(&mut w.terrain, field, state::FOR_BUILDING);
+        }
+    }
+    w
+}
+
+/// A launched expedition ship of player 0 at `from` sailing along the
+/// channel to `to`.
+fn sailing(w: &mut World, from: Point, to: Point) -> usize {
+    let s = ship(w, P0, from);
+    let v = &mut w.ships[s].vessel;
+    v.launched = true;
+    v.expedition = true;
+    v.target = Some(crate::navy::Landing {
+        spot: to,
+        field: to,
+    });
+    v.state = ShipState::Sailing;
+    let step: i32 = if to.0 > from.0 { 1 } else { -1 };
+    let path: Vec<Point> = (1..=from.0.abs_diff(to.0) as i32)
+        .map(|k| ((from.0 as i32 + step * k) as _, from.1))
+        .collect();
+    v.walker.walk(path);
+    s
+}
+
+/// The ticks until each ship of `ships` stops, and whether two of them
+/// were ever on one field or swapped fields in one update.
+fn sail_out(w: &mut World, ships: &[usize]) -> (Vec<u32>, bool) {
+    let mut done = vec![0; ships.len()];
+    let mut met = false;
+    let mut before: Vec<Point> = ships
+        .iter()
+        .map(|&s| w.ships()[s].vessel.walker.at)
+        .collect();
+    for t in 1..=2000 {
+        w.step();
+        let now: Vec<Point> = ships
+            .iter()
+            .map(|&s| w.ships()[s].vessel.walker.at)
+            .collect();
+        for i in 0..ships.len() {
+            for j in i + 1..ships.len() {
+                met |= now[i] == now[j] || (now[i] == before[j] && now[j] == before[i]);
+            }
+            if done[i] == 0 && !w.ships()[ships[i]].vessel.walker.is_walking() {
+                done[i] = t;
+            }
+        }
+        before = now;
+        if done.iter().all(|&d| d > 0) {
+            break;
+        }
+    }
+    (done, met)
+}
+
+// T35 (SHIP-3.1 'other ships', Q-064): ships never block each other. In a
+// channel one field wide, A and B sail from its two ends to the other end:
+// they pass through each other with no wait, each arriving after as many
+// ticks as alone; with B lying still in the channel, A sails through its
+// field without stopping.
+// spec: SHIP-3.1 (T35)
+#[test]
+fn ship_t35_ships_pass_through_each_other() {
+    let (west, east) = ((14, 10), (25, 10));
+    let mut w = channel_world();
+    let a = sailing(&mut w, west, east);
+    let (alone_a, _) = sail_out(&mut w, &[a]);
+    let mut w = channel_world();
+    let b = sailing(&mut w, east, west);
+    let (alone_b, _) = sail_out(&mut w, &[b]);
+
+    let mut w = channel_world();
+    let a = sailing(&mut w, west, east);
+    let b = sailing(&mut w, east, west);
+    let (both, met) = sail_out(&mut w, &[a, b]);
+    assert!(met, "they meet in the channel");
+    assert_eq!(both, [alone_a[0], alone_b[0]], "no wait for the other");
+    assert_eq!(w.ships()[a].vessel.walker.at, east);
+    assert_eq!(w.ships()[b].vessel.walker.at, west);
+
+    let mut w = channel_world();
+    let a = sailing(&mut w, west, east);
+    let still = ship(&mut w, P0, (20, 10));
+    w.ships[still].vessel.launched = true;
+    w.ships[still].vessel.state = ShipState::Waiting;
+    w.ships[still].vessel.expedition = true;
+    let (through, met) = sail_out(&mut w, &[a, still]);
+    assert!(met, "A passes B's field");
+    assert_eq!(through[0], alone_a[0], "A does not stop for B");
+    assert_eq!(w.ships()[still].vessel.walker.at, (20, 10));
 }

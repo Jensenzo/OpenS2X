@@ -473,18 +473,20 @@ type SwitchedCamera = (
     Has<crate::render::view3d::MapCamera3d>,
 );
 
+/// The cameras that switch themselves: the ship window's, the building
+/// portrait's (`portrait::aim`) and the water's mirror camera.
+type SelfSwitched = (
+    Without<crate::render::ship_view::ShipCamera>,
+    Without<crate::render::portrait::PortraitCamera>,
+    Without<crate::render::view3d::MirrorCamera3d>,
+);
+
 /// On entering or leaving the model view: the active camera and the camera
 /// the info panel is drawn on.
 pub fn switch_cameras(
     mode: Res<State<ViewMode>>,
     view: Res<crate::render::view3d::View3d>,
-    mut cameras: Query<
-        SwitchedCamera,
-        (
-            Without<crate::render::ship_view::ShipCamera>,
-            Without<crate::render::view3d::MirrorCamera3d>,
-        ),
-    >,
+    mut cameras: Query<SwitchedCamera, SelfSwitched>,
     mut commands: Commands,
     panels: Query<(Entity, Option<&UiTargetCamera>), RootPanels>,
 ) {

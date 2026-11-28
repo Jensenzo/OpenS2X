@@ -206,14 +206,22 @@ pub(crate) fn title_of(ctx: &Ctx, building: u32) -> String {
     ctx.texts.name(&name).to_owned()
 }
 
-/// UI-GAME-4.3: the portrait frame (344, 216, 88 x 88) at (22, 43) with
-/// the building. The original shows the 3D model (80 x 80 at (26, 47),
-/// the portrait camera of 4.5 a); its picture's size and what a site's
-/// portrait shows are not given (Q-1091): the type's icon is a stand-in.
-pub(crate) fn portrait(p: &mut Panel, ctx: &Ctx, building: u32) {
+/// UI-GAME-4.3: the portrait frame (344, 216, 88 x 88) at (22, 43);
+/// UI-GAME-4.3a (T64, Q-1091): over it the portrait, the 128 x 128 view
+/// of the world at the building (`render::portrait`) stretched to 80 x 80
+/// at (26, 47), no mask, no other art.
+pub(crate) fn portrait(p: &mut Panel, _ctx: &Ctx, _building: u32) {
     p.sprite(Atlas::Elements3, [344, 216, 88, 88], [22.0, 43.0]);
-    building_icon(p, ctx, building, [26.0, 47.0], 80.0);
+    p.widgets.push(Widget::Picture {
+        picture: crate::ui::widgets::Picture::BuildingView,
+        at: PORTRAIT_AT,
+        size: PORTRAIT_SIZE,
+    });
 }
+
+/// UI-GAME-4.3a: where the portrait is drawn and its size.
+pub(crate) const PORTRAIT_AT: [f32; 2] = [26.0, 47.0];
+pub(crate) const PORTRAIT_SIZE: f32 = 80.0;
 
 /// UI-GAME-4.1: a production building's window.
 pub fn production_window(ctx: &Ctx, at: Point) -> Panel {
@@ -987,13 +995,15 @@ pub(crate) fn nearest_expedition(world: &World, player: PlayerId, at: Point) -> 
 /// UI-GAME-5.1: the attack dialog. The number shown and sent follows the
 /// slider's value by 5.2 ([`attack_count`]); the presets set the value.
 pub fn attack_dialog(ctx: &Ctx, target: Point, share: f32, strong: bool) -> Panel {
-    let size = [466.0, 220.0];
+    // UI-GAME-1.8 addition (T65, E-ui-050): `uiMediumDialog` (8, 8,
+    // 480 x 224) drawn 1:1, placed by 1.9 with that size.
+    let size = [ATTACK_FRAME.1[2] as f32, ATTACK_FRAME.1[3] as f32];
     let mut p = Panel::new(PanelId::Context, context_origin(ctx, size));
-    frame(
+    frame_on(
         &mut p,
         ctx,
         &ctx.t("!Attack Menu"),
-        size,
+        ATTACK_FRAME,
         Action::CloseContext,
     );
     let available = ctx.world.attack_available(ctx.player, target);

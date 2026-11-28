@@ -481,10 +481,14 @@ pub fn drop_entries(menu: &MenuState, texts: &Texts, drop: Drop) -> Vec<String> 
             .map(|n| texts.name(n).to_owned())
             .collect(),
         Drop::ShaderDetail => keys(&["!Low", "!High"]),
-        // SET-5.2: the Graphics page draws RESOLUTION's text and list from
-        // the window's size itself (`dialogs::graphics_page`); MODE value 1
+        // SET-5.2: the window's sizes as `<w> x <h>`; MODE value 1
         // Fullscreen, 0 Windowed, listed in that order.
-        Drop::Resolution => Vec::new(),
+        Drop::Resolution => {
+            crate::menus::display::resolutions(&menu.display, menu.settings.fullscreen)
+                .into_iter()
+                .map(crate::menus::display::mode_text)
+                .collect()
+        }
         Drop::DisplayMode => keys(&["!Fullscreen", "!Windowed"]),
         // SET-5.5: Inverted (value 0) / Not Inverted (1); Activated (shown
         // Enabled, 0) / Not Activated (1).
@@ -529,9 +533,14 @@ pub(crate) fn drop_value(menu: &MenuState, drop: Drop) -> usize {
         Drop::DayNight => usize::from(!menu.settings.day_night),
         Drop::Preset => (menu.settings.cfg.scene.preset() as usize).min(PRESET_NAMES.len() - 1),
         Drop::ShaderDetail => usize::from(menu.settings.cfg.scene.shader_detail() == 3),
-        Drop::Resolution => 0,
-        // Ours: the window is a window (Windowed).
-        Drop::DisplayMode => 1,
+        // SET-5.2: the window's size (always in the list).
+        Drop::Resolution => {
+            crate::menus::display::resolutions(&menu.display, menu.settings.fullscreen)
+                .iter()
+                .position(|m| *m == menu.display.window)
+                .unwrap_or(0)
+        }
+        Drop::DisplayMode => usize::from(!menu.settings.fullscreen),
         Drop::MouseScrolling => usize::from(!menu.settings.cfg.user.input_b),
         Drop::BorderScrolling => usize::from(!menu.settings.cfg.user.input_c),
         Drop::SmartCursor => usize::from(!menu.settings.cfg.user.input_d),

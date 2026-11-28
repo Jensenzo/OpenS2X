@@ -789,6 +789,9 @@ pub enum Picture {
     /// UI-GAME-4.5: the ship window's view of its ship, masked by
     /// `uiShipMask`.
     ShipView,
+    /// UI-GAME-4.3a (T64): the building windows' portrait, a view of the
+    /// world at the building, stretched to 80 x 80.
+    BuildingView,
 }
 
 /// Which panel: kept between redraws so a panel is only rebuilt when it

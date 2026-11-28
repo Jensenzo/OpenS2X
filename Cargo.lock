@@ -4328,7 +4328,7 @@ dependencies = [
 
 [[package]]
 name = "s2-ai"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "flate2",
  "s2-assets",
@@ -4338,7 +4338,7 @@ dependencies = [
 
 [[package]]
 name = "s2-app"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "flate2",
  "png",
@@ -4350,14 +4350,14 @@ dependencies = [
 
 [[package]]
 name = "s2-assets"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "s2-sim",
 ]
 
 [[package]]
 name = "s2-rules"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "mlua",
  "s2-assets",
@@ -4366,11 +4366,11 @@ dependencies = [
 
 [[package]]
 name = "s2-sim"
-version = "0.15.0"
+version = "0.15.1"
 
 [[package]]
 name = "s2-viewer"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "bevy",
  "png",

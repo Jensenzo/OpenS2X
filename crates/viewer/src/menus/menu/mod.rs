@@ -288,6 +288,12 @@ pub struct MenuState {
     pub fog: bool,
     pub drop: Option<Drop>,
     pub settings: Settings,
+    /// SET-5.2: the window's size and its monitor's modes
+    /// (`menus::display::watch`).
+    pub display: crate::menus::display::Display,
+    /// Counts the player's display choices, so a choice the profile
+    /// already holds still puts the window back to it.
+    pub display_choices: u32,
     /// The saves in the save folder (FMT-SAV-1.1).
     pub saves: Vec<SaveEntry>,
     pub save_choice: usize,
@@ -1351,9 +1357,31 @@ fn choose(menu: &mut MenuState, drop: Drop, n: usize) {
             *field = n == 0;
             menu.settings.save();
         }
-        // SET-5.2, 5.7: ours keeps its window as it is (stand-in) and plays
-        // no network game: these choices change nothing.
-        Drop::Resolution | Drop::DisplayMode | Drop::InternetSpeed => {}
+        // SET-5.2: a windowed size is kept in the profile (SET-4 fields 5,
+        // 6); full screen lists the monitor's size alone, which changes
+        // nothing. The window follows at once (`menus::display::apply`).
+        // Kept only when it changes.
+        Drop::Resolution => {
+            let list = crate::menus::display::resolutions(&menu.display, menu.settings.fullscreen);
+            if let Some(&(w, h)) = list.get(n) {
+                if !menu.settings.fullscreen {
+                    menu.display_choices += 1;
+                    if menu.settings.resolution() != (w, h) {
+                        menu.settings.cfg.scene.set_resolution(w, h);
+                        menu.settings.save();
+                    }
+                }
+            }
+        }
+        Drop::DisplayMode => {
+            let fullscreen = n == 0;
+            if menu.settings.fullscreen != fullscreen {
+                menu.settings.fullscreen = fullscreen;
+                menu.settings.save();
+            }
+        }
+        // SET-5.7: ours plays no network game: this changes nothing.
+        Drop::InternetSpeed => {}
         Drop::Hq(i) => {
             if let Some(s) = menu.slots.get_mut(i) {
                 s.start = n.min(5) as i8;

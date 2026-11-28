@@ -106,12 +106,21 @@ other screen sizes were not seen.
   (`menus::menu::Notice`). A save without a readable map part does not
   load; the notice says so over the main menu. What the original does
   with such a save is not specified.
-- **The Graphics settings page** (SET-5.2, `menus/menu/dialogs.rs`
-  `graphics_page`): the original lists the display device's modes and
-  switches between full screen and a window. Our game is a window whose
-  size comes from the command line or the desktop, not a device mode: the
-  page shows its size (`<w> x <h>`) as the only RESOLUTION entry and MODE
-  Windowed, and a choice changes nothing. The Network page (SET-5.7) shows
+- **The Graphics settings page** (SET-5.2, `menus/display.rs`, Q-1097):
+  the original lists the display device's modes and switches the device
+  between full screen and a window. Ours **never changes the display's
+  mode**: Fullscreen Mode is a borderless window of the monitor's size (the
+  monitor keeps its own resolution, so RESOLUTION lists that size alone),
+  Windowed a window of one of the device's sizes that fit the monitor
+  (each size once, in the device's order, at most 24, the largest 24 when
+  there are more, plus the window's own size). Both choices take effect at
+  once (when the original applies them is open). The windowed size is kept
+  in the profile's width and height (SET-4 fields 5, 6, which the original
+  also reads); the mode is kept in our own `settings.txt` (`fullscreen=`),
+  not in the profile's display-mode field, whose values are not read. A
+  kept size that no longer fits the monitor opens at the largest of its
+  sizes that does, without writing the profile; an unset size opens at
+  800 x 600. `--size` and the map viewer keep their window as given. The Network page (SET-5.7) shows
   the player's name as CALLSIGN (not an input) and INTERNET SPEED NONE;
   nothing on it changes a single-player game, as in the original.
 - **A project's pages** (`menus/menu/dialogs.rs` `extension_page`,

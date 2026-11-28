@@ -2180,6 +2180,7 @@ fn the_graphics_input_and_network_pages() {
          !Not Activated\tDisabled\n!Windowed\tWindowed\n!NONE\tNONE\n",
     );
     let mut menu = MenuState::default();
+    menu.display.window = (1024, 768);
     let o = [324.0, 152.0];
     let bar_at = |p: &Panel, action: MenuAction| {
         let action = Action::Menu(action);
@@ -2435,5 +2436,82 @@ fn t20_select_map_order() {
             "sp01_big_fish",
             "sp11_southshore_attack",
         ]
+    );
+}
+
+/// SET-5.2 (ours: both take effect at once, the profile written only on a
+/// change; full screen a borderless window of the monitor's size, Q-1097):
+/// RESOLUTION's list is the device's sizes that fit the monitor with the
+/// window's own; a choice keeps the size in SET-4 fields 5 and 6; MODE
+/// Fullscreen (the first entry) lists the monitor's size alone, and a
+/// RESOLUTION choice then changes nothing; Windowed again goes back to the
+/// kept size.
+// spec: SET-5.2, SET-4
+#[test]
+fn the_graphics_page_chooses_the_window() {
+    crate::menus::settings::hold_files();
+    let texts = Texts::parse("!Fullscreen\tFullscreen Mode\n!Windowed\tWindowed\n");
+    let mut menu = MenuState::default();
+    menu.settings.cfg.scene.set_resolution(1024, 768);
+    menu.display = crate::menus::display::Display {
+        window: (1024, 768),
+        monitor: Some((1920, 1080)),
+        modes: vec![
+            (800, 600),
+            (1024, 768),
+            (1280, 720),
+            (1920, 1080),
+            (2560, 1440),
+        ],
+    };
+    assert_eq!(
+        drop_entries(&menu, &texts, Drop::Resolution),
+        ["800 x 600", "1024 x 768", "1280 x 720", "1920 x 1080"]
+    );
+    assert_eq!(drop_value(&menu, Drop::Resolution), 1);
+    assert_eq!(
+        drop_entries(&menu, &texts, Drop::DisplayMode),
+        ["Fullscreen Mode", "Windowed"]
+    );
+    assert_eq!(drop_value(&menu, Drop::DisplayMode), 1);
+    // The open list: one row 19 px apart below the bar per size.
+    menu.drop = Some(Drop::Resolution);
+    let p = settings_screen(&menu, &texts, [1280.0, 720.0], 3);
+    let rows: Vec<f32> = p
+        .widgets
+        .iter()
+        .filter_map(|w| match w {
+            Widget::BarButton {
+                action: Action::Menu(MenuAction::Choose(Drop::Resolution, _)),
+                at,
+                ..
+            } => Some(at[1]),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(rows.len(), 4);
+    assert_eq!(rows[1] - rows[0], 19.0);
+    menu.drop = None;
+    // A windowed size is kept in the profile.
+    choose(&mut menu, Drop::Resolution, 2);
+    assert_eq!(menu.settings.resolution(), (1280, 720));
+    assert!(!menu.settings.fullscreen);
+    // Full screen: the monitor's size alone.
+    choose(&mut menu, Drop::DisplayMode, 0);
+    assert!(menu.settings.fullscreen);
+    menu.display.window = (1920, 1080);
+    assert_eq!(
+        drop_entries(&menu, &texts, Drop::Resolution),
+        ["1920 x 1080"]
+    );
+    assert_eq!(drop_value(&menu, Drop::DisplayMode), 0);
+    choose(&mut menu, Drop::Resolution, 0);
+    assert_eq!(menu.settings.resolution(), (1280, 720));
+    // Windowed again: the kept size.
+    choose(&mut menu, Drop::DisplayMode, 1);
+    assert!(!menu.settings.fullscreen);
+    assert_eq!(
+        crate::menus::display::windowed_size(menu.settings.resolution(), &menu.display),
+        (1280, 720)
     );
 }

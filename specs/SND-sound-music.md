@@ -49,6 +49,16 @@ map. Four volume settings exist: master, music, UI, sound.
   (inventory): *music file* from `data/sound/music/*` except
   `data/sound/music/romeper1.mp3`.
 
+- **SND-1.4 File formats (2026-11-26 a, Q-186 g answered; E-snd-005: data and the shipped library;
+  high for the formats, medium for the library's decoder, which was not read).** The 214 `.wav` files are RIFF WAVE. 198 are plain 16-bit PCM: 196 mono, plus
+  `Battle_loop.wav` and `Lava_Atmo_Loop.wav` in stereo. 16 are **IMA ADPCM** (format tag 0x11):
+  12 stereo ambients (`Forest2.wav`, `Water4.wav`, `Meadow1.wav`, `Desert2.wav`, ...) and 4 mono
+  effects (`HouseCrash01.wav`, `HouseCrash02.wav`, `Impact.wav`, `Fire.wav`). The game passes every
+  file unchanged to the sound library it ships (FMOD 3.75), whose WAVE reader decodes IMA ADPCM with
+  the standard algorithm (4-bit codes, the 89-entry step table, one block header per channel). So
+  decoding these 16 files to PCM with the standard IMA ADPCM decoder before playing them gives the
+  samples the original plays. The music is `.mp3`, played through the same library. Test T10.
+
 ### SND-2 Sound effects
 
 - **SND-2.1 Animation events.** A `Sound` child of an animation
@@ -378,6 +388,7 @@ map. Four volume settings exist: master, music, UI, sound.
 | T7 | settings defaults | open sound settings | sliders at 1.0, 0.3, 1.0, 1.0 (master, music, UI, sound) |
 | T8 | any dialog | open | `uiDialog0` plays once |
 | T9 | SND-8.3a: a 3D sound at full volume within its minimum distance (v = 255): (a) at the listener's right (n = R), (b) straight ahead or below the listener (n . R = 0), (c) n . R = 0.5 | pan and the two levels | (a) pan 255: left 0, right 255; (b) pan 128: left 180, right 181, level 180; (c) pan 192: left T(63) = 126, right T(192) = 221, level 173 |
+| T10 | 1.4 (Q-186 g): decode `HouseCrash01.wav` and `Forest2.wav` | format and samples | both carry format tag 0x11 (IMA ADPCM), mono and stereo respectively; the decoded PCM has the sample count the WAVE header's fact chunk (or block count x samples per block) states, and plays as the collapse sound and the forest ambient |
 
 ## Evidence
 
@@ -388,6 +399,7 @@ map. Four volume settings exist: master, music, UI, sound.
 | E-snd-002 | code reading | `fmod.dll` 3.75 | channels, roll-off, channel choice, footstep gate, follow camera |
 | E-snd-003 | code reading | the ambient player, the choice of the four, the level and its easing, the frame seconds, the sound update | SND-7.4, 7.T1, 7.T2 |
 | E-snd-004 | code reading | (= E-gfx-039): the listener up vector; fmod.dll: the listener attributes call (right = up x forward), software 3D update (pan = 128 + 128 n . R), gains (mixed level (L + R) / 2), pan table = min(255, floor(16 sqrt p)) | SND-8.1, 8.3a, 2.6b, T9 |
+| E-snd-005 | data | (session 2026-11-26 a): the format tags of the 214 `.wav` files under `data/` (196 PCM mono, 2 PCM stereo, 16 IMA ADPCM); `fmod.dll` 3.75 shipped with the game | 1.4 (Q-186 g), T10 |
 | E-snd-005 | code reading and data | (session 2026-11-17 day): the music slots' definitions in `sounds.lua` (one file each), the message sound by kind, the original's log files | SND-2.2 "Which files" |
 | E-snd-001a | data | `data/scripts/properties/sounds.lua`, `data/sound/**` (241 files), `character/settler_animations.xml`, `settings/buildings.xml` | definitions, files, animation events |
 | E-snd-001b | the program's data | `S2DNG.exe`: the Lua binding table, the factor 30.0 | setters and the audibility factor |

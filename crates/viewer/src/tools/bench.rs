@@ -201,6 +201,9 @@ pub(crate) struct Bench {
     /// Each timed frame: PostUpdate (transforms, visibility, lights, layout).
     post_ms: Vec<f64>,
     long: LongRun,
+    /// Each named span's time summed over the timed frames, ms (the report's
+    /// `span-` lines: the mean per frame).
+    span_sum: std::collections::BTreeMap<&'static str, f64>,
 }
 
 /// `--bench-pan`: the arrow key held, and how the camera answers.
@@ -311,6 +314,7 @@ impl Bench {
             frame_ms: Vec::new(),
             last_mark: None,
             part_ms: vec![Vec::new(); PARTS.len()],
+            span_sum: Default::default(),
             ticks_at_start: 0,
             timing: false,
         }
@@ -373,6 +377,11 @@ pub(crate) fn bench_frame(
                 library.palettes.capacity(),
             );
             log_slots(&mut bench, &library, &animator, &building_anims);
+            if let Some(spans) = spans.as_deref() {
+                for &(name, ms) in &spans.now {
+                    *bench.span_sum.entry(name).or_default() += ms;
+                }
+            }
         }
     }
     if let Some(spans) = spans.as_mut() {
@@ -520,6 +529,49 @@ pub(crate) fn bench_post(bench: Option<ResMut<Bench>>) {
             .post_ms
             .push((Instant::now() - at).as_secs_f64() * 1000.0);
     }
+}
+
+/// The steps inside the interface's, the scene's and the animation's parts
+/// (and the game's between them), between the marks
+/// of [`step_span`] (mark 0 starts them; mark N ends step N - 1), each a
+/// named span of the frame.
+pub(crate) const PART_STEPS: [&str; 15] = [
+    "step assets and films",
+    "step minimap and preview",
+    "step interface input",
+    "step dialogs and panels",
+    "step world sounds",
+    "step sound play",
+    "step edit and game",
+    "step update scene",
+    "step sync objects",
+    "step trees and movers",
+    "step seen marks",
+    "step building animation",
+    "step wares",
+    "step poses",
+    "step palette flush",
+];
+
+/// Where the last [`step_span`] mark of the frame was set.
+#[derive(Resource, Default)]
+pub(crate) struct StepClock(Option<(usize, Instant)>);
+
+/// The mark before step `N` of [`PART_STEPS`] (N = PART_STEPS.len(): after the
+/// last); a step whose start mark did not run this frame is not counted.
+pub(crate) fn step_span<const N: usize>(
+    mut clock: ResMut<StepClock>,
+    spans: Option<ResMut<FrameSpans>>,
+) {
+    let now = Instant::now();
+    if let (Some((n, at)), Some(mut spans)) = (clock.0, spans) {
+        if n + 1 == N && n < PART_STEPS.len() {
+            spans
+                .now
+                .push((PART_STEPS[n], (now - at).as_secs_f64() * 1000.0));
+        }
+    }
+    clock.0 = Some((N, now));
 }
 
 /// The mark before part `N` (N = PARTS.len(): after the last part).
@@ -997,6 +1049,13 @@ fn report(bench: &Bench, ticks: u64, world: Option<&s2_sim::World>) -> String {
         let (mean, median, p95) = stats(values);
         let key = name.replace([' ', ','], "-").replace("--", "-");
         text += &format!("part-{key}-ms = {mean:.2} (median {median:.2}, p95 {p95:.2})\n");
+    }
+    // The named spans (the parts' steps, the scene's road rebuild and lists):
+    // their mean per timed frame.
+    let frames = bench.frame_ms.len().max(1) as f64;
+    for (name, sum) in &bench.span_sum {
+        let key = name.replace([' ', ','], "-").replace("--", "-");
+        text += &format!("span-{key}-ms = {:.3}\n", sum / frames);
     }
     text
 }

@@ -199,12 +199,30 @@ general site and flag site as in `ECO-building-placement.md` ECO-PLACE-2.
   field, else the one containing his target field"; measured T23: a new carrier
   walking on another road towards B gets the second half, and his walk ends on
   the next flag, `TRN-free-walk.md` TRN-FREE-6.5 (g).) Wares lying at the end
-  flags stay there. (Corrected 2026-10-24, Q-267: this
+  flags stay there. **A carrier fetching a ware at an end of his half with the new
+  flag ahead** (added 2026-11-27, E-trn-053, T36): his walk is cut at the new flag
+  and he stands there in his arrival tick, keeping his claim until then (T27, T31);
+  in the next tick the ware's next flag is computed again, over the roads and
+  carriers as they are then. Is it the flag he stands on (his half's other end), he
+  walks on and fetches the ware (T27); otherwise his claim ends and he walks to his
+  half's idle field (as T31), and the ware waits for the carrier its new next flag
+  names. (Corrected 2026-10-24, Q-267: this
   rule said "A..F and F..B".) Confidence: high for the split, the direction
   and the carrier rule (E-ui-006; E-sim-007;
   E-trace-006; E-trn-011: the field test, then the first half's
   first flag, its building and that building's field; E-trace-007/008 carrier
   90315, T23), medium for wares in transit.
+  **The donkey of a split road** (2026-11-27, Q-1086, T35): only the carrier is
+  given to a half. A donkey that served the old road is released as on a removed
+  road (TRN-ROAD-6.3): it walks home to its warehouse, and neither half has a donkey
+  until it asks for one again (each half starts without one, like any new road). For
+  the numbers the removal then counts as that of a road with a carrier and no donkey
+  (`SIM-game-start.md` SIM-START-4.4 (j)). The warehouse it walks into may send a
+  donkey out again for the road that next asks for one, which starts that
+  warehouse's door cooldown (`ECO-requests-dispatch.md` ECO-REQ-3.7) and so the
+  take-out pass skips it (`ECO-distribution.md` ECO-DIST-1.7c). Confidence: high for
+  the release and the numbers (measured, one case), medium that every split does it
+  (one case; it agrees with the split being a removal of the old road).
   **A carrier carrying a ware when his road is split** (2026-10-25 evening, T25;
   2026-10-28, T29): what decides is whether the new flag F lies ahead of him
   on his walk (his step goes to F, or F is one of the fields still to walk).
@@ -480,6 +498,8 @@ headquarters at (45,38) and its flag at (45,37); player owns every field.
 | T32 | 6.3 (the kept claim): E-trace-014 (R4, the Weak game), player 1's road 93458 "135,37 .. 137,44" with carrier 93465 carrying towards (135, 37) and bound to the iron ore 93826 lying there (destination the smeltery 92123, next flag (137, 44)); the computer player replaces the road by two roads through the new flag (136, 40) in counter 37353 | the iron ore and the carrier 93463 of the road (135, 37) - (137, 37) | 93465 goes home (from 37354), standing on the castle's door field at 37739; the ore stays claimed by 93465 with next flag (137, 44) until 37740, then gets next flag (136, 40) and is claimed by 94036 of the new road (37744); 93463 never fetches it (measured). Letting the claim go at once has 93463 fetch it at 37357 (the experiment build's settlers first differ at 37360; with the rule at 38650, buildings 38170 -> 39510, generator 37930 -> 38810, the 150 000 generator 37742 -> 38801; the Hard pairs unchanged) |
 | T33 | 4.2, a carrier on his way to the idle field with the new flag on his goal: E-trace-014 (R4, the Weak game), player 1's road 91898 "143,41 143,40 142,39 143,38 142,37" (flags 91510 (143, 41) and 91532 (142, 37), idle field (142, 39)), its carrier 91900 walking back from his put-down at (143, 41) to (142, 39), in his step (143, 40) -> (142, 39) at 0.368 in counter 38648, when the computer player's flag 94187 on (142, 39) splits the road (halves 94191 "143,41 143,40 142,39", his, and 94194 "142,37 143,38 142,39") | his walk | the step goes on at 0.045 per tick (0.998 in counter 38662); standing on (142, 39)'s point in counter 38663 (trace tick 38664), the walk to (143, 40) at progress 0 in 38664, 0.045 in 38665, standing on (143, 40) from counter 38687 (recorded). Our build stopped him at once on (143, 40)'s point (trace tick 38649): the Weak pair's settlers differed from 38650; with the rule (experiment build) from 38720, every other pair unchanged |
 | T34 | TRN-ROAD-4.2 (on the way to the idle field, the new flag beyond its goal): E-trace-019 (R6, MP_4P_Fight), player 2's road 14770 "52,23 53,23 54,24 54,25 55,26 55,27 56,28" (flags 14166 (52, 23), 14763 (56, 28)), its carrier 14607 walking to its idle field (54, 25), in the step (55, 26) -> (54, 25) at 0.85 when the computer player's flag 14866 on (54, 24) splits the road in counter 1664 (halves "52,23 53,23 54,24" and 14873 "56,28 55,27 55,26 54,25 54,24", his: his step goes to (54, 25)) | his ticks | the step goes on at its rate (trace 1665 .. 1667); standing on (54, 25) in counter 1667; his walk to (55, 26), 14873's idle field, at progress 0 in 1668, advancing from 1669 (recorded). Stopping him on (55, 26), the field he last reached, at once: the Fight game against R6 differs from settlers 1665. With the rule (experiment build, with `ECO-requests-dispatch.md` T39): settlers 1665 -> 1755; every pair of the fidelity set unchanged |
+| T35 | 4.2, the donkey of a split road (Q-1086): E-trace-036 (R3, the Hard game), player 1's road 96147 "132,33 133,34 132,35 131,35 131,36" (flags 92427 (132, 33) and 96143 (131, 36)) with carrier 96153 and donkey 98026, split between counters 57 899 and 58 002 by the computer player's flag 98359 on (132, 35) (halves 98363 "132,33 133,34 132,35" with carrier 96153, and 98366 "131,36 131,35 132,35") | the donkey, the halves, the numbers | the donkey walks home: going home at 58 002 at (132, 35), in the storehouse (130, 33) at counter 58 106; neither half has a donkey; the second half's carrier is 98369; the storehouse sends a new donkey 98394 out at counter 58 109, so at counter 58 114 its door is blocked and the take-out pass makes 7 draws, not 8 (recorded). Giving the donkey to the first half left him standing idle on (133, 34): no donkey came out at 58 109, 8 take-out draws at 58 114, the deer 89942's target draw one later (`ECO-food-mining.md` ECO-FOOD-5.10, Q-1086); numbering the removal as a road with a donkey made the carrier 98367 and the new donkey 98392. With the rule (experiment build): the Hard pair's settlers 58 200 -> 58 400, generator 58 115 -> 58 275; the Fight game against R6 settlers 27 600 -> 27 730; every other pair unchanged |
+| T36 | 4.2, a fetching carrier whose ware no longer goes over his half: E-trace-038 (MP_6P_the_others), player 4's road 25142 "62,24 62,25 63,26 63,27 64,28 64,29 65,30 65,31 65,32" with carrier 25160 walking from his idle field (64, 28) to fetch the plank 25782 at (62, 24) (next flag (65, 32), claimed by him from counter 16 169); the computer player's flag 25951 on (63, 26) splits the road at counter 16 193; he gets the half 25955 "62,24 62,25 63,26", the other half 25958 has no carrier yet | his walk and the plank | he walks on to (63, 26) (fetch state), stands there, and from about 16 206 walks to his idle field (62, 25) (state 28), standing there from 16 230; the plank is unclaimed with next flag (60, 23) at 16 209 (another road) and is fetched by 17565. In T27 the ware's next flag became the new flag, his half's other end, and he fetched it. Fetching on as in T27 here: the game's settlers differ from 16 230; with the rule (experiment build) from 16 690, buildings 17 350 -> 19 640; every other pair unchanged |
 
 ## Evidence
 
@@ -509,6 +529,9 @@ Each evidence id with the kind of evidence it is. Where in the original program 
 | E-sav-005, E-sav-002, E-trace-011 | saves and a memory read of the running game | save `Autosave-2026-10-27-0905.sav` and the two 2026 / 2023 samples (GridStatesMap and the Net System's flags); heap dump 10000 of E-trace-011 | TRN-ROAD-3.1 flags (T26) |
 | E-trace-013 | live read of the running game | recorded 2026-10-27 from 01:18, MP_2P_Storm_Coast, player 1 computer Hard, every tick from counter 0, heap dumps every 500 | the Hard game tick by tick (T27) |
 | E-trace-014 | live read of the running game | the Weak game, every tick 20 000 .. 40 000: `streets.csv`, `wares.csv`, `flags.csv`, `ai_street.csv` counters 25740 .. 25925 | TRN-ROAD-4.2 (T29) |
+| E-trace-036 | live read of the running game and a picture of its memory | the Hard game again to counter 58 120, `streets.csv`, `settlers.csv`, `generator.csv` and memory pictures over counters 58 111 .. 58 243 | TRN-ROAD-4.2 (T35) |
+| E-trn-050 | recording and memory pictures, with a code reading | the animal search's shared visited marks after counter 58 114 (E-trace-036) and the draw count of that counter | TRN-ROAD-4.2 (T35), Q-1086 |
+| E-trn-053, E-trace-038, E-trace-013 | recordings and experiment build | (session 2026-11-27 rec): E-trace-038 `streets` and `wares` (road 25142's split, plank 25782) at counters 16 159 .. 16 269; E-trace-013 `wares` (T27's ware 90652: next flag (137, 52) -> (138, 50) at 4 825) | TRN-ROAD-4.2, T36 |
 
 ## Open questions
 

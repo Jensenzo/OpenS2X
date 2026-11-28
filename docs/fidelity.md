@@ -190,7 +190,7 @@ first-differing-tick = none
 settlers-first-differing-tick = none
 buildings-first-differing-tick = none
 generator-first-differing-tick = 63127
-generator-matching-ticks = 63158
+generator-matching-ticks = 63168
 generator-compared-ticks = 149987
 one-player-first-differing-tick = none
 one-player-generator-first-differing-tick = none
@@ -224,7 +224,7 @@ hard-150000-first-differing-tick = 58200
 hard-150000-settlers-first-differing-tick = 58200
 hard-150000-buildings-first-differing-tick = 58400
 hard-150000-generator-first-differing-tick = 58115
-hard-150000-generator-matching-ticks = 58206
+hard-150000-generator-matching-ticks = 58203
 hard-150000-generator-compared-ticks = 149993
 ```
 
@@ -572,3 +572,4 @@ and the words of the time. R3 and R4 in it are the recordings E-trace-013
 | 2026-11-26 | which ship a call takes | none | none | none | 61931 | 61 977 of 149 987 | SHIP-4.4 'which ship, exactly' (T32, E-ship-025; e9cbaca1): per docking place in order, the ships linked to the harbour and the free unlinked ones, the nearest to that place; a linked ship is only marked called. The Weak harbour (144, 47) calls 94308 lying at its first place instead of sending 96085 (the experiment build: 61 931 too). Hard 150 000: first ticks unchanged, matching 58 239 -> 58 206; the war unchanged. |
 | 2026-11-26 | no material was missing | none | none | none | 63127 | 63 158 of 149 987 | SHIP-5.2a 'no material was missing in this pass' (T33, E-ship-026; 0af743ef): the pass that sets aside an expedition's last materials from the stock stays in Gathering; the Weak harbour (144, 47) calls its ship at 62 031, not 61 930 (the experiment build: 63 127, matching 63 158 too), past the end of the recording's tables (62 000). Hard 150 000 and the war unchanged. |
 | 2026-11-26 | the attacker's own score | none | none | none | 63127 | 63 158 of 149 987 | AI-MIL-5.2 'the second score is the attacker's own' (T37, E-ai-088, Q-1094; 2aab4cec): a target cell's value adds the attacking player's own score in the cell, not the enemy's twice, so the war's player 3 attacks (42, 23) at 24 342. Not a pair of this page: the war settlers 24350 -> 25290, buildings 24890 -> 26590, generator 24343 -> 26132 (the experiment build's numbers). |
+| 2026-11-27 | the ship is called back | none | none | none | 63127 | 63 168 of 149 987 | SHIP-4.4 'which link, exactly' (T34, E-ship-027, Q-1095; e25adbfb): a transfer call's link is the transfer-call link only, so a free ship lying idle at another harbour (the destination it has just unloaded at) is called back; a ship already called here or lying docked here is only marked called. Every first differing tick unchanged, as the investigation's experiment build: the Weak generator 63127 (matching 63 158 -> 63 168, after its first difference), Hard 150 000 58200 / 58400 / 58115 (matching 58 206 -> 58 203); not a pair of this page: the war 25290 / 26590 / 26132. |

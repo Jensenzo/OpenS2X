@@ -63,14 +63,22 @@ fn keep_game_dir(dir: Option<&Path>) {
     }
 }
 
-/// The window's size: the game takes the profile's resolution (SET-4),
-/// the viewer a fixed one.
+/// The window's size: the game takes the profile's resolution (SET-4, at
+/// least 800 x 600; made to fit the monitor once it is known,
+/// `menus::display::apply`), the viewer a fixed one.
 pub(crate) fn window_size(game: bool) -> (u32, u32) {
     if !game {
         return (1280, 900);
     }
-    let (w, h) = crate::menus::settings::Settings::load().resolution();
-    (w.max(800), h.max(600))
+    let saved = crate::menus::settings::Settings::load().resolution();
+    crate::menus::display::windowed_size(saved, &Default::default())
+}
+
+/// SET-5.2: the game opens full screen when the player chose it; the
+/// viewer and a fixed size (`--size`) never do.
+fn window_mode(game: bool, fixed: bool) -> bevy::window::WindowMode {
+    let fullscreen = game && !fixed && crate::menus::settings::Settings::load().fullscreen;
+    crate::menus::display::window_mode(fullscreen)
 }
 
 #[cfg(windows)]
@@ -433,6 +441,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         tick_fraction: 0.0,
         debug: options.debug,
         refusal: None,
+        notice: None,
         open: options.open,
         open_tab: options.open_tab,
         open_global: options.open_global.clone(),
@@ -556,6 +565,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
                     }
                     .into(),
                     resolution: options.size.unwrap_or_else(|| window_size(game)).into(),
+                    mode: window_mode(game, options.size.is_some()),
                     // `--bench`: frames as fast as they come, not held to
                     // the screen's refresh, so the times are the work's
                     // (`--bench-vsync`: held, as a player sees the game).
@@ -581,8 +591,14 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
             .set(bevy::render::RenderPlugin {
                 synchronous_pipeline_compilation: options.compare,
                 ..default()
-            }),
+            })
+            // The instance data built on the CPU (`render::instances`).
+            .set(crate::render::instances::pbr_plugin()),
     );
+    app.add_plugins(crate::render::instances::CpuInstancesPlugin);
+    if !game || options.size.is_some() {
+        app.insert_resource(crate::menus::display::FixedSize);
+    }
     // SND-8.3: the positioned sounds' own source, with their pan.
     crate::audio::output::register(&mut app);
     app.insert_resource(ClearColor(Color::srgb(
@@ -618,6 +634,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
     .add_plugins(crate::render::view3d::View3dPlugin)
     .add_plugins(crate::render::scene_clock::SceneClockPlugin)
     .add_plugins(crate::render::ship_view::ShipViewPlugin)
+    .init_resource::<crate::render::portrait::BuildingPortrait>()
     .add_plugins(crate::ui::UiPlugin)
     .add_message::<crate::extend::MusicSlot>()
     .add_message::<crate::ui::game::StatsMenuOpened>()
@@ -649,6 +666,12 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
         menu
     })
     .init_resource::<crate::films::video::Films>()
+    // SET-5.2: the window follows the Graphics page (the game without a
+    // fixed `--size` only).
+    .add_systems(
+        Update,
+        (crate::menus::display::watch, crate::menus::display::apply).chain(),
+    )
     .init_resource::<crate::menus::campaign::MissionUi>()
     .insert_non_send(crate::menus::campaign::MissionScriptRes::default())
     .insert_state(start_mode)
@@ -664,6 +687,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
             crate::render::view3d::setup_3d,
             crate::render::view3d::setup_mirror,
             crate::render::ship_view::setup,
+            crate::render::portrait::setup,
         ),
     )
     .add_systems(
@@ -679,6 +703,7 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
                 crate::render::view3d::place_camera,
                 crate::render::view3d::place_mirror,
                 crate::render::ship_view::aim,
+                crate::render::portrait::aim,
             )
                 .chain(),
             hover_2d,
@@ -890,7 +915,49 @@ pub fn run_with(game: bool, extensions: crate::extend::Extensions) -> std::proce
                         .before(draw_world),
                     mark::<6>.after(hover_info),
                 ),
-            );
+            )
+            .init_resource::<crate::tools::bench::StepClock>()
+            .add_systems(Update, {
+                use crate::render::view3d as v;
+                use crate::tools::bench::step_span as s;
+                use crate::ui;
+                (
+                    (
+                        s::<0>.after(v::pick_map).before(ui::load_assets),
+                        s::<1>
+                            .after(crate::films::video::play_films)
+                            .before(ui::update_minimap),
+                        s::<2>
+                            .after(ui::update_preview)
+                            .before(ui::render::interact),
+                        s::<3>.after(ui::type_text).before(ui::statistics_pages),
+                        s::<4>
+                            .after(ui::render::sync_panels)
+                            .before(crate::audio::world_events),
+                        s::<5>
+                            .after(crate::audio::world_events)
+                            .before(crate::audio::play),
+                        s::<6>.after(crate::audio::play).before(edit_world),
+                    ),
+                    (
+                        s::<7>.after(advance_world).before(v::update_scene),
+                        s::<8>.after(v::update_scene).before(v::sync_objects),
+                        s::<9>.after(v::sync_objects).before(v::tree_versions),
+                        s::<10>.after(v::sync_movers).before(v::seen_marks),
+                        s::<11>.after(v::seen_marks).before(v::animate_buildings),
+                        s::<12>.after(v::animate_buildings).before(v::sync_wares),
+                        s::<13>
+                            .after(v::sync_wares)
+                            .before(crate::animation::animate3d::animate),
+                        s::<14>
+                            .after(crate::animation::animate3d::animate)
+                            .before(crate::render::models3d::flush_palettes),
+                        s::<15>
+                            .after(crate::render::models3d::flush_palettes)
+                            .before(draw_world),
+                    ),
+                )
+            });
     }
     // The settings a project reads (`docs/extending.md`), kept as the
     // menu's.

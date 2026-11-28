@@ -96,9 +96,10 @@ pub fn message_window<T>(listed: &[T], scroll: usize) -> &[T] {
     &listed[end.saturating_sub(MESSAGE_ROWS)..end]
 }
 
-/// UI-GAME-11.1 (Q-1068): the display name of the geologist's settler type,
-/// the text of its info title (the scripts' `Scholar`).
-pub(crate) const GEOLOGIST_NAME: &str = "dlg_ScholarSettler";
+/// UI-GAME-11.1 (Q-1068, T66): the name a geologist's find carries, the
+/// rules name of his profession good as the scripts set it (Jobs.lua),
+/// translated like any name key (`controls.txt`: "Geologist").
+pub(crate) const GEOLOGIST_NAME: &str = "Scholar";
 
 /// UI-GAME-11.1: a row's text: the translated text, and in brackets the
 /// ship's name for a message naming a ship (UI-GAME-4.5 c, "Ship is
@@ -115,9 +116,9 @@ pub(crate) fn message_text(ctx: &Ctx, m: &s2_sim::Message) -> String {
     if let Some(name) = ship.filter(|n| !n.is_empty()) {
         return format!("{text} ({name})");
     }
-    // UI-GAME-11.1 (Q-1068, E-trace-032 seen): a find of the geologist's
-    // report names his settler type by its display name, its info title
-    // (`dlg_ScholarSettler`, "Iron ore found! (Geologist)"); only the
+    // UI-GAME-11.1 (Q-1068, T66): a find of the geologist's report carries
+    // the name `Scholar`, translated through the name table ("Iron ore
+    // found! (Geologist)"; the name itself without an entry); only the
     // geologist's report posts the five found texts.
     if m.text.starts_with("Found ") {
         return format!("{text} ({})", ctx.texts.name(GEOLOGIST_NAME));
@@ -308,9 +309,17 @@ pub fn minimap(ctx: &Ctx, borders: bool) -> Panel {
 /// can be founded and the six compass buttons around the porthole (f).
 pub fn ship_window(ctx: &Ctx, index: usize) -> Option<Panel> {
     let ship = ctx.world.ships().get(index)?;
-    let size = [362.0, 452.0];
+    // UI-GAME-1.8 addition (T65, E-ui-050): `uiBigDialog` (8, 8,
+    // 376 x 464) drawn 1:1, placed by 1.9 with that size.
+    let size = [SHIP_FRAME.1[2] as f32, SHIP_FRAME.1[3] as f32];
     let mut p = Panel::new(PanelId::Context, context_origin(ctx, size));
-    frame(&mut p, ctx, &ctx.t("!Ship"), size, Action::CloseContext);
+    frame_on(
+        &mut p,
+        ctx,
+        &ctx.t("!Ship"),
+        SHIP_FRAME,
+        Action::CloseContext,
+    );
     // UI-GAME-4.5: the ship seen through the porthole: the view behind
     // the `uiShipMask` mask, 150 x 150 at (113, 61), under the porthole
     // `uiElements5` (0, 40, 200 x 192) at (88, 40), whose glass lets it
@@ -753,9 +762,10 @@ pub fn pause_layer(ctx: &Ctx) -> Panel {
     p
 }
 
-/// UI-GAME-1.4: a refused action's message, in red, for 5 seconds. The
-/// error box's art and place are not in the spec (Q-199 c): a dark box
-/// centred above the bar.
+/// CAM-3.2: a notice for the player ("DEFEAT Player 2 (#1)"), for 5
+/// seconds. How the original shows it is not in the spec: a dark box
+/// centred above the bar is a stand-in. (A refused action shows no text,
+/// UI-GAME-1.4; the tutorial's red text is in its panel, T67.)
 pub fn error(ctx: &Ctx, text: &str) -> Panel {
     let bar = bar_origin(ctx.screen);
     let width = 640.0;

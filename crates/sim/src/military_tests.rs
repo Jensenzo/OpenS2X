@@ -1526,6 +1526,12 @@ fn prom_t13_a_coin_on_its_way_still_counts() {
     let mut served = false;
     for _ in 0..300 {
         world.step();
+        // The coin check's test stops at the first order it finds; it says
+        // what the count says.
+        assert_eq!(
+            world.any_order_filed_for(at),
+            world.orders_filed_for(at) > 0
+        );
         if open(&world) == 0 && world.orders_filed_for(at) > 0 {
             served = true;
             break;
@@ -1536,6 +1542,10 @@ fn prom_t13_a_coin_on_its_way_still_counts() {
     // The next checks (every 33 ticks) order nothing while any is on its way.
     for _ in 0..70 {
         world.step();
+        assert_eq!(
+            world.any_order_filed_for(at),
+            world.orders_filed_for(at) > 0
+        );
         if coins_in(&world, at) > 0 || world.orders_filed_for(at) < filed {
             break;
         }

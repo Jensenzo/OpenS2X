@@ -3192,6 +3192,40 @@ fn t22_the_recheck_tests_the_destinations_network() {
     assert!(world.next_still_valid(id));
 }
 
+// ECO-DIST-1.6, TRN-CARRY-5.1a: the re-check's pass reads the ware networks
+// once (`WareReach`) in place of a cheapest-route search per ware; for every
+// pair of flags it answers as that search does, with no carrier, one and
+// two.
+// spec: ECO-DIST-1.6, TRN-CARRY-5.1a
+#[test]
+fn the_rechecks_networks_answer_as_the_route_search() {
+    let mut world = game(&full_stock());
+    let (x, y, z) = ((13, 9), (16, 9), (13, 13));
+    apply_all(&mut world, vec![flag_cmd(x), flag_cmd(y), flag_cmd(z)]);
+    apply_all(&mut world, vec![road_cmd(HQ_FLAG, x), road_cmd(x, y)]);
+    let flags = [HQ_FLAG, x, y, z, (30, 30)];
+    let check = |world: &World| {
+        let mut reach = crate::transport::WareReach::default();
+        for &a in &flags {
+            for &b in &flags {
+                assert_eq!(
+                    world.ware_reachable(PlayerId(0), a, b, &mut reach),
+                    world.route_cost(PlayerId(0), a, b).is_some(),
+                    "{a:?} to {b:?}"
+                );
+            }
+        }
+    };
+    check(&world);
+    let carried: Vec<usize> = (0..world.roads.len())
+        .filter(|&r| world.roads[r].is_some())
+        .collect();
+    for road in carried {
+        world.spawn_carrier(road);
+        check(&world);
+    }
+}
+
 // TRN-FREE T36 (TRN-FREE-6.4 step 1, off a flag): a settler on a road's
 // inner field counts each warehouse's route from the first flag his road
 // walk reaches plus that first leg. On the field next to the depot's flag

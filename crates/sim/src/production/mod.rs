@@ -406,6 +406,64 @@ impl World {
         })
     }
 
+    /// GFX-ANIM-3.8a: [`World::felling_began`] of every deposit for which it
+    /// is some, in field order, with one pass over the settlers for all of
+    /// them (the view asks it once a tick, the map holding thousands of
+    /// trees and settlers).
+    pub fn fellings(&self) -> Vec<(Point, Tick)> {
+        // Per tree, what `felling_began`'s search finds first: the first
+        // worker at its spot with an answer.
+        let mut at_work: std::collections::BTreeMap<Point, Tick> = Default::default();
+        for s in self.settlers.iter().flatten() {
+            let SettlerJob::Worker {
+                target,
+                work: Work::AtSpot { spot },
+            } = &s.job
+            else {
+                continue;
+            };
+            if at_work.contains_key(spot) {
+                continue;
+            }
+            let Some(kind) = self
+                .deposits
+                .get(spot)
+                .and_then(|d| self.deposit_kinds.get(&d.kind))
+            else {
+                continue;
+            };
+            if kind.blocking || kind.life_time.is_some() {
+                continue;
+            }
+            let production = || {
+                let building = self.building_at(target.at)?;
+                let kind_of = self.building_types.get(&building.building_type)?;
+                (kind_of.cycle == WorkCycle::Gatherer && kind_of.product == kind.good)
+                    .then_some(kind_of.production_ticks)
+            };
+            let began = production().and_then(|p| {
+                let done = p.saturating_sub(s.timer);
+                self.tick.checked_sub(Tick::from(done))
+            });
+            if let Some(began) = began {
+                at_work.insert(*spot, began);
+            }
+        }
+        self.deposits
+            .iter()
+            .filter_map(|(&f, d)| {
+                // A tree being removed is answered from its fall (no
+                // search); one not being removed by its worker.
+                let began = if matches!(d.state, DepositState::Removing { .. }) {
+                    self.felling_began(f)
+                } else {
+                    at_work.get(&f).copied()
+                };
+                Some((f, began?))
+            })
+            .collect()
+    }
+
     /// All deposits by field.
     pub fn deposits(&self) -> impl Iterator<Item = (Point, &Deposit)> {
         self.deposits.iter().map(|(&f, d)| (f, d))

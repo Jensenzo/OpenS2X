@@ -3948,3 +3948,50 @@ fn t29_a_split_ahead_cuts_the_walk_at_the_new_flag() {
     }
     panic!("not put down at F and carried on (lay {lay})");
 }
+
+// TRN-FREE T56 (TRN-FREE-6.3 carrier, Q-046): a carrier standing on a flag
+// that has no road to its own road's flags searches for its walk to its
+// idle field again in every update, does not move and stays on its road;
+// once a ware waits at one of its road's flags it starts a road walk for
+// it (which fails the same way); with its road removed it goes home.
+// spec: TRN-FREE-6.3 (TRN-FREE T56)
+#[test]
+fn t56_a_carrier_cut_off_from_its_road_keeps_it_and_searches() {
+    let (mut world, a, m, b) = two_step_road();
+    let island = (10, 4);
+    assert_eq!(flag(&mut world, island), Ok(()));
+    for _ in 0..200 {
+        world.step();
+    }
+    assert_eq!(world.carriers()[0].task, CarrierTask::Idle);
+    world.carriers[0].walker = Walker::new(island);
+    world.carriers[0].task = CarrierTask::Out { flag: island };
+    for _ in 0..5 {
+        world.step();
+        let c = &world.carriers()[0];
+        assert!(matches!(c.task, CarrierTask::Arrive { .. }), "{:?}", c.task);
+        assert_eq!(c.walker.at, island);
+        assert!(!c.walker.is_walking());
+        assert_eq!(c.road, 0);
+    }
+    drop(&mut world, PLANK, a, b);
+    world.step();
+    let c = &world.carriers()[0];
+    assert_eq!(
+        c.task,
+        CarrierTask::Fetch { ware: 0, flag: a },
+        "a waiting ware sends it walking"
+    );
+    assert_eq!(c.walker.at, island);
+    assert!(!c.walker.is_walking(), "no road walk can start");
+    for _ in 0..3 {
+        world.step();
+        assert_eq!(world.carriers()[0].walker.at, island);
+    }
+    assert_eq!(
+        apply(&mut world, Command::RemoveRoad { player: P0, at: m }),
+        Ok(())
+    );
+    world.step();
+    assert_eq!(world.carriers()[0].task, CarrierTask::Retired);
+}

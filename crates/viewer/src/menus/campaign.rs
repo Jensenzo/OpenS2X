@@ -1018,12 +1018,20 @@ pub fn moves_camera(step: u8) -> bool {
     )
 }
 
+/// UI-GAME-1.4 (T67): how long the tutorial's red text stays.
+pub const ERROR_MS: u64 = 5_000;
+
 /// CAM-5.2: the tutorial's state: one step index and the error shown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tutorial {
     pub lesson: u8,
     pub step: u8,
     pub error: Option<&'static str>,
+    /// UI-GAME-1.4 (T67): an error set since the interface last looked
+    /// (it plays `uiCancel` and starts the 5 s), and when the shown one
+    /// goes (milliseconds of the interface's clock).
+    pub error_fresh: bool,
+    pub error_until: Option<u64>,
     /// CAM-5.3b: the field a scripted camera move is to go to, until the
     /// view takes it.
     pub camera_move: Option<Point>,
@@ -1035,8 +1043,33 @@ impl Tutorial {
             lesson,
             step: lesson_start(lesson),
             error: None,
+            error_fresh: false,
+            error_until: None,
             camera_move: None,
         }
+    }
+
+    /// UI-GAME-1.4 (T67): show the tutorial text `key` in red.
+    fn refuse(&mut self, key: &'static str) {
+        self.error = Some(key);
+        self.error_fresh = true;
+    }
+
+    /// UI-GAME-1.4 (T67, E-ui-052): at the interface's clock `now_ms`: a
+    /// newly set error starts its 5.0 s (true: play `uiCancel`); when they
+    /// run out the text is cleared.
+    pub fn error_timer(&mut self, now_ms: u64) -> bool {
+        if std::mem::take(&mut self.error_fresh) {
+            self.error_until = Some(now_ms + ERROR_MS);
+            return true;
+        }
+        if self.error.is_none() {
+            self.error_until = None;
+        } else if self.error_until.is_some_and(|until| now_ms >= until) {
+            self.error = None;
+            self.error_until = None;
+        }
+        false
     }
 
     /// CAM-5.2: the next step; CAM-5.3b: its start may move the camera.
@@ -1064,11 +1097,11 @@ impl Tutorial {
                 FieldClick::Allow
             }
             Some(_) => {
-                self.error = Some("T01_ERROR_SelectMarkedPosition");
+                self.refuse("T01_ERROR_SelectMarkedPosition");
                 FieldClick::Refuse
             }
             None => {
-                self.error = Some("T01_ERROR_SelectMarkedButton");
+                self.refuse("T01_ERROR_SelectMarkedButton");
                 FieldClick::Refuse
             }
         }
@@ -1091,7 +1124,7 @@ impl Tutorial {
             // menu (the build menu's flag cell) does not advance 0x32.
             Some(true) if self.step == PLACE_FLAG_STEP => {}
             Some(true) => self.advance(),
-            Some(false) => self.error = Some(wrong_click_error(self.step)),
+            Some(false) => self.refuse(wrong_click_error(self.step)),
             None => {}
         }
     }
@@ -1106,7 +1139,7 @@ impl Tutorial {
         }
         match expected_cell(self.step) {
             Some(wanted) if wanted == cell => self.advance(),
-            Some(_) => self.error = Some("T01_ERROR_SelectMarkedButton"),
+            Some(_) => self.refuse("T01_ERROR_SelectMarkedButton"),
             None => self.action(action),
         }
     }
@@ -1126,7 +1159,7 @@ impl Tutorial {
             self.advance();
             true
         } else {
-            self.error = Some("T01_ERROR_SelectMarkedButton");
+            self.refuse("T01_ERROR_SelectMarkedButton");
             false
         }
     }

@@ -143,6 +143,8 @@ pub struct UiAssets {
     pub films: HashMap<u8, Handle<Image>>,
     /// UI-GAME-4.5: the ship view through its mask (`ship_view`).
     pub ship_view: Option<Handle<crate::render::ship_view::ShipViewMaterial>>,
+    /// UI-GAME-4.3a (T64): the building windows' portrait (`portrait`).
+    pub building_view: Option<Handle<Image>>,
 }
 
 impl UiAssets {
@@ -399,6 +401,7 @@ fn node_size(assets: &mut UiAssets, images: &mut Assets<Image>, w: &Widget) -> O
                 super::widgets::Picture::Minimap => assets.minimap.is_some(),
                 super::widgets::Picture::MapPreview => assets.preview.is_some(),
                 super::widgets::Picture::ShipView => false,
+                super::widgets::Picture::BuildingView => assets.building_view.is_some(),
             };
             made.then_some([*size, *size])
         }
@@ -915,6 +918,7 @@ fn spawn_panel(
                     super::widgets::Picture::Minimap => assets.minimap.clone(),
                     super::widgets::Picture::MapPreview => assets.preview.clone().map(|p| p.1),
                     super::widgets::Picture::ShipView => None,
+                    super::widgets::Picture::BuildingView => assets.building_view.clone(),
                 };
                 let Some(handle) = handle else {
                     continue;

@@ -228,8 +228,11 @@ impl World {
             })
             .map(|(id, _)| id)
             .collect();
+        // The pass changes no road and no carrier (`route_ware` sets the
+        // ware's next flag only), so the ware networks hold through it.
+        let mut reach = crate::transport::WareReach::default();
         for id in ids {
-            let valid = self.next_still_valid(id);
+            let valid = self.next_still_valid_in(id, &mut reach);
             let w = self.wares[id].as_mut().expect("live ware");
             // The test comes before the rise (9d69dd5); computing the next
             // flag starts the counter at 0 (`route_ware`).

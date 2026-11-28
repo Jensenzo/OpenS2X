@@ -66,7 +66,7 @@ the game's behaviour, with no code of the original in it.
 
 ## Status
 
-**Version 0.15.0**. Free games, the campaign and
+**Version 0.15.1**. Free games, the campaign and
 the tutorial are playable, through the original's menus. The last measured differences from the
 original are being closed; see
 [How close it is](#how-close-it-is-to-the-original).
@@ -145,7 +145,7 @@ with them. The random generator is the strictest
 measure: it stays equal only while every part of the game has drawn from it
 exactly as often as the original. After the first difference the two games
 drift apart; closing those first differences is the remaining work. These
-are version 0.15.0's numbers.
+are version 0.15.1's numbers.
 
 **The picture.** The same scenes are shot in both programs from the same
 camera at the same tick: 12 pairs at 2560 x 1440, by day and at night. The

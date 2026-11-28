@@ -675,7 +675,10 @@ impl World {
     /// places' seas; per place the ships of `owner` on its sea that are
     /// linked to this harbour (whatever they do) or free and linked to no
     /// harbour; the nearest to that place (the first in the ship list on
-    /// ties); the first place with a candidate decides.
+    /// ties); the first place with a candidate decides. SHIP-4.4 'which
+    /// link, exactly' (T34): "linked" is the transfer-call link only; where
+    /// the ship lies docked does not matter, so a free ship lying idle at
+    /// another harbour is a candidate, and a sailing ship is never free.
     fn transfer_ship(&self, h: usize, owner: PlayerId, destination: Point) -> Option<usize> {
         let at = self.harbours[h].at;
         let seas: Vec<u32> = self
@@ -693,8 +696,8 @@ impl World {
                 if s.owner != owner || self.region_of(s.vessel.walker.at) != sea {
                     continue;
                 }
-                let linked = s.finished() && s.vessel.harbour == Some(at);
-                let free = s.vessel.harbour.is_none() && self.ship_is_free(i);
+                let linked = s.finished() && s.vessel.called == Some(at);
+                let free = self.ship_is_free(i);
                 if !linked && !free {
                     continue;
                 }
@@ -1349,6 +1352,11 @@ impl World {
             .filter(|t| t.good == good)
             .map(|t| self.destination_need(t.destination, good))
             .sum();
+        // min(A, A + B - 0) is A and min(0, ...) is 0 whatever B is: the
+        // search over every ware for B only when it can change the answer.
+        if owed == 0 || stock == 0 {
+            return stock;
+        }
         let coming = self.wares_inbound(at, good);
         stock.min((stock + coming).saturating_sub(owed))
     }
@@ -1381,11 +1389,16 @@ impl World {
             let ready = stock > 0;
             if self.harbours[h].called.is_none() && ready {
                 if let Some(ship) = self.transfer_ship(h, owner, t.destination) {
-                    if self.ships[ship].vessel.harbour == Some(at) {
-                        // SHIP-4.4 'which ship' (T32): a ship linked here is
+                    if self.ships[ship].vessel.called == Some(at)
+                        || self.docked_at(ship) == Some(at)
+                    {
+                        // SHIP-4.4 'which ship' (T32), 'which link' (T34): a
+                        // ship already called here, or lying docked here, is
                         // only marked called; it keeps lying or sailing here.
                         self.ships[ship].vessel.called = Some(at);
                     } else {
+                        // A free ship lying elsewhere (at another harbour
+                        // too, T34) is sent off.
                         self.call_ship(ship, at);
                     }
                     self.harbours[h].called = Some(ship);

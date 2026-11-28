@@ -299,12 +299,9 @@ pub fn world_events(
     // SND-2.2, GFX-ANIM-3.8a: the tree fall sounds when the tree starts to
     // fall (its woodcutter's work clip at 3.0 s).
     let felling: HashSet<Point> = world
-        .deposits()
-        .filter(|&(f, _)| {
-            world
-                .felling_began(f)
-                .is_some_and(|b| world.tick() >= crate::world::scene3d::fall_start(b))
-        })
+        .fellings()
+        .into_iter()
+        .filter(|&(_, b)| world.tick() >= crate::world::scene3d::fall_start(b))
         .map(|(f, _)| f)
         .collect();
     let buildings: HashSet<(Point, u32)> = world

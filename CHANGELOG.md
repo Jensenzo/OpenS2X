@@ -8,6 +8,77 @@ the working name s2-reborn. The public repository starts with its first
 public release; the sections before it describe releases made in the
 maintainer's working repository, which have no tag or download there.
 
+## OpenS2X 0.15.1 (2026-11-27)
+
+0.15.0 was made on 26 November and never published: its 30-minute test game
+met the PC's Windows licence check twice, a pause that is Windows', not the
+game's. 0.15.1 is 0.15.0 and everything made after it; what 0.15.0 brings is
+listed under it below, so a reader of 0.14.1 finds both here.
+
+### What is new
+
+- **Full screen and window sizes:** the Graphics settings page now switches
+  the game between full screen (a borderless window over the whole monitor;
+  the monitor's own resolution is never changed) and a window of one of the
+  monitor's sizes, at once; the choice is kept for the next start.
+- **A harbour's ship is called again after it has delivered:** a single ship
+  now keeps serving the transfers between two harbours, one load after
+  another, instead of lying at the destination after unloading while the
+  next goods wait.
+- **Building windows show the building where it stands:** the portrait in a
+  production, site or military window is now a small view of the world at
+  the building (its ground, roads, neighbours and settlers, as they were
+  when the window opened), not the type's icon.
+- **The build menu, the attack menu and the ship window** have the
+  original's own panels and sizes (the build menu on the settings' tabbed
+  panel, 376 x 464; the attack menu 480 x 224; the ship window 376 x 464).
+- **A geologist's find names him as the game's text table does:** "Iron ore
+  found! (Geologist)", also in other languages.
+- **The tutorial's red hint** now goes away after 5 seconds with the refusal
+  sound, and a refused command in a free game or mission no longer shows a
+  dark bar with red text: as in the original, only the refusal sound plays.
+- **A carrier cut off from his road** goes for a ware waiting at its flags as
+  soon as a way exists, instead of first walking to the middle of his road.
+- **Waterways joined only by other waterways get their boat carrier:** a
+  boat carrier now comes over roads and waterways alike, so a chain of
+  waterways (over a rock in a lake, for example) carries goods.
+- **Smoother on a big map:** drawing a frame costs about half as much as
+  before (on the benchmark's late game the median frame takes 5.0 ms instead
+  of 9.4), so a busy late game has more room before it drops below the
+  display's rate. The pictures are the same.
+- **A short pause now and then remains, and it is Windows':** about once an
+  hour, when Windows checks the PC's app licences (every 15 minutes, a pause
+  at about one check in four), the game can stop for up to a few tenths of a
+  second. With our drawing made lighter it still comes, only in another part
+  of the frame, so it is not the game's work; we have no way to take it away.
+- **Long games stay lighter:** after about two hours of a four-player game a
+  game tick takes about 40 % less time and a frame about a fifth less (median
+  24 ms instead of 30 ms on this PC); the game plays exactly as before.
+
+### Equal to the original, tick for tick
+
+Unchanged since 0.15.0 (`docs/fidelity.md`): the Weak computer player's
+random numbers to tick 63,126 (105 minutes), the four-player war's generator
+26,131, settlers 25,289 and buildings 26,589 (42 minutes), Weak to 40,000,
+one player to 30,000, Strong generator 58,114. The game's faster tick and
+frame play exactly the same game, checked tick by tick.
+
+### For developers
+
+- `crates/viewer/src/render/instances.rs`: Bevy's GPU preprocessing is off in
+  every render phase. Bevy's switch for it alone drew nearly nothing: the phases
+  follow the device's support level, which the plugin now sets to none
+  (`docs/test-coverage.md`, "The long play").
+- `scripts/long-play.sh --check`: a frame over 100 ms that begins 0.2 to
+  1.0 s after a start of Windows' licence service (ClipSVC) is listed as the
+  PC's licence check and no longer fails the run; a run whose licence events
+  could not be read fails (`scripts/licence-events.ps1`, `--self-test`).
+
+### For projects built on OpenS2X: breaking changes
+
+- None in the public API. The snapshot format is 100, as in 0.15.0 (99 in
+  0.14.1): saves of 0.15.0 and of this version load in each other.
+
 ## OpenS2X 0.15.0 (2026-11-26)
 
 What you notice in the game first, then the numbers against the original, then
@@ -53,9 +124,7 @@ what is for projects built on OpenS2X.
   more when a ware on its way is only being stored there, and no longer asks for
   a second builder (or soldier, or any settler) while the first is still
   walking. For a sea transport a harbour calls the ship already lying at it or
-  sailing to it, or else the free ship nearest its first docking place. A ship
-  lying at another harbour after unloading is not called away from there (an
-  open question, Q-1095: the original may allow it). An expedition calls its
+  sailing to it, or else the free ship nearest its first docking place. An expedition calls its
   ship one round (about 10 seconds) after its last materials are set aside; when
   its builder comes from the harbour's stock the harbour waits one round more
   and calls off a builder already asked for, so fewer spare builders walk to it.

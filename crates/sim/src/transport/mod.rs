@@ -84,6 +84,9 @@ pub(crate) enum Search {
     /// carry walk (TRN-CARRY-3.5a, T58): as `Walk`, but the road the walker
     /// is assigned to (this id) costs 1.
     OwnWalk(usize),
+    /// A boat carrier's walk (TRN-CARRY-5.1, T63, Q-198 a): as `OwnWalk`
+    /// over every road and waterway, the all-roads network.
+    BoatWalk(usize),
     /// A settler request's warehouse (ECO-REQ-3.2): every road, each its
     /// length L (TRN-CARRY-5.3: the 3L and 4L only in the ware network;
     /// ECO-REQ T18).
@@ -100,7 +103,7 @@ impl Search {
     fn uses(self, road: &Road) -> bool {
         match self {
             Search::Walk | Search::OwnWalk(_) => !road.water,
-            Search::Settler => true,
+            Search::Settler | Search::BoatWalk(_) => true,
             Search::Ware | Search::WareList => road.carrier.is_some() || road.donkey.is_some(),
         }
     }
@@ -305,6 +308,14 @@ struct FlagRoads {
     /// road's id.
     roads: Vec<Vec<(usize, usize)>>,
 }
+
+/// Each player's ware networks for [`World::next_still_valid_in`]: the
+/// player's flag roads and, per flag, the first flag of its network. Made
+/// when first asked.
+#[derive(Default)]
+pub(crate) struct WareReach(
+    [Option<(Arc<FlagRoads>, Vec<u32>)>; crate::requests::PLAYERS as usize],
+);
 
 impl FlagRoads {
     fn index(&self, flag: Point) -> Option<usize> {
@@ -513,8 +524,8 @@ impl World {
     /// length L.
     fn search_cost(&self, search: Search, road: usize, toward: Point) -> u32 {
         match search {
-            Search::OwnWalk(own) if own == road => 1,
-            Search::Walk | Search::OwnWalk(_) | Search::Settler => {
+            Search::OwnWalk(own) | Search::BoatWalk(own) if own == road => 1,
+            Search::Walk | Search::OwnWalk(_) | Search::BoatWalk(_) | Search::Settler => {
                 self.roads[road].as_ref().expect("live road").length
             }
             Search::WareList => self.road_cost_with(road, toward, false),
@@ -598,11 +609,15 @@ impl World {
         let mut best: Vec<Option<RouteStep>> = vec![None; graph.flags.len()];
         // Flag indices order as their fields, so the queue's ties fall as
         // they would on the fields.
+        // The entries in u32 (indices and road ids fit, the start's road
+        // u32::MAX as usize::MAX was: above every id), half the bytes the
+        // heap moves; the order is the same.
         let mut queue = BinaryHeap::new();
-        queue.push(Reverse((0u32, origin, origin, usize::MAX)));
+        queue.push(Reverse((0u32, origin as u32, origin as u32, u32::MAX)));
         // The first flag after the start and the road's id last: ties as
         // before.
         while let Some(Reverse((cost, at, first, _road))) = queue.pop() {
+            let (at, first) = (at as usize, first as usize);
             if best[at].is_some() {
                 continue;
             }
@@ -620,7 +635,7 @@ impl World {
                 }
                 let step = self.search_cost(search, id, graph.flags[next]);
                 let first = if at == origin { next } else { first };
-                queue.push(Reverse((cost + step, next, first, id)));
+                queue.push(Reverse((cost + step, next as u32, first as u32, id as u32)));
             }
         }
         Routes {
@@ -789,6 +804,17 @@ impl World {
     /// busy roads, so by road length (TRN-CARRY-5.2).
     pub(crate) fn road_walk(&self, player: PlayerId, from: Point, to: Point) -> Option<Vec<Point>> {
         self.road_walk_by(player, Search::Walk, from, to)
+    }
+
+    /// TRN-CARRY-5.1 (T63, Q-198 a): a boat carrier's walk, in the
+    /// all-roads network: road lengths over every road and waterway.
+    pub(crate) fn road_walk_all(
+        &self,
+        player: PlayerId,
+        from: Point,
+        to: Point,
+    ) -> Option<Vec<Point>> {
+        self.road_walk_by(player, Search::Settler, from, to)
     }
 
     /// [`World::road_walk`] by the search `search` (a walk's: `Walk`, or
@@ -1124,6 +1150,19 @@ impl World {
         }
     }
 
+    /// TRN-FREE-6.3 carrier (T56, Q-046): no road walk to its idle field
+    /// can start from where it stands, so its idle step ends at once and in
+    /// the same update its job looks at its road as from its idle field: a
+    /// ware waiting at one of its flags sends it on a road walk there (which
+    /// may fail the same way, and is ordered again in every update, as the
+    /// fetch's walk); with none it keeps the idle step, searched again next
+    /// update. (Its road gone, it goes home: the road's removal.)
+    fn cut_off_carrier_looks(&mut self, carrier: usize, tick: Tick) {
+        if let Some((ware, from)) = self.choose_work(carrier) {
+            self.start_fetch(carrier, ware, from, tick);
+        }
+    }
+
     /// Walk a carrier along its road to `to` from the field it last reached;
     /// a step in progress is dropped (TRN-CARRY-2.2, TRN-FREE-4.3).
     /// TRN-CARRY-1.4, ECO-WORK-3.8d (T24): the fields from `at` over the
@@ -1143,7 +1182,7 @@ impl World {
         if let Some(on) = self.road_at(at) {
             let (first, other) = (on.path[0], *on.path.last()?);
             let goal = road.path[0];
-            let search = Search::OwnWalk(own);
+            let search = self.own_walk(own);
             let next = (first != goal)
                 .then(|| {
                     let steps = self.cheapest(road.owner, search, first, Some(goal));
@@ -1180,10 +1219,28 @@ impl World {
         to: Point,
     ) -> Option<Vec<Point>> {
         if self.flag_at(to).is_some() {
+            if matches!(self.own_walk(own), Search::BoatWalk(_)) {
+                return self.road_walk_all(player, at, to);
+            }
             return self.road_walk(player, at, to);
         }
         let path = &self.road_at(to)?.path;
         self.road_walk_onto(player, own, at, path, to)
+    }
+
+    /// The walk search of the carrier of road `own`: `OwnWalk`, or for a
+    /// waterway's boat carrier `BoatWalk` (TRN-CARRY-5.1, T63).
+    fn own_walk(&self, own: usize) -> Search {
+        if self
+            .roads
+            .get(own)
+            .and_then(Option::as_ref)
+            .is_some_and(|r| r.water)
+        {
+            Search::BoatWalk(own)
+        } else {
+            Search::OwnWalk(own)
+        }
     }
 
     /// TRN-FREE-6.1 (Q-378, T42): a road walk from the flag `at` to the
@@ -1200,7 +1257,7 @@ impl World {
         to: Point,
     ) -> Option<Vec<Point>> {
         let (first, other) = (path[0], *path.last()?);
-        let search = Search::OwnWalk(own);
+        let search = self.own_walk(own);
         let mut legs = if at == first {
             Vec::new()
         } else {
@@ -1266,7 +1323,7 @@ impl World {
         // T58: the walk's search counts his own road as 1.
         let walk = next
             .filter(|&n| n != far)
-            .and_then(|n| self.road_walk_by(owner, Search::OwnWalk(own), at, n));
+            .and_then(|n| self.road_walk_by(owner, self.own_walk(own), at, n));
         let to = match walk {
             Some(walk) => {
                 let flags = &self.flags;
@@ -1436,15 +1493,17 @@ impl World {
             standing && !self.carriers[carrier].walker.is_walking() && !road_path.contains(&at);
         let empty_handed = self.carriers[carrier].ware.is_none();
         if off_road && empty_handed && matches!(task, CarrierTask::Idle | CarrierTask::Out { .. }) {
-            if let Some(walk) = self.walk_to_idle_field(carrier, at) {
-                let walker = &mut self.carriers[carrier].walker;
-                walker.walk(walk);
-                walker.road_to = Some(idle);
-            }
             self.carriers[carrier].task = CarrierTask::Arrive {
                 flag: idle,
                 stand: false,
             };
+            if let Some(walk) = self.walk_to_idle_field(carrier, at) {
+                let walker = &mut self.carriers[carrier].walker;
+                walker.walk(walk);
+                walker.road_to = Some(idle);
+            } else {
+                self.cut_off_carrier_looks(carrier, tick);
+            }
             return;
         }
         match task {
@@ -1500,6 +1559,8 @@ impl World {
                             flag: idle,
                             stand: false,
                         };
+                    } else {
+                        self.cut_off_carrier_looks(carrier, tick);
                     }
                 }
             }
@@ -2135,7 +2196,7 @@ impl World {
         to: Point,
     ) -> Option<Vec<Point>> {
         let c = &self.carriers[carrier];
-        let search = Search::OwnWalk(c.road);
+        let search = self.own_walk(c.road);
         let at = c.walker.at;
         if self.flag_at(at).is_some() {
             return self.road_walk_by(player, search, at, to);
@@ -2347,7 +2408,15 @@ impl World {
     /// flag (TRN-CARRY-5.1a; T22: not of the ware's own flag), a road joins
     /// the ware's flag and the next flag, and the destination still accepts
     /// the good (ECO-DIST-1.2).
+    #[cfg(test)]
     pub(crate) fn next_still_valid(&self, ware: usize) -> bool {
+        self.next_still_valid_in(ware, &mut WareReach::default())
+    }
+
+    /// [`World::next_still_valid`] with the ware networks of `reach`, which
+    /// stay right while no road and no road's carrier or donkey changes
+    /// (ECO-DIST-1.6's pass changes only its wares' routes).
+    pub(crate) fn next_still_valid_in(&self, ware: usize, reach: &mut WareReach) -> bool {
         let Some(w) = self.wares[ware].as_ref() else {
             return false;
         };
@@ -2364,8 +2433,48 @@ impl World {
         let destination = w.destination.unwrap_or(next);
         self.flag_at(next).is_some()
             && joined
-            && self.route_cost(player, next, destination).is_some()
+            && self.ware_reachable(player, next, destination, reach)
             && self.ware_accepted(w)
+    }
+
+    /// Whether [`World::route_cost`] from `from` to `to` is some: the two
+    /// flags in one ware network (TRN-CARRY-5.1a), whatever the costs are.
+    pub(crate) fn ware_reachable(
+        &self,
+        player: PlayerId,
+        from: Point,
+        to: Point,
+        reach: &mut WareReach,
+    ) -> bool {
+        if from == to {
+            return true;
+        }
+        let (graph, part) = reach.0[player.0 as usize].get_or_insert_with(|| {
+            let graph = self.flag_roads(player);
+            let mut part = vec![u32::MAX; graph.flags.len()];
+            let mut open = Vec::new();
+            for start in 0..graph.flags.len() {
+                if part[start] != u32::MAX {
+                    continue;
+                }
+                part[start] = start as u32;
+                open.push(start);
+                while let Some(at) = open.pop() {
+                    for &(next, id) in &graph.roads[at] {
+                        let r = self.roads[id].as_ref().expect("live road");
+                        if part[next] == u32::MAX && Search::Ware.uses(r) {
+                            part[next] = start as u32;
+                            open.push(next);
+                        }
+                    }
+                }
+            }
+            (graph, part)
+        });
+        match (graph.index(from), graph.index(to)) {
+            (Some(a), Some(b)) => part[a] == part[b],
+            _ => false,
+        }
     }
 
     /// ECO-DIST-1.2: the ware's destination building still accepts its good

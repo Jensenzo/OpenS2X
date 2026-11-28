@@ -154,9 +154,10 @@ refresh, `--free-game MP_4P_Close_Frontier --ai 0=3`. It starts from tick
 0 with the view on, so it sees what grows with a game played in view, which a
 benchmark that plays ahead headless (`--run`) or loads a save does not. It
 fails on a broken invariant, a minute below 29.5 ticks per second, a frame
-p99 over 25 ms, any frame over 100 ms, a bone-palette buffer over 12.5 MB
-at the end, or a palette slot no owner holds; `--check DIR` judges a run's
-report and log. It holds the display on for the run and wakes it first by a
+p99 over 25 ms, any frame over 100 ms that is not the PC's licence check
+(below), a bone-palette buffer over 12.5 MB at the end, a palette slot no
+owner holds, or Windows' licence events not read; `--check DIR` judges a
+run's report and log, `--self-test` the check itself on made-up runs (CI). It holds the display on for the run and wakes it first by a
 pointer move of 0 (`scripts/display-hold.ps1`, as the play harness's keeper):
 with the display off after the power plan's idle timeout every present waits
 about 264 ms (2026-11-20, a run after a morning nobody used the PC: 6,807
@@ -241,14 +242,57 @@ frames were at most 36 ms. So our render thread waits inside many short
 graphics calls, it does not fault, spin or lose its working set. GPU
 preprocessing also makes and drops graphics objects every frame in ordinary
 frames: the shadow views' instance writer alone 1,100..1,900 buffer writes
-(each a staging buffer) and 20..430 new buffers by 25 minutes. Bevy's switch
-to the CPU path (`PbrPlugin::use_gpu_instance_buffer_builder: false`) is not
-a way out as things are: with it the terrain and nearly every object are not
-drawn (15 golden scenes, no error in the log). `pc-load.ps1` also records our working
+(each a staging buffer) and 20..430 new buffers by 25 minutes; later W lines
+counted about 1,750 bind groups created and dropped a frame in
+`prepare_preprocess_bind_groups` and 2,300 buffer writes in the shadow
+writer. Bevy keeps four buffers and two bind groups per batch set (pipeline,
+material bind group, mesh slab) per view and phase and renews them every
+frame, and with a material of its own for nearly every object nearly every
+object is a batch set of its own.
+
+Since 2026-11-26 the viewer builds the instance data on the CPU
+(`crates/viewer/src/render/instances.rs`): one buffer written once a frame,
+the material bind groups kept, no preprocessing bind groups. Bevy's switch
+for it (`PbrPlugin::use_gpu_instance_buffer_builder: false`) alone drew
+nearly nothing (2026-11-24, 15 golden scenes, no error in the log): the
+render phases take their mode from the device's GPU-preprocessing support,
+not from the switch, so every mesh went into multi-draw bins the CPU batcher
+never reads. `CpuInstancesPlugin` therefore also sets that support to none
+in the render world at its start. The pictures are the same, and the render
+world's prepare fell from a median of 5.2 ms to 1.5 in a long play. The
+licence poll's stall stayed: in 2.5 hours on the CPU path (ten polls) it
+came at three, 55, 125 and 156 ms, in the bind groups (45 ms), in one game
+tick of the main world (101 ms, CPU work, no graphics call) and in the
+frame's submit (130 ms). The many graphics calls only decided where the wait
+showed; whatever runs at that moment is held. `pc-load.ps1` also records our working
 set and the machine's page reads (hard faults) and transition faults; no
 counter gives a process's own hard faults without elevation. `--check`
 prints, beside each frame over 100 ms, the slowest step of each render frame
 near it and the probe window's frames in the 3 s around it.
+
+**The PC's licence check** (since 2026-11-26). A frame over 100 ms that
+begins 0.2 to 1.0 s after a start of ClipSVC in the run's Windows events is
+the PC's licence check: `--check` lists it with its slowest part (and the
+render frame's slowest step) and its time after the service's start, and it
+does not fail the run. A frame over 100 ms that begins at most 1.0 s after
+the end of such a frame belongs to it. A frame's beginning is the run's 0 s
+(`T`) plus its logged time (taken at its end) minus its length. Every other
+frame over 100 ms fails the run as before (one per change of the display's
+power state, at most 500 ms, aside), and so does a run whose events could not
+be read: `scripts/licence-events.ps1` writes `read N` first, and without that
+line (or, in a run's files from before, a start listed) no frame can be told.
+Why: every 30-minute run from 23 to 26 November that failed on a slow frame
+failed on these only. The release run of 26 November had one frame of 129.5 ms and two of 152.9 and 392.8 ms,
+beginning 0.58, 0.23 and 0.39 s after the service's start, while invariants,
+pace, p99 and palette were in their limits; and with our graphics calls cut
+by the CPU instance path (the measurements of 24 to 26 November) the wait moved
+into a game tick, into the frame's submit, and once into a separate process,
+so it is Windows' own and no change of ours takes it away. The window is the
+measured one: the frames of those runs began 0.23 to 0.69 s after a start. A
+150 s trial of 24 November had two such frames 1.08 and 1.21 s after one, at
+its 22nd second; the rule leaves those failing (not a release's run; the
+window stays as measured on the 30-minute runs). The limits for p99, the
+lowest minute, the invariants and the palette stay as they are.
 
 ## Lessons 2 to 4
 

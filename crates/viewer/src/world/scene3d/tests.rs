@@ -150,6 +150,58 @@ fn evade_decays_per_tick() {
     assert!((gone[0].offset - 0.7).abs() < 1e-5);
 }
 
+// GFX-ANIM-4.3: a late game's crowd (thousands of settlers, many close
+// together, walking and standing, leaning either way) gets the very same
+// offsets from the search by neighbourhood as from the test of every pair:
+// to the last bit, each settler's contributions added in the order of its
+// partners. A position that is not a number takes every pair.
+// spec: GFX-ANIM-4.3
+#[test]
+fn evade_by_neighbourhood_is_every_pairs_to_the_bit() {
+    let mut seed = 0x2545_f491_4f6c_dd1du64;
+    let mut next = || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed >> 40) as f32 / (1u64 << 24) as f32
+    };
+    for (count, side) in [(3, 5.0), (200, 40.0), (3000, 300.0), (4000, 120.0)] {
+        let crowd: Vec<Evader> = (0..count)
+            .map(|i| Evader {
+                // Some on one spot, some on cell borders (whole numbers).
+                at: if i % 17 == 0 {
+                    [(i % 7) as f32 * 2.4, 2.4]
+                } else {
+                    [next() * side - side / 2.0, next() * side]
+                },
+                heading: next() * 6.3,
+                moving: i % 3 != 0,
+                offset: next() - 0.5,
+            })
+            .collect();
+        for (start, radius_scale, scale, dt) in [(2.0, 0.5, 1.2, 0.1), (1.0, 1.0, 2.0, 0.0)] {
+            let fast = evade(&crowd, start, radius_scale, scale, dt);
+            let every = evade_every_pair(&crowd, start, radius_scale, scale, dt);
+            let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+            assert_eq!(bits(&fast), bits(&every), "{count} settlers");
+        }
+    }
+    let mut odd: Vec<Evader> = (0..100)
+        .map(|i| Evader {
+            at: [i as f32 * 0.5, 0.0],
+            heading: 0.0,
+            moving: true,
+            offset: 0.0,
+        })
+        .collect();
+    odd[50].at[0] = f32::NAN;
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    assert_eq!(
+        bits(&evade(&odd, 2.0, 0.5, 1.2, 0.1)),
+        bits(&evade_every_pair(&odd, 2.0, 0.5, 1.2, 0.1))
+    );
+}
+
 // GFX-OBJ-1.4a: a road removes the doodads on its fields whose type deletes
 // by street, for good: they do not come back when the road goes. A sign type
 // (the switch off) stays on the road; a flag removes every doodad of its

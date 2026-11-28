@@ -231,15 +231,15 @@ pub fn build_menu(ctx: &Ctx, field: Point, tab: u8) -> Panel {
         tabs.first().copied().unwrap_or(0)
     };
     let listed = build_page(ctx.catalog, class, tab);
-    // The big panel at its full size, as the photo build-menu-flag.jpg
-    // shows it (UI-GAME-1.8; room for five rows of four).
-    let size = BIG_DIALOG;
+    // UI-GAME-1.8 addition (T65, E-ui-050): its own frame, `uiDepot` (8, 8,
+    // 376 x 464) drawn 1:1, placed by 1.9 with that size.
+    let size = [BUILD_MENU_FRAME.1[2] as f32, BUILD_MENU_FRAME.1[3] as f32];
     let mut p = Panel::new(PanelId::Context, context_origin(ctx, size));
-    frame(
+    frame_on(
         &mut p,
         ctx,
         &ctx.t("!Build Building or Flag"),
-        size,
+        BUILD_MENU_FRAME,
         Action::CloseContext,
     );
     let tips = [

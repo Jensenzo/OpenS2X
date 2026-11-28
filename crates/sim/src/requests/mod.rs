@@ -374,14 +374,30 @@ impl World {
         destination: Point,
         search: Search,
     ) -> Option<(Point, u32)> {
+        self.nearest_warehouse_by(player, candidates, destination, search, true)
+    }
+
+    /// [`World::nearest_warehouse`]; `over_land`: the settler walks land
+    /// roads only. TRN-CARRY-5.1 (T63, Q-198 a): a boat carrier is
+    /// requested from, and walks in, the all-roads network, so for him
+    /// there is no land test.
+    pub(crate) fn nearest_warehouse_by(
+        &self,
+        player: PlayerId,
+        candidates: impl IntoIterator<Item = Point>,
+        destination: Point,
+        search: Search,
+        over_land: bool,
+    ) -> Option<(Point, u32)> {
         let mut best: Option<(Point, u32)> = None;
         // TRN-FREE-6.1: a settler walks land roads only, so with waterways
         // in the network a warehouse must also be reachable over land.
-        let waterways = self
-            .roads
-            .iter()
-            .flatten()
-            .any(|r| r.owner == player && r.water);
+        let waterways = over_land
+            && self
+                .roads
+                .iter()
+                .flatten()
+                .any(|r| r.owner == player && r.water);
         let costs = self.route_costs_to(player, destination, search);
         for at in candidates {
             let Some(cost) = costs.from(self.flag_of(at)) else {
@@ -869,8 +885,10 @@ impl World {
             .get(&profession)
             .map(|g| g.costs.clone())
             .unwrap_or_default();
+        // TRN-CARRY-5.1 (T63): a boat carrier over every road and waterway.
+        let over_land = Some(profession) != self.roles.boat_carrier;
         // 3.2: A has one in stock.
-        let a = self.nearest_warehouse(
+        let a = self.nearest_warehouse_by(
             player,
             warehouses
                 .iter()
@@ -878,6 +896,7 @@ impl World {
                 .filter(|at| self.warehouses[at].count(profession) > 0),
             destination,
             Search::Settler,
+            over_land,
         );
         // 3.3: B can make one.
         let can_make = |at: &Point| {
@@ -886,11 +905,12 @@ impl World {
                     .iter()
                     .all(|&(good, n)| self.warehouses[at].count(good) >= n)
         };
-        let b = self.nearest_warehouse(
+        let b = self.nearest_warehouse_by(
             player,
             warehouses.iter().copied().filter(can_make),
             destination,
             Search::Settler,
+            over_land,
         );
         // 3.4 (T37): B only if strictly nearer by field distance, from the
         // warehouses' own fields (not their flags) to the destination.
@@ -954,10 +974,14 @@ impl World {
         let number = self.new_number();
         let out = self.flag_of(from);
         let mut walk = vec![out];
-        walk.extend(
+        // TRN-CARRY-5.1 (T63): a boat carrier walks in the all-roads
+        // network (road lengths over every road and waterway).
+        let way = if Some(request.profession) == self.roles.boat_carrier {
+            self.road_walk_all(player, out, flag)
+        } else {
             self.road_walk(player, out, flag)
-                .expect("a warehouse of the destination's network"),
-        );
+        };
+        walk.extend(way.expect("a warehouse of the destination's network"));
         match request.requester {
             Requester::Road(id) => {
                 // TRN-CARRY-1.3, 1.4: the first of its road's flags it

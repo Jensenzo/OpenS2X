@@ -219,3 +219,141 @@ fn t16_a_waterway_is_at_most_six_steps() {
         Err(Rejection::WaterwayTooLong)
     );
 }
+
+/// T63's world: water over x 13 to 17 on every row, so the land east of it
+/// (island C) has no land road to the headquarters' island A, with a rock
+/// at (16, 9) (rock B); the land fields next to water are Coast.
+fn strait() -> World {
+    let mut world = game();
+    let water = |f: Point| (13..=17).contains(&f.0) && f != ROCK;
+    for f in world.terrain.fields().collect::<Vec<_>>() {
+        let i = world.terrain.index(f);
+        world.terrain.states[i] = if water(f) {
+            state::WATER
+        } else {
+            world.terrain.states[i] & !(state::WATER | state::COAST)
+        };
+    }
+    for f in world.terrain.fields().collect::<Vec<_>>() {
+        let i = world.terrain.index(f);
+        if !water(f) && world.terrain.neighbours(f).into_iter().flatten().any(water) {
+            world.terrain.states[i] |= state::COAST;
+        }
+        // Island C is player 0's too, as far as x 26 (no border inside).
+        if (13..=26).contains(&f.0) && (2..=18).contains(&f.1) {
+            world.owners[i] = Some(P0);
+            world.terrain.states[i] &= !state::BORDER;
+        }
+    }
+    world
+}
+
+/// Rock B: [`EAST`]'s flag, which [`game`] has placed.
+const ROCK: Point = EAST;
+const ISLAND_C: Point = (18, 9);
+
+// TRN-CARRY T63 (TRN-CARRY-5.1, Q-198 a): waterway R1 from the coast flag
+// F1 of island A (joined to the headquarters by a land road) to a flag F2 on
+// rock B, waterway R2 from F2 to a flag F3 on island C, a hut site on C at
+// F3. R1's boat carrier comes from the headquarters; R2's walks from the
+// headquarters over R1 to F2 and onto R2 (the all-roads network); a plank
+// goes F1 -> R1 -> F2 -> R2 -> F3 (the ware network); the site's builder is
+// never sent (settlers walk land roads only).
+// spec: TRN-CARRY-5.1 (TRN-CARRY T63), TRN-FREE-6.1
+#[test]
+fn t63_boat_carriers_and_wares_over_two_waterways() {
+    let mut world = strait();
+    apply_all(
+        &mut world,
+        vec![
+            road_cmd(HQ_FLAG, WEST),
+            Command::PlaceFlag {
+                player: P0,
+                at: ISLAND_C,
+            },
+        ],
+    );
+    assert_eq!(world.flag_at(ROCK), Some(P0));
+    assert_eq!(world.flag_at(ISLAND_C), Some(P0));
+    assert_eq!(waterway(&mut world, WEST, ROCK), Ok(()));
+    assert_eq!(waterway(&mut world, ROCK, ISLAND_C), Ok(()));
+    let (r1, r2) = (world.roads().count() - 2, world.roads().count() - 1);
+    // The hut's site on island C, its flag at F3.
+    let hut = world.terrain.neighbour(ISLAND_C, 4).expect("on the map");
+    assert_eq!(
+        apply(
+            &mut world,
+            Command::PlaceBuilding {
+                player: P0,
+                building: req::HUT,
+                at: hut,
+            }
+        ),
+        Ok(())
+    );
+    let mut both = None;
+    for t in 0..3000 {
+        world.step();
+        let has = |r: usize| world.road(r).unwrap().carrier.is_some();
+        if both.is_none() && has(r1) && has(r2) {
+            both = Some(t);
+        }
+        if world
+            .carriers()
+            .iter()
+            .any(|c| c.road == r2 && c.walker.at == ISLAND_C)
+        {
+            break;
+        }
+    }
+    assert!(
+        both.is_some(),
+        "both waterways have their boat carrier: {:?} {:?}, stock {}, carriers {:?}",
+        world.road(r1).unwrap().carrier,
+        world.road(r2).unwrap().carrier,
+        world.warehouse(HQ).unwrap().count(BOAT_CARRIER),
+        world
+            .carriers()
+            .iter()
+            .map(|c| (c.road, c.walker.at, c.task))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(world.warehouse(HQ).unwrap().count(BOAT_CARRIER), 0);
+    assert_eq!(world.next_flag(P0, HQ_FLAG, ISLAND_C), Some(WEST));
+    assert_eq!(world.next_flag(P0, WEST, ISLAND_C), Some(ROCK));
+    assert_eq!(world.next_flag(P0, ROCK, ISLAND_C), Some(ISLAND_C));
+    // A plank crosses both.
+    world.submit(Command::DropWare {
+        player: P0,
+        good: req::PLANK,
+        at: HQ_FLAG,
+        destination: ISLAND_C,
+    });
+    let mut passed = Vec::new();
+    for _ in 0..3000 {
+        world.step();
+        for (_, w) in world.wares() {
+            if let crate::WareLocation::Flag(f) = w.location {
+                if passed.last() != Some(&f) {
+                    passed.push(f);
+                }
+            }
+        }
+        if world.wares().next().is_none() {
+            break;
+        }
+    }
+    assert!(
+        world.wares().next().is_none(),
+        "the plank arrived: {passed:?} {:?} {:?}",
+        world.wares().map(|(_, w)| w.location).collect::<Vec<_>>(),
+        world
+            .carriers()
+            .iter()
+            .map(|c| (c.road, c.walker.at, c.task))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(passed, [HQ_FLAG, WEST, ROCK], "{passed:?}");
+    // The site's builder: no land road joins the headquarters to C.
+    assert!(!world.settlers().any(|(_, s)| s.profession == req::BUILDER));
+}

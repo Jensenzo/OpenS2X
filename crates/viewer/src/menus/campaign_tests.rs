@@ -633,6 +633,58 @@ fn the_tutorial_windows_two_forms() {
     assert!(red, "the error in red");
 }
 
+/// UI-GAME-1.4 (T67, E-ui-052): a click on another field than the marked
+/// one sets `T01_ERROR_SelectMarkedPosition`; it is drawn in the tutorial's
+/// panel in pure red, `light_system` (not outlined), with nothing filled
+/// behind it; setting it plays `uiCancel` once, and the text is gone 5.0 s
+/// later. A free game's refused command shows no text.
+// spec: UI-GAME-1.4 (T67)
+#[test]
+fn the_tutorials_red_text() {
+    use crate::ui::widgets::Font;
+    let mut t = Tutorial::new(1);
+    // A step that waits for a click on the marked field.
+    let step = (0..=255u8)
+        .find(|&s| {
+            let mut u = Tutorial::new(1);
+            u.step = s;
+            pointer(s).is_some()
+                && u.field_click((0, 0)) == FieldClick::Refuse
+                && u.error == Some("T01_ERROR_SelectMarkedPosition")
+        })
+        .expect("a step with a marked field");
+    t.step = step;
+    assert_eq!(t.field_click((0, 0)), FieldClick::Refuse);
+    assert_eq!(t.error, Some("T01_ERROR_SelectMarkedPosition"));
+    assert!(t.error_timer(10_000), "uiCancel as it is set");
+    assert!(!t.error_timer(10_001), "once");
+    let p = tutorial_panel(&Texts::default(), [1024.0, 768.0], &t);
+    let red = p.widgets.iter().find_map(|w| match w {
+        Widget::Paragraph {
+            colour,
+            font,
+            at,
+            text,
+            ..
+        } if text.contains("SelectMarkedPosition") => Some((*colour, *font, *at)),
+        _ => None,
+    });
+    let (colour, font, at) = red.expect("the error in the panel");
+    assert_eq!(colour, [255, 0, 0]);
+    assert_eq!(font, Font::Body);
+    assert_eq!(font.file(), "light_system");
+    assert!(
+        !p.widgets
+            .iter()
+            .any(|w| matches!(w, Widget::Fill { at: f, .. } if f[1] >= at[1] - 30.0)),
+        "no box of its own"
+    );
+    assert!(!t.error_timer(14_999));
+    assert!(t.error.is_some(), "shown for 5 s");
+    t.error_timer(15_000);
+    assert_eq!(t.error, None, "gone after 5 s");
+}
+
 /// CAM-5.2a, 5.3c: the arrow's tip goes to the top-left corner of the widget
 /// the step expects: at a SelectBuilding step the build menu's cell (0 the
 /// flag button), at 0x1e the construction view's button of the main bar.
@@ -1097,19 +1149,16 @@ fn statistics_open_over_the_end_screen() {
     );
 }
 
-/// UI-GAME-11.1 (Q-1068): the geologist's settler type's display name, the
-/// name a find's row shows, is the install's "Geologist". Skipped without
+/// UI-GAME-11.1 (Q-1068, T66): the name a find carries, `Scholar`, is
+/// "Geologist" in the install's English name table. Skipped without
 /// `S2_GAME_DIR`.
-// spec: UI-GAME-11.1
+// spec: UI-GAME-11.1 (T66)
 #[test]
 fn the_geologists_name_is_in_the_install_texts() {
     let Some((_, _, texts)) = install() else {
         return;
     };
-    assert_eq!(
-        texts.entry(crate::ui::game::GEOLOGIST_NAME),
-        Some("Geologist")
-    );
+    assert_eq!(texts.name(crate::ui::game::GEOLOGIST_NAME), "Geologist");
 }
 
 // UI-GAME-4.3 (E-trace-033, seen): a building's window closes by itself when
